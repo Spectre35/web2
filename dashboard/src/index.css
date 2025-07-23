@@ -1,0 +1,61 @@
+@import "tailwindcss";
+
+body {
+  @apply bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100 min-h-screen;
+}
+
+@keyframes gradient-x {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+}
+.animate-gradient-x {
+  background-size: 200% 200%;
+  animation: gradient-x 4s ease-in-out infinite;
+}
+@keyframes spin-slow {
+  0% { transform: rotate(0deg);}
+  100% { transform: rotate(360deg);}
+}
+.animate-spin-slow {
+  animation: spin-slow 2.5s linear infinite;
+}
+
+/* Animación de brillo vertical */
+@keyframes coin-shine-vertical {
+  0% {
+    filter: brightness(1) drop-shadow(0 0 0px #ffd700);
+    box-shadow: 0 0 0px #ffd700;
+  }
+  50% {
+    filter: brightness(1.3) drop-shadow(0 12px 24px #ffd700);
+    box-shadow: 0 12px 24px #ffd700;
+  }
+  100% {
+    filter: brightness(1) drop-shadow(0 0 0px #ffd700);
+    box-shadow: 0 0 0px #ffd700;
+  }
+}
+.animate-coin-shine-vertical {
+  animation: coin-shine-vertical 2.5s ease-in-out infinite;
+}
+
+/* Animación de movimiento vertical lento */
+@keyframes coin-move-vertical {
+  0% { transform: translateY(0); }
+  50% { transform: translateY(16px); }
+  100% { transform: translateY(0); }
+}
+.animate-coin-move-vertical {
+  animation: coin-move-vertical 3.5s ease-in-out infinite;
+}
+
+/* Animación de gota de sudor */
+@keyframes drop-sweat {
+  0% { opacity: 0; transform: translateY(0); }
+  10% { opacity: 1; }
+  80% { opacity: 1; transform: translateY(18px); }
+  100% { opacity: 0; transform: translateY(24px); }
+}
+.animate-drop-sweat {
+  animation: drop-sweat 2.5s linear infinite;
+}
