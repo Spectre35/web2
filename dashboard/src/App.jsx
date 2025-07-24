@@ -8,6 +8,7 @@ import Recuperacion from "./pages/Recuperacion"; // Agrega esta línea
 import DashboardRecuperacion from "./pages/DashboardRecuperacion";
 import VendedorasStatus from "./pages/VendedorasStatus";
 import SucursalBloque from "./pages/SucursalBloque";
+import SucursalesAlerta from "./pages/SucursalesAlerta";
 import Aclaraciones from "./pages/Aclaraciones";
 import IngresarAclaraciones from "./pages/IngresarAclaraciones";
 
@@ -24,6 +25,7 @@ function App() {
         <Route path="/dashboard-recuperacion" element={<DashboardRecuperacion />} />
         <Route path="/vendedoras-status" element={<VendedorasStatus />} />
         <Route path="/sucursal-bloque" element={<SucursalBloque />} />
+        <Route path="/sucursales-alerta" element={<SucursalesAlerta />} />
         <Route path="/aclaraciones" element={<Aclaraciones />} />
         <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
       </Routes>

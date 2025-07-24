@@ -25,61 +25,6 @@ export default function Recuperacion() {
   const [resumenSucursal, setResumenSucursal] = useState([]);
   const [fechaInicio, setFechaInicio] = useState(FECHA_INICIO_DEFAULT);
   const [fechaFin, setFechaFin] = useState(FECHA_FIN_DEFAULT);
-  
-  // Estados para ordenamiento
-  const [sortVendedora, setSortVendedora] = useState({ column: 'porcentajeRecuperado', direction: 'asc' });
-  const [sortSucursal, setSortSucursal] = useState({ column: 'porcentajeRecuperado', direction: 'asc' });
-
-  // Función para manejar ordenamiento
-  const handleSort = (column, tableType) => {
-    if (tableType === 'vendedora') {
-      const newDirection = sortVendedora.column === column && sortVendedora.direction === 'desc' ? 'asc' : 'desc';
-      setSortVendedora({ column, direction: newDirection });
-    } else if (tableType === 'sucursal') {
-      const newDirection = sortSucursal.column === column && sortSucursal.direction === 'desc' ? 'asc' : 'desc';
-      setSortSucursal({ column, direction: newDirection });
-    }
-  };
-
-  // Función para ordenar datos
-  const sortData = (data, sortConfig) => {
-    if (!sortConfig.column) return data;
-    
-    return [...data].sort((a, b) => {
-      let aVal = a[sortConfig.column];
-      let bVal = b[sortConfig.column];
-      
-      // Convertir a números si es necesario
-      if (typeof aVal === 'string' && !isNaN(Number(aVal))) {
-        aVal = Number(aVal);
-        bVal = Number(bVal);
-      }
-      
-      // Para strings, convertir a minúsculas para comparación
-      if (typeof aVal === 'string') {
-        aVal = aVal.toLowerCase();
-        bVal = bVal.toLowerCase();
-      }
-      
-      if (aVal < bVal) {
-        return sortConfig.direction === 'asc' ? -1 : 1;
-      }
-      if (aVal > bVal) {
-        return sortConfig.direction === 'asc' ? 1 : -1;
-      }
-      return 0;
-    });
-  };
-
-  // Función para renderizar icono de ordenamiento
-  const renderSortIcon = (column, sortConfig) => {
-    if (sortConfig.column !== column) {
-      return <span className="text-gray-500 ml-1">⏶⏷</span>;
-    }
-    return sortConfig.direction === 'asc' ? 
-      <span className="text-blue-400 ml-1">⏶</span> : 
-      <span className="text-blue-400 ml-1">⏷</span>;
-  };
 
   // Cargar años y bloques únicos solo una vez
   useEffect(() => {
@@ -361,82 +306,19 @@ export default function Recuperacion() {
               <table className="w-full min-w-fit bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl">
                 <thead>
                   <tr className="bg-gradient-to-r from-gray-700/80 to-gray-800/80 text-left">
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('vendedora', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        Vendedora
-                        {renderSortIcon('vendedora', sortVendedora)}
-                      </div>
-                    </th>
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('ventas', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        # Ventas
-                        {renderSortIcon('ventas', sortVendedora)}
-                      </div>
-                    </th>
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('ventasAdeudo', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        Con Adeudo
-                        {renderSortIcon('ventasAdeudo', sortVendedora)}
-                      </div>
-                    </th>
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('cantidadPagada', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        Cant. Pagada
-                        {renderSortIcon('cantidadPagada', sortVendedora)}
-                      </div>
-                    </th>
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('anticipo', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        Anticipo
-                        {renderSortIcon('anticipo', sortVendedora)}
-                      </div>
-                    </th>
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('totalPagado', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        Total Pagado
-                        {renderSortIcon('totalPagado', sortVendedora)}
-                      </div>
-                    </th>
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('ventasTotal', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        $ Ventas
-                        {renderSortIcon('ventasTotal', sortVendedora)}
-                      </div>
-                    </th>
-                    <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide cursor-pointer hover:bg-gray-600/30 transition-colors"
-                      onClick={() => handleSort('porcentajeRecuperado', 'vendedora')}
-                    >
-                      <div className="flex items-center">
-                        % Recuperado
-                        {renderSortIcon('porcentajeRecuperado', sortVendedora)}
-                      </div>
-                    </th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Vendedora</th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30"># Ventas</th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Con Adeudo</th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Cant. Pagada</th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Anticipo</th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Total Pagado</th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">$ Ventas</th>
+                    <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide">% Recuperado</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {sortData(resumenVendedora, sortVendedora)
+                  {[...resumenVendedora]
+                    .sort((a, b) => a.porcentajeRecuperado - b.porcentajeRecuperado)
                     .map((v, i) => {
                       let color = "bg-red-600 text-white";
                       if (v.porcentajeRecuperado >= 61) color = "bg-green-600 text-white";
@@ -502,169 +384,78 @@ export default function Recuperacion() {
                 </div>
               </div>
               
-              <div className="w-full">
-                <table className="w-full bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl text-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-fit bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl">
                   <thead>
                     <tr className="bg-gradient-to-r from-gray-700/80 to-gray-800/80 text-left">
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[12%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('sucursal', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Sucursal
-                          {renderSortIcon('sucursal', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[8%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('alCorriente', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Corriente
-                          {renderSortIcon('alCorriente', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[8%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('liquidado', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Liquid.
-                          {renderSortIcon('liquidado', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[8%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('vencido', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Venc.
-                          {renderSortIcon('vencido', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[12%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('ventasAdeudo', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Adeudo
-                          {renderSortIcon('ventasAdeudo', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[12%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('cantidadPagada', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Pagado
-                          {renderSortIcon('cantidadPagada', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[10%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('anticipo', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Anticipo
-                          {renderSortIcon('anticipo', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[12%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('totalPagado', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Total $
-                          {renderSortIcon('totalPagado', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight border-r border-gray-600/30 w-[12%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('ventasTotal', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          Ventas $
-                          {renderSortIcon('ventasTotal', sortSucursal)}
-                        </div>
-                      </th>
-                      <th 
-                        className="p-2 text-gray-100 font-semibold text-xs uppercase tracking-tight w-[6%] cursor-pointer hover:bg-gray-600/30 transition-colors"
-                        onClick={() => handleSort('porcentajeRecuperado', 'sucursal')}
-                      >
-                        <div className="flex items-center">
-                          %
-                          {renderSortIcon('porcentajeRecuperado', sortSucursal)}
-                        </div>
-                      </th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Sucursal</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Al Corriente</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Liquidado</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Vencido</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Con Adeudo</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Cant. Pagada</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Anticipo</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">Total Pagado</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30">$ Ventas</th>
+                      <th className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide">% Recuperado</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {sortData(resumenSucursal, sortSucursal)
+                    {[...resumenSucursal]
+                      .sort((a, b) => a.porcentajeRecuperado - b.porcentajeRecuperado)
                       .map((s, i) => {
                         let color = "bg-red-600 text-white";
                         if (s.porcentajeRecuperado >= 61) color = "bg-green-600 text-white";
                         else if (s.porcentajeRecuperado >= 51) color = "bg-green-300 text-gray-900";
                         else if (s.porcentajeRecuperado >= 36) color = "bg-yellow-400 text-gray-900";
-                        
-                        // Función para formatear montos de forma compacta
-                        const formatCompacto = (monto) => {
-                          const num = Number(monto);
-                          if (num >= 1000000) {
-                            return `$${(num / 1000000).toFixed(1)}M`;
-                          } else if (num >= 1000) {
-                            return `$${(num / 1000).toFixed(0)}K`;
-                          }
-                          return `$${num.toLocaleString()}`;
-                        };
-                        
                         return (
                           <tr key={i} className={`${i % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-600/30 transition-colors duration-200`}>
-                            <td className="p-2 text-gray-200 font-medium border-r border-gray-600/20 text-xs">
-                              <div className="truncate" title={s.sucursal}>
+                            <td className="p-3 text-gray-200 font-medium border-r border-gray-600/20 text-xs">
+                              <div className="max-w-[120px] truncate" title={s.sucursal}>
                                 {s.sucursal}
                               </div>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-center">
-                              <span className="bg-green-500/20 text-green-300 px-1 py-0.5 rounded text-xs">
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="bg-green-500/20 text-green-300 px-2 py-1 rounded text-xs">
                                 {s.alCorriente}
                               </span>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-center">
-                              <span className="bg-blue-500/20 text-blue-300 px-1 py-0.5 rounded text-xs">
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="bg-blue-500/20 text-blue-300 px-2 py-1 rounded text-xs">
                                 {s.liquidado}
                               </span>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-center">
-                              <span className="bg-red-500/20 text-red-300 px-1 py-0.5 rounded text-xs">
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="bg-red-500/20 text-red-300 px-2 py-1 rounded text-xs">
                                 {s.vencido}
                               </span>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
-                              <span className="text-orange-300 font-medium" title={formatoMoneda(s.ventasAdeudo)}>
-                                {formatCompacto(s.ventasAdeudo)}
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="text-orange-300 font-medium">
+                                {formatoMoneda(s.ventasAdeudo)}
                               </span>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
-                              <span className="text-green-300 font-medium" title={formatoMoneda(s.cantidadPagada)}>
-                                {formatCompacto(s.cantidadPagada)}
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="text-green-300 font-medium">
+                                {formatoMoneda(s.cantidadPagada)}
                               </span>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
-                              <span className="text-purple-300 font-medium" title={formatoMoneda(s.anticipo)}>
-                                {formatCompacto(s.anticipo)}
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="text-purple-300 font-medium">
+                                {formatoMoneda(s.anticipo)}
                               </span>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
-                              <span className="text-cyan-300 font-semibold" title={formatoMoneda(s.totalPagado)}>
-                                {formatCompacto(s.totalPagado)}
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="text-cyan-300 font-semibold">
+                                {formatoMoneda(s.totalPagado)}
                               </span>
                             </td>
-                            <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
-                              <span className="text-yellow-300 font-semibold" title={formatoMoneda(s.ventasTotal)}>
-                                {formatCompacto(s.ventasTotal)}
+                            <td className="p-3 text-gray-200 border-r border-gray-600/20 text-xs">
+                              <span className="text-yellow-300 font-semibold">
+                                {formatoMoneda(s.ventasTotal)}
                               </span>
                             </td>
-                            <td className={`p-2 font-bold text-xs ${color} rounded-md text-center`}>
+                            <td className={`p-3 font-bold border-r border-gray-600/20 text-xs ${color} rounded-md text-center`}>
                               {s.ventasTotal ? `${s.porcentajeRecuperado}%` : "-"}
                             </td>
                           </tr>

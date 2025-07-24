@@ -1181,6 +1181,89 @@ app.get("/sucursal-bloque", async (req, res) => {
   }
 });
 
+app.get("/sucursales-alerta", async (req, res) => {
+  try {
+    console.time("sucursales-alerta-query"); // 📊 Timing para debugging
+    
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    // ✅ CONSULTA ULTRA-OPTIMIZADA: Window functions para mejor rendimiento
+    const query = `
+      WITH transacciones_filtradas AS (
+        SELECT 
+          "Sucursal",
+          "Fecha",
+          "Cobrado_Por",
+          ROW_NUMBER() OVER (PARTITION BY "Sucursal" ORDER BY "Fecha" DESC) as rn
+        FROM "cargos_auto"
+        WHERE "Sucursal" IS NOT NULL 
+          AND COALESCE("TotalMxn"::numeric, 0) > 0
+          AND "Cobrado_Por" IS NOT NULL
+          AND NOT LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%linkdepago%'
+          AND (
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%stripe%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%strupe%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%efevoo%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%kushki%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%netpay%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%paycode%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%clip%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%bancolombia%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%bsd%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%credibanco%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%transbank%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%mercadopago%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%sistecredito%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%wompi%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%stripeauto%'
+          )
+      ),
+      ultima_por_sucursal AS (
+        SELECT 
+          "Sucursal",
+          "Fecha" as ultima_fecha,
+          "Cobrado_Por" as ultimo_procesador
+        FROM transacciones_filtradas
+        WHERE rn = 1
+      ),
+      sucursales_con_alertas AS (
+        SELECT 
+          ups.*,
+          (CURRENT_DATE - ups.ultima_fecha::date) as dias_sin_actividad
+        FROM ultima_por_sucursal ups
+        WHERE (CURRENT_DATE - ups.ultima_fecha::date) BETWEEN 2 AND 30
+      )
+      SELECT 
+        sca."Sucursal",
+        COALESCE(us."slack", 'Sin asignar') as nombre_slack,
+        sca.ultima_fecha,
+        sca.ultimo_procesador,
+        sca.dias_sin_actividad
+      FROM sucursales_con_alertas sca
+      LEFT JOIN "usuarios_slack" us ON us."sucursal" = sca."Sucursal"
+      ORDER BY sca.dias_sin_actividad DESC
+    `;
+
+    const result = await pool.query(query);
+    console.timeEnd("sucursales-alerta-query"); // 📊 Mostrar tiempo de consulta
+    
+    const alertas = result.rows.map(row => ({
+      Sucursal: row.Sucursal,
+      nombre_slack: row.nombre_slack,
+      ultima_fecha: row.ultima_fecha,
+      ultimo_procesador: row.ultimo_procesador,
+      diasSinActividad: parseInt(row.dias_sin_actividad)
+    }));
+
+    console.log(`✅ Sucursales-alerta: ${alertas.length} alertas encontradas`);
+    res.json(alertas);
+  } catch (err) {
+    console.error("Error en sucursales-alerta:", err);
+    res.status(500).json({ error: "Error al obtener sucursales con alerta" });
+  }
+});
+
 app.get("/cargos_auto/procesadores", async (req, res) => {
   try {
     const result = await pool.query(
@@ -1655,8 +1738,9 @@ app.get(`/cargos_auto/exportar`, async (req, res) => {
 
 // ===================  INICIO DEL SERVIDOR ===================
 
-app.listen(PORT, () => {
-  console.log(`✅ Servidor ejecutándose en http://192.168.1.111:${PORT}`);
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Servidor ejecutándose en http://localhost:${PORT}`);
+  console.log(`🌐 También disponible en http://192.168.1.111:${PORT}`);
 });
 
 

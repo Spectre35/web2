@@ -1,21 +1,21 @@
-// Configuración dinámica según el entorno
-const isDevelopment = import.meta.env.MODE === 'development';
+// Configuración automática de API
+function detectarIPLocal() {
+  const hostname = window.location.hostname;
+  
+  // Si estamos en localhost, intentar primero localhost, luego IP de la red
+  if (hostname === 'localhost' || hostname === '127.0.0.1') {
+    return "http://localhost:3000";
+  }
+  
+  // Si estamos en la IP de la red, usar localhost
+  if (hostname === '192.168.1.111') {
+    return "http://localhost:3000";
+  }
+  
+  // Por defecto usar localhost (más universal)
+  return "http://localhost:3000";
+}
 
-// URL base del API
-export const API_BASE_URL = isDevelopment 
-  ? import.meta.env.VITE_API_URL || "http://192.168.1.111:3001"  // Desarrollo
-  : "http://192.168.1.111:3000";  // Producción
+export const API_BASE_URL = detectarIPLocal();
 
-// Otras configuraciones que pueden cambiar
-export const CONFIG = {
-  isDevelopment,
-  showDebugInfo: isDevelopment,
-  apiTimeout: isDevelopment ? 10000 : 5000,
-  logLevel: isDevelopment ? 'debug' : 'error'
-};
-
-console.log(`🔧 Configuración cargada:`, {
-  entorno: isDevelopment ? 'DESARROLLO' : 'PRODUCCIÓN',
-  apiUrl: API_BASE_URL,
-  puerto: window.location.port
-});
+console.log(`🔧 API configurada para: ${API_BASE_URL} (desde ${window.location.hostname})`);

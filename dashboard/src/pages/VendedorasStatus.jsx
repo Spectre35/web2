@@ -3,6 +3,7 @@ import axios from "axios";
 import { Link } from "react-router-dom";
 import DetonArturo from "../assets/detonarturo.png";
 import { formatearFecha } from "../utils/dateUtils";
+import { API_BASE_URL } from "../config.js";
 
 export default function VendedorasStatus() {
   const [datos, setDatos] = useState([]);
@@ -11,7 +12,7 @@ export default function VendedorasStatus() {
 
   useEffect(() => {
     setCargando(true);
-    axios.get("http://192.168.1.111:3000/vendedoras-status", {
+    axios.get(`${API_BASE_URL}/vendedoras-status`, {
       params: busqueda ? { nombre: busqueda } : {}
     })
       .then(res => setDatos(res.data))
@@ -85,9 +86,9 @@ export default function VendedorasStatus() {
           </div>
           <Link
             to="/"
-            className="bg-gray-700/80 text-white px-3 py-2 rounded hover:bg-gray-600/80 transition"
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
           >
-            ⬅ Volver al Home
+            🏠 Ir al Home
           </Link>
         </div>
         <div className="mb-4 flex gap-4 items-center">

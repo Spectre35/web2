@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
+import { API_BASE_URL } from "../config.js";
 
 export default function CargosAuto() {
   const [datos, setDatos] = useState([]);
@@ -35,14 +36,14 @@ export default function CargosAuto() {
 
   useEffect(() => {
     axios
-      .get("http://192.168.1.111:3000/cargos_auto/ultima-fecha")
+      .get(`${API_BASE_URL}/cargos_auto/ultima-fecha`)
       .then((res) => setFechaUltima(formatearFecha(res.data.fecha)))
       .catch(() => setFechaUltima(""));
   }, []);
 
   useEffect(() => {
     axios
-      .get("http://192.168.1.111:3000/cargos_auto/procesadores-alerta")
+      .get(`${API_BASE_URL}/cargos_auto/procesadores-alerta`)
       .then((res) => {
         setAlertaProcesadores(res.data);
         setMostrarAlerta(res.data.length > 0);
@@ -52,7 +53,7 @@ export default function CargosAuto() {
 
   const obtenerSucursales = async () => {
     try {
-      const res = await axios.get("http://192.168.1.111:3000/sucursales");
+      const res = await axios.get(`${API_BASE_URL}/sucursales`);
       setSucursales(res.data);
     } catch (error) {
       console.error("Error al obtener sucursales", error);
@@ -62,7 +63,7 @@ export default function CargosAuto() {
   // Nuevo: obtener procesadores individuales
   const obtenerProcesadores = async () => {
     try {
-      const res = await axios.get("http://192.168.1.111:3000/cargos_auto/procesadores");
+      const res = await axios.get(`${API_BASE_URL}/cargos_auto/procesadores`);
       // Ordena y limpia solo para mostrar en el dropdown
       setProcesadores(
         res.data
@@ -78,7 +79,7 @@ export default function CargosAuto() {
   const obtenerDatos = async () => {
     try {
       setCargando(true);
-      const res = await axios.get("http://192.168.1.111:3000/cargos_auto", {
+      const res = await axios.get(`${API_BASE_URL}/cargos_auto`, {
         params: {
           cliente: busqueda,
           sucursal: sucursal,
@@ -125,7 +126,7 @@ export default function CargosAuto() {
     if (terminacion) params.append("terminacion", terminacion);
     // Serializa procesadores como múltiples parámetros
     procesadorSeleccionado.forEach(p => params.append("procesadores", p));
-    window.location.href = `http://192.168.1.111:3000/cargos_auto/exportar?${params.toString()}`;
+    window.location.href = `${API_BASE_URL}/cargos_auto/exportar?${params.toString()}`;
   };
 
   const columnas = datos.length > 0 ? Object.keys(datos[0]) : [];
@@ -156,25 +157,29 @@ export default function CargosAuto() {
   };
 
   return (
-    <div className="p-6 min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      <div className="backdrop-blur-lg bg-white/10 rounded-xl shadow-2xl p-6 max-w-full mx-2 md:mx-8 border border-white/20">
-        <div className="flex justify-between mb-4">
-          <h1 className="text-2xl font-bold mb-4 text-center text-gray-100 drop-shadow">
-            🔍 Buscador Cargos Auto
-          </h1>
-          <Link
-            to="/"
-            className="bg-gray-700/80 text-white px-3 py-2 rounded hover:bg-gray-600/80 transition"
-          >
-            ⬅ Volver al Home
-          </Link>
-        </div>
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
+      {/* Header */}
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold text-gray-100">🔍 Buscador Cargos Auto</h1>
+        <Link
+          to="/"
+          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
+        >
+          🏠 Ir al Home
+        </Link>
+      </div>
+
+      {/* Información de última actualización */}
+      <div className="mb-6">
         <span className="text-sm text-gray-300 font-semibold">
           Última actualización en base de datos:{" "}
           {fechaUltima || "Sin registros"}
         </span>
-        {/* Filtros */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2 mb-4">
+      </div>
+
+      {/* Filtros */}
+      <div className="bg-gray-800/50 p-4 rounded-lg mb-6 backdrop-blur-sm">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
           <input
             type="text"
             placeholder="Buscar cliente..."
@@ -267,32 +272,41 @@ export default function CargosAuto() {
             value={terminacion}
             onChange={e => setTerminacion(e.target.value)}
           />
-          <button
-            onClick={() => {
-              setPagina(1);
-              obtenerDatos();
-            }}
-            className="bg-gradient-to-r from-blue-600 to-blue-400 text-white p-2 rounded shadow hover:from-blue-700 hover:to-blue-500 col-span-2 transition"
-          >
-            Filtrar
-          </button>
-          <button
-            onClick={exportarExcel}
-            className="bg-gradient-to-r from-green-600 to-green-400 text-white p-2 rounded shadow hover:from-green-700 hover:to-green-500 col-span-2 transition"
-          >
-            📥 Exportar a Excel
-          </button>
         </div>
-        {/* Tabla dinámica */}
+      </div>
+
+      {/* Botones de acción */}
+      <div className="flex gap-4 mb-6">
+        <button
+          onClick={() => {
+            setPagina(1);
+            obtenerDatos();
+          }}
+          className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg transition font-semibold"
+        >
+          🔍 Buscar
+        </button>
+        <button
+          onClick={exportarExcel}
+          className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg transition font-semibold"
+        >
+          📥 Exportar a Excel
+        </button>
+      </div>
+
+      {/* Tabla dinámica */}
+      <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 rounded-lg overflow-hidden">
         <div className="overflow-x-auto">
           {cargando ? (
-            <p className="text-center text-gray-400">Cargando...</p>
+            <div className="p-8 text-center">
+              <div className="text-gray-400 text-lg">Cargando...</div>
+            </div>
           ) : (
-            <table className="w-full bg-gray-900/80 shadow-md rounded text-sm text-gray-100">
+            <table className="w-full text-sm">
               <thead>
-                <tr className="bg-gray-800/80 text-left">
+                <tr className="bg-gray-700/50 text-left">
                   {columnas.map((col, i) => (
-                    <th key={i} className="p-2 font-semibold">
+                    <th key={i} className="p-3 font-semibold text-gray-200">
                       {col}
                     </th>
                   ))}
@@ -303,10 +317,10 @@ export default function CargosAuto() {
                   datos.map((row, i) => (
                     <tr
                       key={i}
-                      className="border-b border-gray-800 hover:bg-gray-800/60"
+                      className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
                     >
                       {columnas.map((col, j) => (
-                        <td key={j} className="p-2">
+                        <td key={j} className="p-3 text-gray-300">
                           {row[col]?.toString()}
                         </td>
                       ))}
@@ -316,9 +330,9 @@ export default function CargosAuto() {
                   <tr>
                     <td
                       colSpan={columnas.length}
-                      className="text-center p-4 text-gray-500"
+                      className="text-center p-8 text-gray-500"
                     >
-                      No hay resultados
+                      No hay resultados para mostrar
                     </td>
                   </tr>
                 )}
@@ -326,57 +340,59 @@ export default function CargosAuto() {
             </table>
           )}
         </div>
-        {/* Paginación */}
-        <div className="flex justify-center items-center gap-2 mt-4">
-          <button
-            onClick={() => setPagina((p) => Math.max(p - 1, 1))}
-            className="bg-gray-700/80 px-3 py-1 rounded hover:bg-gray-600/80 text-white"
-            disabled={pagina === 1}
-          >
-            ◀ Anterior
-          </button>
-          <span className="font-semibold text-gray-200">
-            Página {pagina} de {totalPaginas}
-          </span>
-          <button
-            onClick={() => setPagina((p) => Math.min(p + 1, totalPaginas))}
-            className="bg-gray-700/80 px-3 py-1 rounded hover:bg-gray-600/80 text-white"
-            disabled={pagina === totalPaginas}
-          >
-            Siguiente ▶
-          </button>
-        </div>
-        {/* Alerta procesadores inactivos */}
-        {mostrarAlerta && alertaProcesadores.length > 0 && (
-          <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 bg-red-700/90 text-white p-6 rounded-xl shadow-xl font-bold min-w-[320px] max-w-[90vw]">
-            <div className="flex justify-between items-center mb-2">
-              <span>
-                ⚠️ Procesadores con baja actividad en los últimos 2 días:
-              </span>
-              <button
-                className="ml-4 text-white bg-red-900 rounded-full px-2 py-1 hover:bg-red-800 transition font-bold"
-                onClick={() => setMostrarAlerta(false)}
-                title="Cerrar alerta"
-              >
-                ✕
-              </button>
-            </div>
-            <ul className="mt-2 list-disc ml-6">
-              {alertaProcesadores.map((p, i) => (
-                <li key={i}>
-                  {p.Cobrado_Por}:{" "}
-                  {p.monto_total !== undefined
-                    ? `$${Number(p.monto_total).toLocaleString()}`
-                    : ""}
-                  {p.ultima_fecha
-                    ? ` (última: ${formatearFecha(p.ultima_fecha)})`
-                    : " (Sin registro)"}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
+
+      {/* Paginación */}
+      <div className="flex justify-center items-center gap-4 mt-6">
+        <button
+          onClick={() => setPagina((p) => Math.max(p - 1, 1))}
+          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
+          disabled={pagina === 1}
+        >
+          ← Anterior
+        </button>
+        <span className="text-gray-300 font-medium">
+          Página {pagina} de {totalPaginas} | Total: {total} registros
+        </span>
+        <button
+          onClick={() => setPagina((p) => Math.min(p + 1, totalPaginas))}
+          className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
+          disabled={pagina === totalPaginas}
+        >
+          Siguiente →
+        </button>
+      </div>
+
+      {/* Alerta procesadores inactivos */}
+      {mostrarAlerta && alertaProcesadores.length > 0 && (
+        <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 bg-red-700/90 text-white p-6 rounded-xl shadow-xl font-bold min-w-[320px] max-w-[90vw]">
+          <div className="flex justify-between items-center mb-2">
+            <span>
+              ⚠️ Procesadores con baja actividad en los últimos 2 días:
+            </span>
+            <button
+              className="ml-4 text-white bg-red-900 rounded-full px-2 py-1 hover:bg-red-800 transition font-bold"
+              onClick={() => setMostrarAlerta(false)}
+              title="Cerrar alerta"
+            >
+              ✕
+            </button>
+          </div>
+          <ul className="mt-2 list-disc ml-6">
+            {alertaProcesadores.map((p, i) => (
+              <li key={i}>
+                {p.Cobrado_Por}:{" "}
+                {p.monto_total !== undefined
+                  ? `$${Number(p.monto_total).toLocaleString()}`
+                  : ""}
+                {p.ultima_fecha
+                  ? ` (última: ${formatearFecha(p.ultima_fecha)})`
+                  : " (Sin registro)"}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }

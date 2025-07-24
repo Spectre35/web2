@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
+import { API_BASE_URL } from "../config.js";
 
 export default function Aclaraciones() {
   const [datos, setDatos] = useState([]);
@@ -31,7 +32,7 @@ export default function Aclaraciones() {
 
   const obtenerProcesadores = async () => {
     try {
-      const response = await fetch("http://192.168.1.111:3000/aclaraciones/procesadores");
+      const response = await fetch(`${API_BASE_URL}/aclaraciones/procesadores`);
       const data = await response.json();
       setProcesadores(data);
     } catch (error) {
@@ -41,7 +42,7 @@ export default function Aclaraciones() {
 
   const obtenerSucursales = async () => {
     try {
-      const response = await fetch("http://192.168.1.111:3000/aclaraciones/sucursales");
+      const response = await fetch(`${API_BASE_URL}/aclaraciones/sucursales`);
       const data = await response.json();
       setSucursales(data);
     } catch (error) {
@@ -64,14 +65,14 @@ export default function Aclaraciones() {
         ...(montoMax && { monto_max: montoMax }),
       });
 
-      const response = await fetch(`http://192.168.1.111:3000/aclaraciones?${params}`);
+      const response = await fetch(`${API_BASE_URL}/aclaraciones?${params}`);
       const data = await response.json();
       
       setDatos((data.datos || []).map(formatearFechasEnObjeto));
       setTotal(data.total || 0);
 
       // Obtener última fecha
-      const fechaResponse = await fetch("http://192.168.1.111:3000/aclaraciones/ultima-fecha");
+      const fechaResponse = await fetch(`${API_BASE_URL}/aclaraciones/ultima-fecha`);
       const fechaData = await fechaResponse.json();
       setFechaUltima(fechaData.fecha ? formatearFecha(fechaData.fecha) : "No disponible");
     } catch (error) {
@@ -127,8 +128,11 @@ export default function Aclaraciones() {
           >
             📝 Ingresar Datos
           </Link>
-          <Link to="/" className="bg-gray-700 text-white px-4 py-2 rounded hover:bg-gray-600 transition">
-            ← Inicio
+          <Link 
+            to="/" 
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
+          >
+            🏠 Ir al Home
           </Link>
         </div>
       </div>

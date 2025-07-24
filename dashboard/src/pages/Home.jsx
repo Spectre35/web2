@@ -71,7 +71,7 @@ export default function Home() {
             💳 Aclaraciones
           </Link>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-10">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
           <Link
             to="/vendedoras-status"
             className="bg-gradient-to-r from-blue-700 via-blue-400 to-green-400 animate-gradient-x text-white font-semibold py-6 px-6 rounded-xl shadow-xl text-center text-lg transition hover:scale-105 flex items-center justify-center gap-2"
@@ -88,6 +88,12 @@ export default function Home() {
             className="bg-gradient-to-r from-green-700 via-green-400 to-blue-400 animate-gradient-x text-white font-semibold py-6 px-6 rounded-xl shadow-xl text-center text-lg transition hover:scale-105"
           >
             🏢 Buscador Sucursal-Bloque
+          </Link>
+          <Link
+            to="/sucursales-alerta"
+            className="bg-gradient-to-r from-red-700 via-red-400 to-orange-400 animate-gradient-x text-white font-semibold py-6 px-6 rounded-xl shadow-xl text-center text-lg transition hover:scale-105"
+          >
+            🚨 Alertas de Sucursales
           </Link>
         </div>
         <div className="flex flex-col md:flex-row justify-center gap-6 mt-4">

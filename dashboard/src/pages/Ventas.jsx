@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
+import { API_BASE_URL } from "../config.js";
 
 export default function Ventas() {
   const [datos, setDatos] = useState([]);
@@ -28,14 +29,14 @@ export default function Ventas() {
 
   useEffect(() => {
     axios
-      .get("http://192.168.1.111:3000/ventas/ultima-fecha")
+      .get(`${API_BASE_URL}/ventas/ultima-fecha`)
       .then((res) => setFechaUltima(formatearFecha(res.data.fecha)))
       .catch(() => setFechaUltima(""));
   }, []);
 
   const obtenerSucursales = async () => {
     try {
-      const res = await axios.get("http://192.168.1.111:3000/sucursales");
+      const res = await axios.get(`${API_BASE_URL}/sucursales`);
       setSucursales(res.data);
     } catch (error) {
       console.error("Error al obtener sucursales", error);
@@ -45,7 +46,7 @@ export default function Ventas() {
   const obtenerDatos = async () => {
     try {
       setCargando(true);
-      const res = await axios.get("http://192.168.1.111:3000/ventas", {
+      const res = await axios.get(`${API_BASE_URL}/ventas`, {
         params: {
           cliente: busqueda,
           sucursal: sucursal,
@@ -78,7 +79,7 @@ export default function Ventas() {
       tarjeta: tarjeta,
       terminacion: terminacion,
     });
-    window.location.href = `http://192.168.1.111:3000/ventas/exportar?${params.toString()}`;
+    window.location.href = `${API_BASE_URL}/ventas/exportar?${params.toString()}`;
   };
 
   const columnas = datos.length > 0 ? Object.keys(datos[0]) : [];
@@ -93,9 +94,9 @@ export default function Ventas() {
           </h1>
           <Link
             to="/"
-            className="bg-gray-700/80 text-white px-3 py-2 rounded hover:bg-gray-600/80 transition"
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
           >
-            ⬅ Volver al Home
+            🏠 Ir al Home
           </Link>
         </div>
         <span className="text-sm text-gray-300 font-semibold">

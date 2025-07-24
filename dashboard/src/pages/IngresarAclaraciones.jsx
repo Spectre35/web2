@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import { API_BASE_URL } from "../config.js";
 
 export default function IngresarAclaraciones() {
   const [filas, setFilas] = useState([]);
@@ -93,27 +94,27 @@ export default function IngresarAclaraciones() {
   // Obtener datos para los dropdowns
   useEffect(() => {
     // Procesadores
-    axios.get("http://192.168.1.111:3000/aclaraciones/procesadores")
+    axios.get(`${API_BASE_URL}/aclaraciones/procesadores`)
       .then(res => setProcesadores(res.data))
       .catch(error => console.error("Error al obtener procesadores:", error));
 
     // Vendedoras desde la tabla de ventas
-    axios.get("http://192.168.1.111:3000/aclaraciones/vendedoras")
+    axios.get(`${API_BASE_URL}/aclaraciones/vendedoras`)
       .then(res => setVendedoras(res.data))
       .catch(error => console.error("Error al obtener vendedoras:", error));
 
     // Sucursales desde ventas
-    axios.get("http://192.168.1.111:3000/aclaraciones/sucursales-ventas")
+    axios.get(`${API_BASE_URL}/aclaraciones/sucursales-ventas`)
       .then(res => setSucursales(res.data))
       .catch(error => console.error("Error al obtener sucursales:", error));
 
     // Bloques desde ventas
-    axios.get("http://192.168.1.111:3000/aclaraciones/bloques")
+    axios.get(`${API_BASE_URL}/aclaraciones/bloques`)
       .then(res => setBloques(res.data))
       .catch(error => console.error("Error al obtener bloques:", error));
 
     // Comentarios únicos
-    axios.get("http://192.168.1.111:3000/aclaraciones/comentarios")
+    axios.get(`${API_BASE_URL}/aclaraciones/comentarios`)
       .then(res => setComentarios(res.data))
       .catch(error => console.error("Error al obtener comentarios:", error));
   }, []);
@@ -238,7 +239,7 @@ export default function IngresarAclaraciones() {
       }
 
       // Enviar datos al servidor
-      const response = await axios.post("http://192.168.1.111:3000/aclaraciones/insertar-multiple", {
+      const response = await axios.post(`${API_BASE_URL}/aclaraciones/insertar-multiple`, {
         datos: filasCompletas
       });
 
@@ -284,12 +285,20 @@ export default function IngresarAclaraciones() {
           <h1 className="text-2xl font-bold text-gray-100 drop-shadow">
             📝 Ingresar Aclaraciones Masivamente
           </h1>
-          <Link
-            to="/aclaraciones"
-            className="bg-gray-700/80 text-white px-4 py-2 rounded hover:bg-gray-600/80 transition font-semibold"
-          >
-            ⬅ Volver a Aclaraciones
-          </Link>
+          <div className="flex gap-3">
+            <Link
+              to="/aclaraciones"
+              className="bg-gray-700/80 text-white px-4 py-2 rounded hover:bg-gray-600/80 transition font-semibold"
+            >
+              ⬅ Volver a Aclaraciones
+            </Link>
+            <Link
+              to="/"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
+            >
+              🏠 Ir al Home
+            </Link>
+          </div>
         </div>
 
         {/* Instrucciones */}

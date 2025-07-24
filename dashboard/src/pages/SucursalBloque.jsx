@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import { API_BASE_URL } from "../config.js";
 
 export default function SucursalBloque() {
   const [datos, setDatos] = useState([]);
@@ -10,7 +11,7 @@ export default function SucursalBloque() {
 
   // Obtener todos los bloques únicos
   useEffect(() => {
-    axios.get("http://192.168.1.111:3000/bloques")
+    axios.get(`${API_BASE_URL}/bloques`)
       .then(res => setBloques(res.data))
       .catch(() => setBloques([]));
   }, []);
@@ -18,7 +19,7 @@ export default function SucursalBloque() {
   // Obtener sucursal-bloque (filtrado por bloque si se selecciona)
   useEffect(() => {
     const params = bloque ? { bloque } : {};
-    axios.get("http://192.168.1.111:3000/sucursal-bloque", { params })
+    axios.get(`${API_BASE_URL}/sucursal-bloque`, { params })
       .then(res => setDatos(res.data))
       .catch(() => setDatos([]));
   }, [bloque]);
@@ -31,15 +32,17 @@ export default function SucursalBloque() {
   return (
     <div className="p-6 min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       <div className="backdrop-blur-lg bg-white/10 rounded-xl shadow-2xl p-6 max-w-2xl mx-auto border border-white/20">
-        <h1 className="text-2xl font-bold mb-6 text-gray-100 drop-shadow">
-          🏢 Buscador Sucursal - Bloque
-        </h1>
-        <Link
-          to="/"
-          className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2 px-4 rounded transition mb-4 inline-block"
-        >
-          ← Volver al Home
-        </Link>
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold text-gray-100 drop-shadow">
+            🏢 Buscador Sucursal - Bloque
+          </h1>
+          <Link
+            to="/"
+            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
+          >
+            🏠 Ir al Home
+          </Link>
+        </div>
         <div className="mb-4 flex gap-4 items-center">
           <select
             className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded"

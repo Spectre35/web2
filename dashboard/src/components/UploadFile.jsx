@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { useDropzone } from "react-dropzone";
 import axios from "axios";
+import { API_BASE_URL } from "../config.js";
 
 export default function UploadFile({ tabla }) {
   const [subiendo, setSubiendo] = useState(false);
@@ -21,7 +22,7 @@ export default function UploadFile({ tabla }) {
   // Escuchar progreso SSE
   useEffect(() => {
     if (!subiendo) return;
-    const evtSource = new EventSource("http://192.168.1.111:3000/progreso");
+    const evtSource = new EventSource(`${API_BASE_URL}/progreso`);
     evtSource.onmessage = (e) => {
       const data = JSON.parse(e.data);
       if (data.tabla === tabla) {
@@ -45,7 +46,7 @@ export default function UploadFile({ tabla }) {
 
       try {
         const res = await axios.post(
-          `http://192.168.1.111:3000/upload/${tabla}`,
+          `${API_BASE_URL}/upload/${tabla}`,
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
