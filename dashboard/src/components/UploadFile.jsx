@@ -37,9 +37,9 @@ export default function UploadFile({ tabla }) {
     return () => evtSource.close();
   }, [subiendo, tabla]);
 
-  // Función para borrar todos los registros
-  const borrarTodosLosRegistros = async () => {
-    if (!confirm(`¿Estás seguro de que quieres borrar TODOS los registros de la tabla ${nombreAmigable}?`)) {
+  // Función para borrar registros del año 2025
+  const borrarRegistros2025 = async () => {
+    if (!confirm(`¿Estás seguro de que quieres borrar TODOS los registros del año 2025 de la tabla ${nombreAmigable}?`)) {
       return;
     }
     
@@ -48,7 +48,7 @@ export default function UploadFile({ tabla }) {
     
     try {
       const res = await axios.delete(`${API_BASE_URL}/delete-all/${tabla}`);
-      setMensaje(`✅ ${res.data.message || 'Registros borrados exitosamente'}`);
+      setMensaje(`✅ ${res.data.message || 'Registros del 2025 borrados exitosamente'}`);
     } catch (err) {
       setMensaje(`❌ Error al borrar registros: ${err.response?.data?.error || err.message}`);
     } finally {
@@ -140,14 +140,14 @@ export default function UploadFile({ tabla }) {
         {nombreAmigable}
       </h2>
       
-      {/* Botón para borrar todos los registros (solo para caja y ventas) */}
+      {/* Botón para borrar registros del año 2025 (solo para caja y ventas) */}
       {(tabla === 'caja' || tabla === 'ventas') && (
         <button
-          onClick={borrarTodosLosRegistros}
+          onClick={borrarRegistros2025}
           disabled={borrando}
           className="mb-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-lg"
         >
-          {borrando ? '🗑️ Borrando...' : '🗑️ Borrar Todos los Registros'}
+          {borrando ? '🗑️ Borrando 2025...' : '🗑️ Borrar Registros 2025'}
         </button>
       )}
       
