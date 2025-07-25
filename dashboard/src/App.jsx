@@ -12,6 +12,7 @@ import SucursalesAlerta from "./pages/SucursalesAlerta";
 import Aclaraciones from "./pages/Aclaraciones";
 import IngresarAclaraciones from "./pages/IngresarAclaraciones";
 import ValidadorTelefonos from "./pages/ValidadorTelefonos";
+import DashboardSucursales from "./pages/DashboardSucursales";
 
 function App() {
   return (
@@ -30,6 +31,7 @@ function App() {
         <Route path="/aclaraciones" element={<Aclaraciones />} />
         <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
         <Route path="/validador-telefonos" element={<ValidadorTelefonos />} />
+        <Route path="/dashboard-sucursales" element={<DashboardSucursales />} />
       </Routes>
     </Router>
   );

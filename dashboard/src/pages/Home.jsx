@@ -103,6 +103,12 @@ export default function Home() {
           >
             📱 Validador de Teléfonos Duplicados
           </Link>
+          <Link
+            to="/dashboard-sucursales"
+            className="bg-gradient-to-r from-cyan-700 via-blue-400 to-indigo-400 animate-gradient-x text-white font-semibold py-6 px-6 rounded-xl shadow-xl text-center text-lg transition hover:scale-105"
+          >
+            🏢 Dashboard Sucursales - Teléfonos Duplicados
+          </Link>
         </div>
         <div className="flex flex-col md:flex-row justify-center gap-6 mt-4">
           <Link
