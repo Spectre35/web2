@@ -300,7 +300,7 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
   }
 });
 
-// ✅ Endpoint para borrar todos los registros de una tabla
+// ✅ Endpoint para borrar registros del año 2025 de una tabla
 app.delete("/delete-all/:tabla", async (req, res) => {
   const tabla = req.params.tabla;
   
@@ -312,25 +312,78 @@ app.delete("/delete-all/:tabla", async (req, res) => {
   }
   
   try {
-    console.log(`🗑️ Borrando todos los registros de la tabla: ${tabla}`);
+    console.log(`🗑️ [INICIO] Solicitud de borrado para tabla: ${tabla} - ${new Date().toISOString()}`);
     
-    // Primero contar los registros que se van a borrar
-    const countResult = await pool.query(`SELECT COUNT(*) FROM "${tabla}"`);
-    const totalRegistros = parseInt(countResult.rows[0].count);
+    // Determinar la columna de fecha según la tabla
+    const columnaFecha = tabla === 'caja' ? 'Fecha' : 'FechaCompra';
+    console.log(`📅 Columna de fecha detectada: ${columnaFecha}`);
     
-    // Borrar todos los registros
-    const deleteResult = await pool.query(`DELETE FROM "${tabla}"`);
+    // PROTECCIÓN 1: Verificar distribución de años ANTES de borrar
+    const allYearsResult = await pool.query(`
+      SELECT EXTRACT(YEAR FROM "${columnaFecha}") as año, COUNT(*) as total
+      FROM "${tabla}"
+      GROUP BY EXTRACT(YEAR FROM "${columnaFecha}")
+      ORDER BY año
+    `);
     
-    console.log(`✅ ${totalRegistros} registros borrados de ${tabla}`);
+    console.log(`📊 Distribución actual en ${tabla}:`);
+    allYearsResult.rows.forEach(row => {
+      console.log(`   - Año ${row.año}: ${row.total} registros`);
+    });
+    
+    // PROTECCIÓN 2: Contar específicamente registros del 2025
+    const countResult = await pool.query(`
+      SELECT COUNT(*) FROM "${tabla}" 
+      WHERE EXTRACT(YEAR FROM "${columnaFecha}") = 2025
+    `);
+    const totalRegistros2025 = parseInt(countResult.rows[0].count);
+    
+    console.log(`🎯 Registros del 2025 encontrados: ${totalRegistros2025}`);
+    
+    if (totalRegistros2025 === 0) {
+      console.log(`⚠️ No hay registros del 2025 para borrar en ${tabla}`);
+      return res.json({ 
+        message: `⚠️ No se encontraron registros del año 2025 en ${tabla}`,
+        registrosBorrados: 0,
+        año: 2025,
+        tabla: tabla
+      });
+    }
+    
+    // PROTECCIÓN 3: Verificar que el query incluya WHERE antes de ejecutar
+    const deleteQuery = `DELETE FROM "${tabla}" WHERE EXTRACT(YEAR FROM "${columnaFecha}") = 2025`;
+    console.log(`🔍 Query que se ejecutará: ${deleteQuery}`);
+    
+    // PROTECCIÓN 4: Verificar que el query contenga WHERE y 2025
+    if (!deleteQuery.includes('WHERE') || !deleteQuery.includes('2025')) {
+      throw new Error('SEGURIDAD: Query de borrado no contiene protecciones necesarias');
+    }
+    
+    // EJECUTAR BORRADO PROTEGIDO
+    const deleteResult = await pool.query(deleteQuery);
+    
+    console.log(`✅ BORRADO COMPLETADO: ${deleteResult.rowCount} registros del año 2025 borrados de ${tabla}`);
+    
+    // PROTECCIÓN 5: Verificar estado después del borrado
+    const afterResult = await pool.query(`
+      SELECT COUNT(*) as total FROM "${tabla}"
+    `);
+    console.log(`📊 Total de registros restantes en ${tabla}: ${afterResult.rows[0].total}`);
     
     res.json({ 
-      message: `✅ ${totalRegistros} registros borrados exitosamente de ${tabla}`,
-      registrosBorrados: totalRegistros
+      message: `✅ ${deleteResult.rowCount} registros del año 2025 borrados exitosamente de ${tabla}`,
+      registrosBorrados: deleteResult.rowCount,
+      año: 2025,
+      tabla: tabla,
+      registrosRestantes: afterResult.rows[0].total
     });
+    
   } catch (error) {
-    console.error(`❌ Error al borrar registros de ${tabla}:`, error);
+    console.error(`❌ ERROR CRÍTICO en borrado de ${tabla}:`, error);
     res.status(500).json({ 
-      error: `Error al borrar registros: ${error.message}` 
+      error: `Error al borrar registros: ${error.message}`,
+      tabla: tabla,
+      timestamp: new Date().toISOString()
     });
   }
 });
@@ -1274,7 +1327,9 @@ app.get("/sucursales-alerta", async (req, res) => {
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%paycode%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%bsd%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%wompi%' OR
-            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%stripeauto%'
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%stripeauto%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%prosa%' 
+            AND "Cobro" LIKE '%Cargos Automaticos%'
           )
       ),
       ultima_por_sucursal AS (
