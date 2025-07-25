@@ -82,7 +82,16 @@ export default function Caja() {
     window.location.href = `${API_BASE_URL}/caja/exportar?${params.toString()}`;
   };
 
-  const columnas = datos.length > 0 ? Object.keys(datos[0]) : [];
+  // Definir el orden específico de las columnas para la tabla Caja
+  const ordenColumnasDeseado = [
+    "id", "Cliente", "Fecha", "TipoComprobante", "Cobro", "Total", 
+    "Concepto", "Sucursal", "FolioRecibo", "es_euroskin_str", 
+    "FormaPago", "AplicadoA", "Terminal"
+  ];
+
+  // Obtener columnas disponibles y ordenarlas según el orden deseado
+  const columnasDisponibles = datos.length > 0 ? Object.keys(datos[0]) : [];
+  const columnas = ordenColumnasDeseado.filter(col => columnasDisponibles.includes(col));
 
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
 
@@ -106,146 +115,139 @@ export default function Caja() {
         </span>
 
         {/* Filtros */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-4">
-          <input
-            type="text"
-            placeholder="Buscar cliente..."
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
-          <select
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={sucursal}
-            onChange={(e) => setSucursal(e.target.value)}
-          >
-            <option value="">Todas las sucursales</option>
-            {sucursales.map((suc, i) => (
-              <option key={i} value={suc}>
-                {suc}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={fechaInicio}
-            onChange={(e) => setFechaInicio(e.target.value)}
-          />
-          <input
-            type="date"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={fechaFin}
-            onChange={(e) => setFechaFin(e.target.value)}
-          />
-          <input
-            type="number"
-            placeholder="Monto mínimo"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={montoMin}
-            onChange={(e) => setMontoMin(e.target.value)}
-          />
-          <input
-            type="number"
-            placeholder="Monto máximo"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={montoMax}
-            onChange={(e) => setMontoMax(e.target.value)}
-          />
+        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 rounded-lg p-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+            <input
+              type="text"
+              placeholder="Buscar cliente..."
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+            <select
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={sucursal}
+              onChange={(e) => setSucursal(e.target.value)}
+            >
+              <option value="">Todas las sucursales</option>
+              {sucursales.map((suc, i) => (
+                <option key={i} value={suc}>
+                  {suc}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={fechaInicio}
+              onChange={(e) => setFechaInicio(e.target.value)}
+            />
+            <input
+              type="date"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={fechaFin}
+              onChange={(e) => setFechaFin(e.target.value)}
+            />
+            <input
+              type="number"
+              placeholder="Monto mínimo"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={montoMin}
+              onChange={(e) => setMontoMin(e.target.value)}
+            />
+            <input
+              type="number"
+              placeholder="Monto máximo"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={montoMax}
+              onChange={(e) => setMontoMax(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Botones de acción */}
+        <div className="flex gap-4 mb-6">
           <button
             onClick={() => {
               setPagina(1);
               obtenerDatos();
             }}
-            className="bg-gradient-to-r from-blue-600 to-blue-400 text-white p-2 rounded shadow hover:from-blue-700 hover:to-blue-500 col-span-2 transition"
+            className="bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-semibold shadow-lg transition-all duration-300"
           >
-            Filtrar
+            🔍 Buscar
           </button>
           <button
             onClick={exportarExcel}
-            className="bg-gradient-to-r from-green-600 to-green-400 text-white p-2 rounded shadow hover:from-green-700 hover:to-green-500 col-span-2 transition"
+            className="bg-gradient-to-r from-green-600 to-green-400 hover:from-green-700 hover:to-green-500 text-white px-6 py-2 rounded-lg font-semibold shadow-lg transition-all duration-300"
           >
             📥 Exportar a Excel
           </button>
         </div>
 
         {/* Tabla dinámica */}
-        <div className="overflow-x-auto">
-          {cargando ? (
-            <p className="text-center text-gray-400">Cargando...</p>
-          ) : (
-            <table className="w-full bg-gray-900/80 shadow-md rounded text-sm text-gray-100">
-              <thead>
-                <tr className="bg-gray-800/80 text-left">
-                  {columnas.map((col, i) => (
-                    <th key={i} className="p-2 font-semibold">
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {datos.length > 0 ? (
-                  datos.map((row, i) => (
-                    <tr key={i} className="border-b border-gray-800 hover:bg-gray-800/60">
-                      {columnas.map((col, j) => (
-                        <td key={j} className="p-2">
-                          {row[col]?.toString()}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={columnas.length}
-                      className="text-center p-4 text-gray-500"
-                    >
-                      No hay resultados
-                    </td>
+        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 rounded-lg overflow-hidden">
+          <div className="overflow-x-auto">
+            {cargando ? (
+              <div className="p-8 text-center">
+                <div className="text-gray-400 text-lg">Cargando...</div>
+              </div>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-gray-700/50 text-left">
+                    {columnas.map((col, i) => (
+                      <th key={i} className="p-3 font-semibold text-gray-200">
+                        {col}
+                      </th>
+                    ))}
                   </tr>
-                )}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {datos.length > 0 ? (
+                    datos.map((row, i) => (
+                      <tr key={i} className="border-b border-gray-700/30 hover:bg-gray-700/30 transition-colors">
+                        {columnas.map((col, j) => (
+                          <td key={j} className="p-3 text-gray-300">
+                            {row[col]?.toString()}
+                          </td>
+                        ))}
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td
+                        colSpan={columnas.length}
+                        className="text-center p-8 text-gray-500"
+                      >
+                        No hay resultados para mostrar
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
 
         {/* Paginación */}
-        <div className="flex justify-center items-center gap-2 mt-4">
+        <div className="flex justify-center items-center gap-4 mt-6">
           <button
             onClick={() => setPagina((p) => Math.max(p - 1, 1))}
-            className="bg-gray-700/80 px-3 py-1 rounded hover:bg-gray-600/80 text-white"
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
             disabled={pagina === 1}
           >
-            ◀ Anterior
+            ← Anterior
           </button>
-          <span className="font-semibold text-gray-200">
-            Página {pagina} de {totalPaginas}
+          <span className="text-gray-300 font-medium">
+            Página {pagina} de {totalPaginas} | Total: {total} registros
           </span>
           <button
             onClick={() => setPagina((p) => Math.min(p + 1, totalPaginas))}
-            className="bg-gray-700/80 px-3 py-1 rounded hover:bg-gray-600/80 text-white"
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
             disabled={pagina === totalPaginas}
           >
-            Siguiente ▶
+            Siguiente →
           </button>
-        </div>
-        <div className="flex justify-end items-center mb-2 gap-2">
-          <span className="text-gray-200">Página:</span>
-          <select
-            className="bg-gray-900/60 text-gray-100 rounded p-1 border border-gray-700"
-            value={pagina}
-            onChange={(e) => setPagina(Number(e.target.value))}
-          >
-            {Array.from({ length: totalPaginas }, (_, i) => (
-              <option key={i + 1} value={i + 1}>
-                {i + 1}
-              </option>
-            ))}
-          </select>
-          <span className="text-gray-400 text-sm">
-            de {totalPaginas} ({total} registros)
-          </span>
         </div>
       </div>
     </div>

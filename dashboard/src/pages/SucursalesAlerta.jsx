@@ -16,14 +16,44 @@ export default function SucursalesAlerta() {
   const cargarAlertas = async () => {
     try {
       setLoading(true);
+      console.log('🔍 Intentando conectar a:', `${API_BASE_URL}/sucursales-alerta`);
       const response = await axios.get(`${API_BASE_URL}/sucursales-alerta`);
+      console.log('✅ Respuesta recibida:', response.data);
       setAlertas(response.data);
       setError(null);
     } catch (err) {
-      console.error('Error al cargar alertas:', err);
-      setError('Error al cargar las alertas de sucursales');
+      console.error('❌ Error al cargar alertas:', err);
+      console.error('📊 Detalles del error:', {
+        message: err.message,
+        status: err.response?.status,
+        statusText: err.response?.statusText,
+        data: err.response?.data
+      });
+      
+      let errorMessage = 'Error al cargar las alertas de sucursales';
+      if (err.code === 'ECONNREFUSED') {
+        errorMessage = 'No se puede conectar al servidor. Verifica que esté funcionando en el puerto 3000.';
+      } else if (err.response?.status === 404) {
+        errorMessage = 'El endpoint /sucursales-alerta no fue encontrado en el servidor.';
+      } else if (err.response?.status >= 500) {
+        errorMessage = 'Error interno del servidor. Revisa los logs del backend.';
+      }
+      
+      setError(errorMessage);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const probarConexion = async () => {
+    try {
+      console.log('🧪 Probando conexión con endpoint de test...');
+      const response = await axios.get(`${API_BASE_URL}/sucursales-alerta-test`);
+      console.log('✅ Test exitoso:', response.data);
+      alert('✅ Conexión exitosa con el servidor!\nPuedes revisar la consola para más detalles.');
+    } catch (err) {
+      console.error('❌ Test falló:', err);
+      alert('❌ Error en la conexión:\n' + (err.message || 'Error desconocido'));
     }
   };
 
@@ -54,7 +84,33 @@ export default function SucursalesAlerta() {
   if (error) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 flex items-center justify-center">
-        <div className="text-red-400 text-xl">{error}</div>
+        <div className="bg-red-900/20 border border-red-500 rounded-lg p-8 max-w-md">
+          <div className="text-red-400 text-xl mb-4">❌ Error de Conexión</div>
+          <div className="text-gray-300 mb-6">{error}</div>
+          <div className="flex gap-4">
+            <button
+              onClick={cargarAlertas}
+              className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg font-medium transition"
+            >
+              🔄 Reintentar
+            </button>
+            <button
+              onClick={probarConexion}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition"
+            >
+              🧪 Probar Conexión
+            </button>
+            <Link
+              to="/"
+              className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-lg font-medium transition"
+            >
+              🏠 Volver al Home
+            </Link>
+          </div>
+          <div className="mt-4 text-xs text-gray-500">
+            URL: {API_BASE_URL}/sucursales-alerta
+          </div>
+        </div>
       </div>
     );
   }
@@ -148,7 +204,7 @@ export default function SucursalesAlerta() {
                         <h3 className="text-white text-xl font-bold mb-2">
                           🏢 {alerta.Sucursal}
                         </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                        <div className="grid grid-cols-1 md:grid-cols-5 gap-4 text-sm">
                           <div>
                             <span className="text-gray-400">Responsable:</span>
                             <span className="text-white ml-2">{alerta.nombre_slack}</span>
@@ -158,9 +214,15 @@ export default function SucursalesAlerta() {
                             <span className="text-white ml-2">{alerta.ultimo_procesador}</span>
                           </div>
                           <div>
-                            <span className="text-gray-400">Última venta:</span>
+                            <span className="text-gray-400">Último cobro:</span>
                             <span className="text-white ml-2">
                               {new Date(alerta.ultima_fecha).toLocaleDateString()}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-400">Última venta:</span>
+                            <span className="text-white ml-2">
+                              {alerta.ultima_venta ? new Date(alerta.ultima_venta).toLocaleDateString() : 'Sin registro'}
                             </span>
                           </div>
                           <div>

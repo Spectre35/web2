@@ -1,0 +1,49 @@
+/* Estilos de scrollbar optimizados para mejor rendimiento */
+
+/* Scrollbar para contenedores de tablas - OPTIMIZADO */
+.table-container::-webkit-scrollbar,
+.scroll-top::-webkit-scrollbar {
+  height: 6px;
+  width: 6px;
+}
+
+.table-container::-webkit-scrollbar-track,
+.scroll-top::-webkit-scrollbar-track {
+  background: rgba(55, 65, 81, 0.2);
+  border-radius: 3px;
+}
+
+.table-container::-webkit-scrollbar-thumb,
+.scroll-top::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 3px;
+  transition: none; /* Removemos transiciones para mejor rendimiento */
+}
+
+.table-container::-webkit-scrollbar-thumb:hover,
+.scroll-top::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+/* Optimización de scroll - sin smooth scrolling */
+.table-container,
+.scroll-top {
+  scroll-behavior: auto; /* Cambiado de smooth a auto para mejor rendimiento */
+  will-change: scroll-position; /* Optimización GPU */
+}
+
+/* Contenedor de scroll optimizado */
+.scroll-sync-container {
+  position: relative;
+  contain: layout style paint; /* Optimización CSS containment */
+}
+
+/* Removemos animaciones costosas en tablas grandes */
+.enhanced-table tbody tr {
+  transition: none; /* Sin transiciones en tablas grandes */
+}
+
+/* Solo hover simple sin transformaciones */
+.enhanced-table tbody tr:hover {
+  background-color: rgba(55, 65, 81, 0.3);
+}

@@ -606,17 +606,6 @@ export default function Recuperacion() {
                         else if (s.porcentajeRecuperado >= 51) color = "bg-green-300 text-gray-900";
                         else if (s.porcentajeRecuperado >= 36) color = "bg-yellow-400 text-gray-900";
                         
-                        // Función para formatear montos de forma compacta
-                        const formatCompacto = (monto) => {
-                          const num = Number(monto);
-                          if (num >= 1000000) {
-                            return `$${(num / 1000000).toFixed(1)}M`;
-                          } else if (num >= 1000) {
-                            return `$${(num / 1000).toFixed(0)}K`;
-                          }
-                          return `$${num.toLocaleString()}`;
-                        };
-                        
                         return (
                           <tr key={i} className={`${i % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-600/30 transition-colors duration-200`}>
                             <td className="p-2 text-gray-200 font-medium border-r border-gray-600/20 text-xs">
@@ -641,27 +630,27 @@ export default function Recuperacion() {
                             </td>
                             <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
                               <span className="text-orange-300 font-medium" title={formatoMoneda(s.ventasAdeudo)}>
-                                {formatCompacto(s.ventasAdeudo)}
+                                {formatoMoneda(s.ventasAdeudo)}
                               </span>
                             </td>
                             <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
                               <span className="text-green-300 font-medium" title={formatoMoneda(s.cantidadPagada)}>
-                                {formatCompacto(s.cantidadPagada)}
+                                {formatoMoneda(s.cantidadPagada)}
                               </span>
                             </td>
                             <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
                               <span className="text-purple-300 font-medium" title={formatoMoneda(s.anticipo)}>
-                                {formatCompacto(s.anticipo)}
+                                {formatoMoneda(s.anticipo)}
                               </span>
                             </td>
                             <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
                               <span className="text-cyan-300 font-semibold" title={formatoMoneda(s.totalPagado)}>
-                                {formatCompacto(s.totalPagado)}
+                                {formatoMoneda(s.totalPagado)}
                               </span>
                             </td>
                             <td className="p-2 text-gray-200 border-r border-gray-600/20 text-xs text-right">
                               <span className="text-yellow-300 font-semibold" title={formatoMoneda(s.ventasTotal)}>
-                                {formatCompacto(s.ventasTotal)}
+                                {formatoMoneda(s.ventasTotal)}
                               </span>
                             </td>
                             <td className={`p-2 font-bold text-xs ${color} rounded-md text-center`}>

@@ -259,7 +259,21 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
         obj[col] = formatearDatos(tabla, col, valor);
       });
 
-      batch.push(obj);
+      // 🧹 Filtrar registros donde todas las columnas son null, undefined, 'null' o vacías
+      const valoresValidos = Object.values(obj).filter(valor => 
+        valor !== null && 
+        valor !== undefined && 
+        valor !== 'null' && 
+        valor !== '' && 
+        valor !== 'undefined'
+      );
+
+      // Solo agregar al batch si tiene al menos un valor válido
+      if (valoresValidos.length > 0) {
+        batch.push(obj);
+      } else {
+        console.log(`⚠️ Registro ${i} omitido: todas las columnas son null/vacías`);
+      }
 
       if (batch.length === batchSize) {
         await insertarBatch(tabla, batch);
@@ -283,6 +297,41 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
   } catch (error) {
     console.error(`❌ Error al actualizar ${tabla}:`, error);
     res.status(500).send("Error al insertar datos");
+  }
+});
+
+// ✅ Endpoint para borrar todos los registros de una tabla
+app.delete("/delete-all/:tabla", async (req, res) => {
+  const tabla = req.params.tabla;
+  
+  // Validar que solo se pueda borrar de caja y ventas
+  if (tabla !== 'caja' && tabla !== 'ventas') {
+    return res.status(400).json({ 
+      error: "Solo se permite borrar registros de las tablas 'caja' y 'ventas'" 
+    });
+  }
+  
+  try {
+    console.log(`🗑️ Borrando todos los registros de la tabla: ${tabla}`);
+    
+    // Primero contar los registros que se van a borrar
+    const countResult = await pool.query(`SELECT COUNT(*) FROM "${tabla}"`);
+    const totalRegistros = parseInt(countResult.rows[0].count);
+    
+    // Borrar todos los registros
+    const deleteResult = await pool.query(`DELETE FROM "${tabla}"`);
+    
+    console.log(`✅ ${totalRegistros} registros borrados de ${tabla}`);
+    
+    res.json({ 
+      message: `✅ ${totalRegistros} registros borrados exitosamente de ${tabla}`,
+      registrosBorrados: totalRegistros
+    });
+  } catch (error) {
+    console.error(`❌ Error al borrar registros de ${tabla}:`, error);
+    res.status(500).json({ 
+      error: `Error al borrar registros: ${error.message}` 
+    });
   }
 });
 
@@ -476,11 +525,24 @@ if (tabla === "aclaraciones") {
       if (tabla === "ventas") columnaFecha = "FechaCompra";
       if (tabla === "aclaraciones") columnaFecha = "fecha_de_peticion";
       
-      const result = await pool.query(
-        `SELECT MAX("${columnaFecha}") AS fecha FROM "${tabla}"`
-      );
+      let query;
+      if (tabla === "aclaraciones") {
+        // Para aclaraciones, mantener filtros por los 13 NULL que dejamos
+        query = `SELECT MAX("${columnaFecha}") AS fecha FROM "${tabla}" 
+                 WHERE "${columnaFecha}" IS NOT NULL`;
+      } else {
+        // Para caja, cargos_auto y ventas - fechas limpias, conversión directa
+        if (columnaFecha === "FechaCompra") {
+          query = `SELECT MAX("${columnaFecha}"::timestamp::date) AS fecha FROM "${tabla}"`;
+        } else {
+          query = `SELECT MAX("${columnaFecha}"::timestamp::date) AS fecha FROM "${tabla}"`;
+        }
+      }
+      
+      const result = await pool.query(query);
       res.json({ fecha: result.rows[0].fecha });
     } catch (err) {
+      console.error(`Error al obtener última fecha de ${tabla}:`, err);
       res.json({ fecha: null });
     }
   });
@@ -865,11 +927,11 @@ app.get("/ventas/resumen-sucursal", async (req, res) => {
       COALESCE(SUM("CostoPaquete"::numeric),0) AS ventasTotal,
       COALESCE(SUM(CASE WHEN "EstatusCobranza" = 'VENCIDO' THEN "MontoVencido"::numeric ELSE 0 END),0) AS montoVencido,
       MIN("Bloque") AS bloque,
-      MAX("FechaCompra") AS ultima_venta
+      MAX("FechaCompra"::timestamp::date) AS ultima_venta
     FROM "ventas"
     ${whereClause}
     GROUP BY "Sucursal"
-    HAVING MAX("FechaCompra") >= CURRENT_DATE - INTERVAL '2 months'
+    HAVING MAX("FechaCompra"::timestamp::date) >= CURRENT_DATE - INTERVAL '2 months'
   `;
 
   try {
@@ -1079,7 +1141,7 @@ app.get("/cargos_auto/procesadores-alerta", async (req, res) => {
 
     // Excluye todos los que contienen "link de pago"
     const procesadoresResult = await pool.query(
-      `SELECT "Cobrado_Por", MAX("Fecha"::date) AS ultima_fecha
+      `SELECT "Cobrado_Por", MAX("Fecha"::timestamp::date) AS ultima_fecha
        FROM "cargos_auto"
        WHERE COALESCE("TotalMxn"::numeric, 0) > 0
        GROUP BY "Cobrado_Por"`
@@ -1183,7 +1245,6 @@ app.get("/sucursal-bloque", async (req, res) => {
 
 app.get("/sucursales-alerta", async (req, res) => {
   try {
-    console.time("sucursales-alerta-query"); // 📊 Timing para debugging
     
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
@@ -1195,7 +1256,10 @@ app.get("/sucursales-alerta", async (req, res) => {
           "Sucursal",
           "Fecha",
           "Cobrado_Por",
-          ROW_NUMBER() OVER (PARTITION BY "Sucursal" ORDER BY "Fecha" DESC) as rn
+          ROW_NUMBER() OVER (
+            PARTITION BY "Sucursal" 
+            ORDER BY "Fecha"::timestamp::date DESC
+          ) as rn
         FROM "cargos_auto"
         WHERE "Sucursal" IS NOT NULL 
           AND COALESCE("TotalMxn"::numeric, 0) > 0
@@ -1208,13 +1272,7 @@ app.get("/sucursales-alerta", async (req, res) => {
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%kushki%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%netpay%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%paycode%' OR
-            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%clip%' OR
-            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%bancolombia%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%bsd%' OR
-            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%credibanco%' OR
-            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%transbank%' OR
-            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%mercadopago%' OR
-            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%sistecredito%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%wompi%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%stripeauto%'
           )
@@ -1230,18 +1288,28 @@ app.get("/sucursales-alerta", async (req, res) => {
       sucursales_con_alertas AS (
         SELECT 
           ups.*,
-          (CURRENT_DATE - ups.ultima_fecha::date) as dias_sin_actividad
+          (CURRENT_DATE - ups.ultima_fecha::timestamp::date) as dias_sin_actividad
         FROM ultima_por_sucursal ups
-        WHERE (CURRENT_DATE - ups.ultima_fecha::date) BETWEEN 2 AND 30
+        WHERE (CURRENT_DATE - ups.ultima_fecha::timestamp::date) BETWEEN 2 AND 30
+      ),
+      ultima_venta_por_sucursal AS (
+        SELECT 
+          "Sucursal",
+          MAX("FechaCompra"::timestamp::date) as ultima_venta
+        FROM "ventas"
+        WHERE "Sucursal" IS NOT NULL
+        GROUP BY "Sucursal"
       )
       SELECT 
         sca."Sucursal",
         COALESCE(us."slack", 'Sin asignar') as nombre_slack,
         sca.ultima_fecha,
         sca.ultimo_procesador,
-        sca.dias_sin_actividad
+        sca.dias_sin_actividad,
+        uvs.ultima_venta
       FROM sucursales_con_alertas sca
       LEFT JOIN "usuarios_slack" us ON us."sucursal" = sca."Sucursal"
+      LEFT JOIN ultima_venta_por_sucursal uvs ON uvs."Sucursal" = sca."Sucursal"
       ORDER BY sca.dias_sin_actividad DESC
     `;
 
@@ -1253,10 +1321,10 @@ app.get("/sucursales-alerta", async (req, res) => {
       nombre_slack: row.nombre_slack,
       ultima_fecha: row.ultima_fecha,
       ultimo_procesador: row.ultimo_procesador,
-      diasSinActividad: parseInt(row.dias_sin_actividad)
+      diasSinActividad: parseInt(row.dias_sin_actividad),
+      ultima_venta: row.ultima_venta
     }));
 
-    console.log(`✅ Sucursales-alerta: ${alertas.length} alertas encontradas`);
     res.json(alertas);
   } catch (err) {
     console.error("Error en sucursales-alerta:", err);
@@ -1733,6 +1801,163 @@ app.get(`/cargos_auto/exportar`, async (req, res) => {
     if (!res.headersSent) {
       res.status(500).send("Error al exportar datos");
     }
+  }
+});
+
+// ================= 📱 VALIDADOR DE TELÉFONOS DUPLICADOS MEJORADO =================
+app.get("/validar-telefonos", async (req, res) => {
+  try {
+    console.log("🔍 Iniciando validación de teléfonos individuales...");
+    
+    // Query mejorada que separa números múltiples para validación individual
+    const query = `
+      WITH telefonos_expandidos AS (
+        -- Expandir números con barras a registros individuales
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              -- Si tiene barra, crear una fila para cada número
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original,
+          'primer_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+        
+        UNION ALL
+        
+        -- Segunda parte de números con barra
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original,
+          'segundo_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+      ),
+      telefonos_duplicados AS (
+        SELECT 
+          telefono_individual,
+          COUNT(DISTINCT cliente) as clientes_distintos,
+          COUNT(*) as veces_usado,
+          STRING_AGG(DISTINCT cliente, ' | ') as lista_clientes,
+          STRING_AGG(DISTINCT sucursal, ' | ') as sucursales,
+          STRING_AGG(DISTINCT telefono_original, ' | ') as telefonos_originales
+        FROM telefonos_expandidos
+        WHERE telefono_individual IS NOT NULL 
+          AND telefono_individual != ''
+          AND telefono_individual != '0'
+          AND telefono_individual NOT SIMILAR TO '^0+$'
+          AND telefono_individual NOT SIMILAR TO '^[0]*$'
+          AND LENGTH(telefono_individual) >= 4
+          AND telefono_individual ~ '[1-9]'
+        GROUP BY telefono_individual
+        HAVING COUNT(DISTINCT cliente) > 1
+      )
+      SELECT 
+        telefono_individual,
+        clientes_distintos,
+        veces_usado,
+        lista_clientes,
+        sucursales,
+        telefonos_originales
+      FROM telefonos_duplicados
+      ORDER BY clientes_distintos DESC, veces_usado DESC
+    `;
+
+    const result = await pool.query(query);
+    
+    console.log(`✅ Encontrados ${result.rows.length} números individuales con clientes duplicados`);
+    
+    // Procesar los resultados para mejor formato
+    const telefonosDuplicados = result.rows.map(row => ({
+      telefono: row.telefono_individual,
+      clientesDistintos: row.clientes_distintos,
+      vecesUsado: row.veces_usado,
+      clientes: row.lista_clientes.split(' | '),
+      sucursales: row.sucursales.split(' | '),
+      telefonosOriginales: row.telefonos_originales.split(' | '),
+      riesgo: row.clientes_distintos > 4 ? 'Alto' : 
+              row.clientes_distintos > 2 ? 'Medio' : 'Bajo'
+    }));
+
+    // Estadísticas adicionales
+    const estadisticas = {
+      alto_riesgo: telefonosDuplicados.filter(t => t.riesgo === 'Alto').length,
+      medio_riesgo: telefonosDuplicados.filter(t => t.riesgo === 'Medio').length,
+      bajo_riesgo: telefonosDuplicados.filter(t => t.riesgo === 'Bajo').length
+    };
+
+    res.json({
+      total: telefonosDuplicados.length,
+      estadisticas: estadisticas,
+      datos: telefonosDuplicados
+    });
+
+  } catch (error) {
+    console.error("❌ Error al validar teléfonos:", error);
+    res.status(500).json({ 
+      error: "Error al validar teléfonos duplicados",
+      message: error.message 
+    });
+  }
+});
+
+// Endpoint para obtener estadísticas de teléfonos
+app.get("/estadisticas-telefonos", async (req, res) => {
+  try {
+    const stats = await pool.query(`
+      SELECT 
+        COUNT(*) as total_registros,
+        COUNT(DISTINCT "Telefono") as telefonos_unicos,
+        COUNT(DISTINCT "Cliente") as clientes_unicos,
+        COUNT(*) - COUNT(DISTINCT "Telefono") as telefonos_duplicados
+      FROM "ventas"
+      WHERE "Telefono" IS NOT NULL 
+        AND "Telefono" != '' 
+        AND "Telefono" != 'null'
+        AND "Telefono" != '/'
+        AND "Telefono" NOT LIKE '%/ 0%'
+        AND "Telefono" NOT LIKE '0%'
+        AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+        AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+        AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+        AND "Cliente" IS NOT NULL 
+        AND "Cliente" != '' 
+        AND "Cliente" != 'null'
+    `);
+
+    res.json(stats.rows[0]);
+  } catch (error) {
+    console.error("❌ Error al obtener estadísticas:", error);
+    res.status(500).json({ error: "Error al obtener estadísticas" });
   }
 });
 

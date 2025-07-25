@@ -8,6 +8,10 @@ export default function UploadFile({ tabla }) {
   const [mensaje, setMensaje] = useState("");
   const [progreso, setProgreso] = useState(0);
   const [tiempoRestante, setTiempoRestante] = useState(null);
+  const [borrando, setBorrando] = useState(false);
+  const [archivosMultiples, setArchivosMultiples] = useState([]);
+  const [subiendoMultiple, setSubiendoMultiple] = useState(false);
+  const [progresoMultiple, setProgresoMultiple] = useState({});
 
   // 📋 Nombres amigables para las tablas
   const nombresTablas = {
@@ -33,6 +37,69 @@ export default function UploadFile({ tabla }) {
     return () => evtSource.close();
   }, [subiendo, tabla]);
 
+  // Función para borrar todos los registros
+  const borrarTodosLosRegistros = async () => {
+    if (!confirm(`¿Estás seguro de que quieres borrar TODOS los registros de la tabla ${nombreAmigable}?`)) {
+      return;
+    }
+    
+    setBorrando(true);
+    setMensaje("");
+    
+    try {
+      const res = await axios.delete(`${API_BASE_URL}/delete-all/${tabla}`);
+      setMensaje(`✅ ${res.data.message || 'Registros borrados exitosamente'}`);
+    } catch (err) {
+      setMensaje(`❌ Error al borrar registros: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setBorrando(false);
+    }
+  };
+
+  // Función para manejar múltiples archivos (solo para caja)
+  const onDropMultiple = useCallback(
+    async (acceptedFiles) => {
+      if (!acceptedFiles.length) return;
+      if (tabla !== 'caja') return; // Solo para tabla caja
+      
+      if (acceptedFiles.length > 13) {
+        setMensaje("❌ Máximo 13 archivos permitidos");
+        return;
+      }
+      
+      setArchivosMultiples(acceptedFiles);
+      setSubiendoMultiple(true);
+      setMensaje("");
+      setProgresoMultiple({});
+      
+      // Subir archivos uno por uno
+      for (let i = 0; i < acceptedFiles.length; i++) {
+        const archivo = acceptedFiles[i];
+        const formData = new FormData();
+        formData.append("archivo", archivo);
+        
+        try {
+          setProgresoMultiple(prev => ({ ...prev, [i]: 'subiendo' }));
+          
+          const res = await axios.post(
+            `${API_BASE_URL}/upload/${tabla}`,
+            formData,
+            { headers: { "Content-Type": "multipart/form-data" } }
+          );
+          
+          setProgresoMultiple(prev => ({ ...prev, [i]: 'completado' }));
+        } catch (err) {
+          setProgresoMultiple(prev => ({ ...prev, [i]: 'error' }));
+        }
+      }
+      
+      setSubiendoMultiple(false);
+      setMensaje("✅ Carga múltiple completada");
+    },
+    [tabla]
+  );
+
+  // Función original para un solo archivo
   const onDrop = useCallback(
     async (acceptedFiles) => {
       if (!acceptedFiles.length) return;
@@ -62,13 +129,28 @@ export default function UploadFile({ tabla }) {
     [tabla]
   );
 
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
+    onDrop: tabla === 'caja' ? onDropMultiple : onDrop,
+    multiple: tabla === 'caja'
+  });
 
   return (
     <div className="backdrop-blur-lg bg-white/10 p-6 rounded-xl shadow-xl flex flex-col items-center border border-white/20">
       <h2 className="font-bold mb-2 text-lg capitalize text-gray-100 drop-shadow">
         {nombreAmigable}
       </h2>
+      
+      {/* Botón para borrar todos los registros (solo para caja y ventas) */}
+      {(tabla === 'caja' || tabla === 'ventas') && (
+        <button
+          onClick={borrarTodosLosRegistros}
+          disabled={borrando}
+          className="mb-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-lg"
+        >
+          {borrando ? '🗑️ Borrando...' : '🗑️ Borrar Todos los Registros'}
+        </button>
+      )}
+      
       <div
         {...getRootProps()}
         className={`border-2 border-dashed rounded p-4 w-64 text-center cursor-pointer ${
@@ -79,13 +161,15 @@ export default function UploadFile({ tabla }) {
       >
         <input {...getInputProps()} />
         {isDragActive ? (
-          <p>Suelta el archivo aquí...</p>
+          <p>Suelta {tabla === 'caja' ? 'los archivos' : 'el archivo'} aquí...</p>
         ) : (
           <p>
-            Arrastra y suelta un archivo Excel aquí, o haz clic para seleccionar
+            Arrastra y suelta {tabla === 'caja' ? 'archivos Excel (máx. 13)' : 'un archivo Excel'} aquí, o haz clic para seleccionar
           </p>
         )}
       </div>
+      
+      {/* Progreso para archivo único */}
       {subiendo && (
         <div className="w-full mt-4">
           <div className="w-full bg-gray-700 rounded h-4">
@@ -105,6 +189,29 @@ export default function UploadFile({ tabla }) {
           </div>
         </div>
       )}
+      
+      {/* Progreso para múltiples archivos (solo caja) */}
+      {subiendoMultiple && tabla === 'caja' && (
+        <div className="w-full mt-4">
+          <h3 className="text-sm font-semibold text-gray-200 mb-2">
+            Subiendo archivos ({Object.keys(progresoMultiple).length}/{archivosMultiples.length})
+          </h3>
+          <div className="space-y-1">
+            {archivosMultiples.map((archivo, index) => (
+              <div key={index} className="flex items-center justify-between text-xs text-gray-300">
+                <span className="truncate max-w-40">{archivo.name}</span>
+                <span className="ml-2">
+                  {progresoMultiple[index] === 'subiendo' && '⏳ Subiendo...'}
+                  {progresoMultiple[index] === 'completado' && '✅ Completado'}
+                  {progresoMultiple[index] === 'error' && '❌ Error'}
+                  {!progresoMultiple[index] && '⏸️ En espera'}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      
       {mensaje && <div className="mt-4 text-center text-gray-200">{mensaje}</div>}
     </div>
   );

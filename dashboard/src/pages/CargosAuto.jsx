@@ -23,6 +23,8 @@ export default function CargosAuto() {
   const [fechaUltima, setFechaUltima] = useState("");
   const [alertaProcesadores, setAlertaProcesadores] = useState([]);
   const [mostrarAlerta, setMostrarAlerta] = useState(true);
+  const [alertaSucursales, setAlertaSucursales] = useState([]);
+  const [mostrarAlertaSucursales, setMostrarAlertaSucursales] = useState(true);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const limite = 1000;
@@ -48,7 +50,22 @@ export default function CargosAuto() {
         setAlertaProcesadores(res.data);
         setMostrarAlerta(res.data.length > 0);
       })
-      .catch((error) => console.error("Error al obtener alertas", error));
+      .catch((error) => {
+        console.error("Error al obtener alertas", error);
+      });
+  }, []);
+
+  // Nuevo: useEffect para obtener alertas de sucursales
+  useEffect(() => {
+    axios
+      .get(`${API_BASE_URL}/sucursales-alerta`)
+      .then((res) => {
+        setAlertaSucursales(res.data);
+        setMostrarAlertaSucursales(res.data.length > 0);
+      })
+      .catch((error) => {
+        console.error("Error al obtener alertas de sucursales", error);
+      });
   }, []);
 
   const obtenerSucursales = async () => {
@@ -111,6 +128,7 @@ export default function CargosAuto() {
       setCargando(false);
     } catch (error) {
       setCargando(false);
+      console.error('Error al obtener datos:', error);
     }
   };
 
@@ -363,36 +381,97 @@ export default function CargosAuto() {
         </button>
       </div>
 
-      {/* Alerta procesadores inactivos */}
-      {mostrarAlerta && alertaProcesadores.length > 0 && (
-        <div className="fixed top-8 left-1/2 transform -translate-x-1/2 z-50 bg-red-700/90 text-white p-6 rounded-xl shadow-xl font-bold min-w-[320px] max-w-[90vw]">
-          <div className="flex justify-between items-center mb-2">
-            <span>
-              ⚠️ Procesadores con baja actividad en los últimos 2 días:
-            </span>
-            <button
-              className="ml-4 text-white bg-red-900 rounded-full px-2 py-1 hover:bg-red-800 transition font-bold"
-              onClick={() => setMostrarAlerta(false)}
-              title="Cerrar alerta"
-            >
-              ✕
-            </button>
+      {/* Contenedor de alertas - bottom-right */}
+      <div className="fixed bottom-4 right-4 z-50 space-y-3 max-w-sm">
+        {/* Alerta sucursales inactivas */}
+        {mostrarAlertaSucursales && alertaSucursales.length > 0 && (
+          <div className="bg-orange-700/95 text-white p-4 rounded-lg shadow-xl font-medium">
+            <div className="flex justify-between items-start mb-2">
+              <div className="flex items-center">
+                <span className="mr-2">🏢</span>
+                <span className="font-semibold text-sm">
+                  Sucursales sin cobros:
+                </span>
+              </div>
+              <button
+                className="ml-2 text-white/80 hover:text-white bg-orange-800 rounded-full px-2 py-1 hover:bg-orange-700 transition text-xs"
+                onClick={() => setMostrarAlertaSucursales(false)}
+                title="Cerrar alerta"
+              >
+                ✕
+              </button>
+            </div>
+            <ul className="mt-2 space-y-1 text-sm">
+              {alertaSucursales.slice(0, 5).map((s, i) => (
+                <li key={i} className="flex items-center">
+                  <span className="w-2 h-2 bg-orange-400 rounded-full mr-2 flex-shrink-0"></span>
+                  <span>
+                    <strong>{s.Sucursal}:</strong>{" "}
+                    {s.diasSinActividad} día(s) sin cobros
+                    {s.ultima_fecha && (
+                      <span className="text-orange-200 ml-1">
+                        (último: {formatearFecha(s.ultima_fecha)})
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+              {alertaSucursales.length > 5 && (
+                <li className="text-orange-300 text-xs italic">
+                  ... y {alertaSucursales.length - 5} sucursales más
+                </li>
+              )}
+            </ul>
+            <div className="mt-3 pt-2 border-t border-orange-600">
+              <Link
+                to="/sucursales-alerta"
+                className="inline-flex items-center gap-2 bg-orange-600 hover:bg-orange-500 text-white px-3 py-2 rounded text-sm font-medium transition-colors"
+              >
+                📊 Ver Reporte Completo
+              </Link>
+            </div>
           </div>
-          <ul className="mt-2 list-disc ml-6">
-            {alertaProcesadores.map((p, i) => (
-              <li key={i}>
-                {p.Cobrado_Por}:{" "}
-                {p.monto_total !== undefined
-                  ? `$${Number(p.monto_total).toLocaleString()}`
-                  : ""}
-                {p.ultima_fecha
-                  ? ` (última: ${formatearFecha(p.ultima_fecha)})`
-                  : " (Sin registro)"}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+        )}
+
+        {/* Alerta procesadores inactivos */}
+        {mostrarAlerta && alertaProcesadores.length > 0 && (
+          <div className="bg-red-700/95 text-white p-4 rounded-lg shadow-xl font-medium">
+            <div className="flex justify-between items-start mb-2">
+              <div className="flex items-center">
+                <span className="mr-2">⚠️</span>
+                <span className="font-semibold text-sm">
+                  Procesadores con baja actividad (2 días):
+                </span>
+              </div>
+              <button
+                className="ml-2 text-white/80 hover:text-white bg-red-800 rounded-full px-2 py-1 hover:bg-red-700 transition text-xs"
+                onClick={() => setMostrarAlerta(false)}
+                title="Cerrar alerta"
+              >
+                ✕
+              </button>
+            </div>
+            <ul className="mt-2 space-y-1 text-sm">
+              {alertaProcesadores.map((p, i) => (
+                <li key={i} className="flex items-center">
+                  <span className="w-2 h-2 bg-red-400 rounded-full mr-2 flex-shrink-0"></span>
+                  <span>
+                    <strong>{p.Cobrado_Por}:</strong>{" "}
+                    {p.monto_total !== undefined
+                      ? `$${Number(p.monto_total).toLocaleString()}`
+                      : "Sin datos"}
+                    {p.ultima_fecha && (
+                      <span className="text-red-200 ml-1">
+                        (última: {formatearFecha(p.ultima_fecha)})
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

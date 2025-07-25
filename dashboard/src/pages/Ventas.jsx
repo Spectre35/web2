@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
@@ -20,6 +20,36 @@ export default function Ventas() {
   const [total, setTotal] = useState(0);
   const [fechaUltima, setFechaUltima] = useState("");
   const limite = 1000;
+
+  // Referencias para optimizar el scroll
+  const scrollTopRef = useRef(null);
+  const tableContainerRef = useRef(null);
+  const throttleTimeoutRef = useRef(null);
+
+  // Función de throttling para el scroll
+  const throttleScroll = useCallback((callback, delay = 16) => {
+    return (...args) => {
+      if (!throttleTimeoutRef.current) {
+        throttleTimeoutRef.current = requestAnimationFrame(() => {
+          callback(...args);
+          throttleTimeoutRef.current = null;
+        });
+      }
+    };
+  }, []);
+
+  // Handlers optimizados para scroll
+  const handleTopScroll = throttleScroll((e) => {
+    if (tableContainerRef.current && !tableContainerRef.current.isScrolling) {
+      tableContainerRef.current.scrollLeft = e.target.scrollLeft;
+    }
+  });
+
+  const handleTableScroll = throttleScroll((e) => {
+    if (scrollTopRef.current && !scrollTopRef.current.isScrolling) {
+      scrollTopRef.current.scrollLeft = e.target.scrollLeft;
+    }
+  });
 
   useEffect(() => {
     obtenerSucursales();
@@ -104,133 +134,130 @@ export default function Ventas() {
           {fechaUltima ? fechaUltima.slice(0, 10) : "Sin registros"}
         </span>
         {/* Filtros */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-4">
-          <input
-            type="text"
-            placeholder="Buscar cliente..."
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={busqueda}
-            onChange={(e) => setBusqueda(e.target.value)}
-          />
-          <select
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={sucursal}
-            onChange={(e) => setSucursal(e.target.value)}
-          >
-            <option value="">Todas las sucursales</option>
-            {sucursales.map((suc, i) => (
-              <option key={i} value={suc}>
-                {suc}
-              </option>
-            ))}
-          </select>
-          <input
-            type="date"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={fechaInicio}
-            onChange={(e) => setFechaInicio(e.target.value)}
-          />
-          <input
-            type="date"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={fechaFin}
-            onChange={(e) => setFechaFin(e.target.value)}
-          />
-          <input
-            type="number"
-            placeholder="Monto mínimo"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={montoMin}
-            onChange={(e) => setMontoMin(e.target.value)}
-          />
-          <input
-            type="number"
-            placeholder="Monto máximo"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={montoMax}
-            onChange={(e) => setMontoMax(e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Número tarjeta"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={tarjeta}
-            onChange={(e) => setTarjeta(e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Terminación tarjeta"
-            className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
-            value={terminacion}
-            onChange={(e) => setTerminacion(e.target.value)}
-          />
+        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 rounded-lg p-4 mb-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-2">
+            <input
+              type="text"
+              placeholder="Buscar cliente..."
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={busqueda}
+              onChange={(e) => setBusqueda(e.target.value)}
+            />
+            <select
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={sucursal}
+              onChange={(e) => setSucursal(e.target.value)}
+            >
+              <option value="">Todas las sucursales</option>
+              {sucursales.map((suc, i) => (
+                <option key={i} value={suc}>
+                  {suc}
+                </option>
+              ))}
+            </select>
+            <input
+              type="date"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={fechaInicio}
+              onChange={(e) => setFechaInicio(e.target.value)}
+            />
+            <input
+              type="date"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={fechaFin}
+              onChange={(e) => setFechaFin(e.target.value)}
+            />
+            <input
+              type="number"
+              placeholder="Monto mínimo"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={montoMin}
+              onChange={(e) => setMontoMin(e.target.value)}
+            />
+            <input
+              type="number"
+              placeholder="Monto máximo"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={montoMax}
+              onChange={(e) => setMontoMax(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Número tarjeta"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={tarjeta}
+              onChange={(e) => setTarjeta(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Terminación tarjeta"
+              className="border border-gray-700 bg-gray-900/60 text-gray-100 placeholder-gray-400 p-2 rounded focus:ring-2 focus:ring-blue-500"
+              value={terminacion}
+              onChange={(e) => setTerminacion(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {/* Botones de acción */}
+        <div className="flex gap-4 mb-6">
           <button
             onClick={() => {
               setPagina(1);
               obtenerDatos();
             }}
-            className="bg-gradient-to-r from-blue-600 to-blue-400 text-white p-2 rounded shadow hover:from-blue-700 hover:to-blue-500 col-span-2 transition"
+            className="bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-semibold shadow-lg transition-all duration-300"
           >
-            Filtrar
+            🔍 Buscar
           </button>
           <button
             onClick={exportarExcel}
-            className="bg-gradient-to-r from-green-600 to-green-400 text-white p-2 rounded shadow hover:from-green-700 hover:to-green-500 col-span-2 transition"
+            className="bg-gradient-to-r from-green-600 to-green-400 hover:from-green-700 hover:to-green-500 text-white px-6 py-2 rounded-lg font-semibold shadow-lg transition-all duration-300"
           >
             📥 Exportar a Excel
           </button>
         </div>
-        {/* Tabla dinámica - MÁS COMPACTA + SCROLL ARRIBA FUNCIONAL */}
-        <div className="w-full">
-          {/* Barra de scroll horizontal arriba - SINCRONIZADA */}
+        {/* Tabla dinámica con scroll sincronizado optimizado */}
+        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700 rounded-lg overflow-hidden w-full">
+          {/* Barra de scroll horizontal superior sincronizada */}
           <div
-            className="overflow-x-auto mb-2 bg-gray-700/50 p-1 rounded scroll-top"
-            onScroll={(e) => {
-              const tableContainer = document.querySelector(".table-container");
-              if (tableContainer) {
-                tableContainer.scrollLeft = e.target.scrollLeft;
-              }
-            }}
+            ref={scrollTopRef}
+            className="overflow-x-auto mb-2 bg-gray-700/50 p-1 rounded"
+            onScroll={handleTopScroll}
+            style={{ scrollbarWidth: "thin" }}
           >
             <div
               style={{
-                width: `${Math.max(3000, columnas.length * 280)}px`, // DINÁMICO
-                height: "16px",
-                backgroundColor: "#4B5563",
-                borderRadius: "4px",
+                width: `${Math.max(1200, columnas.length * 155)}px`,
+                height: "12px",
+                background:
+                  "linear-gradient(90deg, rgba(59, 130, 246, 0.3) 0%, rgba(147, 51, 234, 0.3) 100%)",
+                borderRadius: "6px",
               }}
-            >
-              <div className="h-full w-full flex items-center justify-center">
-                <span className="text-[10px] text-gray-300 select-none">
-                  ← Scroll horizontal →
-                </span>
-              </div>
-            </div>
+            />
           </div>
 
-          {/* Tabla principal con sincronización */}
+          {/* Contenedor de la tabla sincronizada */}
           <div
+            ref={tableContainerRef}
             className="overflow-x-auto table-container"
-            onScroll={(e) => {
-              const scrollTop = document.querySelector(".scroll-top");
-              if (scrollTop) {
-                scrollTop.scrollLeft = e.target.scrollLeft;
-              }
-            }}
+            onScroll={handleTableScroll}
+            style={{ scrollbarWidth: "thin" }}
           >
             {cargando ? (
-              <p className="text-center text-gray-400">Cargando...</p>
+              <div className="p-8 text-center">
+                <div className="text-gray-400 text-lg">Cargando...</div>
+              </div>
             ) : (
               <table
-                className="w-full bg-gray-900/80 shadow-md rounded text-xs text-gray-100"
-                style={{ minWidth: `${Math.max(3000, columnas.length * 180)}px` }} // MISMO ANCHO DINÁMICO
+                className="w-full text-sm"
+                style={{ minWidth: `${Math.max(1200, columnas.length * 120)}px` }}
               >
                 <thead>
-                  <tr className="bg-gray-800/80 text-left">
+                  <tr className="bg-gray-700/50 text-left">
                     {columnas.map((col, i) => (
                       <th
                         key={i}
-                        className="px-1 py-1.5 font-semibold whitespace-nowrap text-xs border-r border-gray-700 last:border-r-0"
+                        className="p-3 font-semibold text-gray-200 whitespace-nowrap border-r border-gray-600/30 last:border-r-0"
                       >
                         {col}
                       </th>
@@ -242,12 +269,12 @@ export default function Ventas() {
                     datos.map((row, i) => (
                       <tr
                         key={i}
-                        className="border-b border-gray-800 hover:bg-gray-800/60"
+                        className="border-b border-gray-700/30 hover:bg-gray-700/30 transition-colors"
                       >
                         {columnas.map((col, j) => (
                           <td
                             key={j}
-                            className="px-1 py-1 whitespace-nowrap text-xs border-r border-gray-700/50 last:border-r-0"
+                            className="p-3 text-gray-300 whitespace-nowrap border-r border-gray-600/20 last:border-r-0"
                           >
                             {col === "FechaCompra" && row[col]
                               ? row[col].slice(0, 10)
@@ -260,9 +287,9 @@ export default function Ventas() {
                     <tr>
                       <td
                         colSpan={columnas.length}
-                        className="text-center p-4 text-gray-500"
+                        className="text-center p-8 text-gray-500"
                       >
-                        No hay resultados
+                        No hay resultados para mostrar
                       </td>
                     </tr>
                   )}
@@ -272,23 +299,23 @@ export default function Ventas() {
           </div>
         </div>
         {/* Paginación */}
-        <div className="flex justify-center items-center gap-2 mt-4">
+        <div className="flex justify-center items-center gap-4 mt-6">
           <button
             onClick={() => setPagina((p) => Math.max(p - 1, 1))}
-            className="bg-gray-700/80 px-3 py-1 rounded hover:bg-gray-600/80 text-white"
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
             disabled={pagina === 1}
           >
-            ◀ Anterior
+            ← Anterior
           </button>
-          <span className="font-semibold text-gray-200">
-            Página {pagina} de {totalPaginas}
+          <span className="text-gray-300 font-medium">
+            Página {pagina} de {totalPaginas} | Total: {total} registros
           </span>
           <button
             onClick={() => setPagina((p) => Math.min(p + 1, totalPaginas))}
-            className="bg-gray-700/80 px-3 py-1 rounded hover:bg-gray-600/80 text-white"
+            className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
             disabled={pagina === totalPaginas}
           >
-            Siguiente ▶
+            Siguiente →
           </button>
         </div>
       </div>

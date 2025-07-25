@@ -64,12 +64,12 @@ export default function Home() {
           >
             🔍 Buscador Reporte de Prevencion
           </Link>
-          <Link
+          {/*<Link
             to="/aclaraciones"
             className="bg-gradient-to-r from-yellow-600 via-orange-400 to-red-400 animate-gradient-x text-white p-6 rounded-xl shadow-xl text-center text-lg font-bold transition hover:scale-105"
           >
             💳 Aclaraciones
-          </Link>
+          </Link>*/}
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
           <Link
@@ -94,6 +94,14 @@ export default function Home() {
             className="bg-gradient-to-r from-red-700 via-red-400 to-orange-400 animate-gradient-x text-white font-semibold py-6 px-6 rounded-xl shadow-xl text-center text-lg transition hover:scale-105"
           >
             🚨 Alertas de Sucursales
+          </Link>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+          <Link
+            to="/validador-telefonos"
+            className="bg-gradient-to-r from-indigo-700 via-purple-400 to-pink-400 animate-gradient-x text-white font-semibold py-6 px-6 rounded-xl shadow-xl text-center text-lg transition hover:scale-105"
+          >
+            📱 Validador de Teléfonos Duplicados
           </Link>
         </div>
         <div className="flex flex-col md:flex-row justify-center gap-6 mt-4">
