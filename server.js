@@ -1809,7 +1809,7 @@ app.get("/validar-telefonos", async (req, res) => {
   try {
     console.log("🔍 Iniciando validación de teléfonos individuales...");
     
-    // Query mejorada que separa números múltiples para validación individual
+    // Query corregida - eliminando el JOIN problemático
     const query = `
       WITH telefonos_expandidos AS (
         -- Expandir números con barras a registros individuales
@@ -1817,6 +1817,7 @@ app.get("/validar-telefonos", async (req, res) => {
           "ID",
           TRIM("Cliente") as cliente,
           TRIM("Sucursal") as sucursal,
+          "FechaCompra",
           CASE 
             WHEN "Telefono" LIKE '%/%' THEN
               -- Si tiene barra, crear una fila para cada número
@@ -1839,6 +1840,7 @@ app.get("/validar-telefonos", async (req, res) => {
           AND "Cliente" IS NOT NULL 
           AND "Cliente" != '' 
           AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
         
         UNION ALL
         
@@ -1847,6 +1849,7 @@ app.get("/validar-telefonos", async (req, res) => {
           "ID",
           TRIM("Cliente") as cliente,
           TRIM("Sucursal") as sucursal,
+          "FechaCompra",
           TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
           "Telefono" as telefono_original,
           'segundo_numero' as tipo_numero
@@ -1861,6 +1864,7 @@ app.get("/validar-telefonos", async (req, res) => {
           AND "Cliente" IS NOT NULL 
           AND "Cliente" != '' 
           AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
       ),
       telefonos_duplicados AS (
         SELECT 
@@ -1869,7 +1873,12 @@ app.get("/validar-telefonos", async (req, res) => {
           COUNT(*) as veces_usado,
           STRING_AGG(DISTINCT cliente, ' | ') as lista_clientes,
           STRING_AGG(DISTINCT sucursal, ' | ') as sucursales,
-          STRING_AGG(DISTINCT telefono_original, ' | ') as telefonos_originales
+          STRING_AGG(DISTINCT telefono_original, ' | ') as telefonos_originales,
+          MAX("FechaCompra") as ultima_fecha_registro,
+          MIN("FechaCompra") as primera_fecha_registro,
+          COUNT(DISTINCT sucursal) as cantidad_sucursales,
+          COUNT(CASE WHEN "FechaCompra" >= '2025-01-01' THEN 1 END) as registros_2025,
+          COUNT(CASE WHEN "FechaCompra" >= '2024-01-01' AND "FechaCompra" < '2025-01-01' THEN 1 END) as registros_2024
         FROM telefonos_expandidos
         WHERE telefono_individual IS NOT NULL 
           AND telefono_individual != ''
@@ -1887,14 +1896,34 @@ app.get("/validar-telefonos", async (req, res) => {
         veces_usado,
         lista_clientes,
         sucursales,
-        telefonos_originales
+        telefonos_originales,
+        ultima_fecha_registro,
+        primera_fecha_registro,
+        cantidad_sucursales,
+        registros_2025,
+        registros_2024,
+        CASE 
+          WHEN ultima_fecha_registro >= '2025-01-01' THEN 'Con fechas 2025'
+          WHEN ultima_fecha_registro >= '2024-01-01' THEN 'Solo fechas 2024'
+          ELSE 'Fechas anteriores'
+        END as categoria_fecha
       FROM telefonos_duplicados
-      ORDER BY clientes_distintos DESC, veces_usado DESC
+      ORDER BY ultima_fecha_registro DESC, clientes_distintos DESC, veces_usado DESC
     `;
 
     const result = await pool.query(query);
     
     console.log(`✅ Encontrados ${result.rows.length} números individuales con clientes duplicados`);
+    
+    // Estadísticas de depuración
+    const con2025 = result.rows.filter(row => row.categoria_fecha === 'Con fechas 2025').length;
+    const solo2024 = result.rows.filter(row => row.categoria_fecha === 'Solo fechas 2024').length;
+    const anteriores = result.rows.filter(row => row.categoria_fecha === 'Fechas anteriores').length;
+    
+    console.log(`📊 Distribución por fechas:`);
+    console.log(`- Con fechas 2025: ${con2025}`);
+    console.log(`- Solo fechas 2024: ${solo2024}`);
+    console.log(`- Fechas anteriores: ${anteriores}`);
     
     // Procesar los resultados para mejor formato
     const telefonosDuplicados = result.rows.map(row => ({
@@ -1904,6 +1933,12 @@ app.get("/validar-telefonos", async (req, res) => {
       clientes: row.lista_clientes.split(' | '),
       sucursales: row.sucursales.split(' | '),
       telefonosOriginales: row.telefonos_originales.split(' | '),
+      ultimaFechaRegistro: row.ultima_fecha_registro,
+      primeraFechaRegistro: row.primera_fecha_registro,
+      cantidadSucursales: row.cantidad_sucursales,
+      registros2025: row.registros_2025,
+      registros2024: row.registros_2024,
+      categoriaFecha: row.categoria_fecha,
       riesgo: row.clientes_distintos > 4 ? 'Alto' : 
               row.clientes_distintos > 2 ? 'Medio' : 'Bajo'
     }));
@@ -1912,7 +1947,10 @@ app.get("/validar-telefonos", async (req, res) => {
     const estadisticas = {
       alto_riesgo: telefonosDuplicados.filter(t => t.riesgo === 'Alto').length,
       medio_riesgo: telefonosDuplicados.filter(t => t.riesgo === 'Medio').length,
-      bajo_riesgo: telefonosDuplicados.filter(t => t.riesgo === 'Bajo').length
+      bajo_riesgo: telefonosDuplicados.filter(t => t.riesgo === 'Bajo').length,
+      con_fechas_2025: con2025,
+      solo_fechas_2024: solo2024,
+      fechas_anteriores: anteriores
     };
 
     res.json({
@@ -1958,6 +1996,688 @@ app.get("/estadisticas-telefonos", async (req, res) => {
   } catch (error) {
     console.error("❌ Error al obtener estadísticas:", error);
     res.status(500).json({ error: "Error al obtener estadísticas" });
+  }
+});
+
+// ================= 📊 DASHBOARD SUCURSALES TELÉFONOS DUPLICADOS =================
+app.get("/dashboard-sucursales-duplicados", async (req, res) => {
+  try {
+    console.log("🔍 Obteniendo estadísticas de sucursales con teléfonos duplicados...");
+    
+    const query = `
+      WITH telefonos_expandidos AS (
+        -- Expandir números con barras a registros individuales
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "Sucursal" IS NOT NULL
+          AND "Sucursal" != ''
+          AND "Sucursal" != 'null'
+        
+        UNION ALL
+        
+        -- Segunda parte de números con barra
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "Sucursal" IS NOT NULL
+          AND "Sucursal" != ''
+          AND "Sucursal" != 'null'
+      ),
+      telefonos_duplicados_por_sucursal AS (
+        SELECT 
+          sucursal,
+          telefono_individual,
+          COUNT(DISTINCT cliente) as clientes_distintos_por_telefono,
+          COUNT(*) as registros_telefono,
+          STRING_AGG(DISTINCT cliente, ' | ') as clientes_del_telefono
+        FROM telefonos_expandidos
+        WHERE telefono_individual IS NOT NULL 
+          AND telefono_individual != ''
+          AND telefono_individual != '0'
+          AND telefono_individual NOT SIMILAR TO '^0+$'
+          AND LENGTH(telefono_individual) >= 4
+          AND telefono_individual ~ '[1-9]'
+        GROUP BY sucursal, telefono_individual
+        HAVING COUNT(DISTINCT cliente) > 1
+      ),
+      resumen_sucursales AS (
+        SELECT 
+          sucursal,
+          COUNT(*) as total_telefonos_duplicados,
+          SUM(clientes_distintos_por_telefono) as total_clientes_afectados,
+          SUM(registros_telefono) as total_registros_problema,
+          AVG(clientes_distintos_por_telefono) as promedio_clientes_por_telefono,
+          MAX(clientes_distintos_por_telefono) as max_clientes_en_un_telefono,
+          COUNT(CASE WHEN clientes_distintos_por_telefono >= 4 THEN 1 END) as telefonos_alto_riesgo,
+          COUNT(CASE WHEN clientes_distintos_por_telefono = 3 THEN 1 END) as telefonos_medio_riesgo,
+          COUNT(CASE WHEN clientes_distintos_por_telefono = 2 THEN 1 END) as telefonos_bajo_riesgo
+        FROM telefonos_duplicados_por_sucursal
+        GROUP BY sucursal
+      )
+      SELECT 
+        sucursal,
+        total_telefonos_duplicados,
+        total_clientes_afectados,
+        total_registros_problema,
+        ROUND(promedio_clientes_por_telefono, 2) as promedio_clientes_por_telefono,
+        max_clientes_en_un_telefono,
+        telefonos_alto_riesgo,
+        telefonos_medio_riesgo,
+        telefonos_bajo_riesgo,
+        CASE 
+          WHEN telefonos_alto_riesgo > 0 THEN 'Alto'
+          WHEN telefonos_medio_riesgo > 0 THEN 'Medio'
+          ELSE 'Bajo'
+        END as nivel_riesgo_sucursal
+      FROM resumen_sucursales
+      ORDER BY total_telefonos_duplicados DESC, total_clientes_afectados DESC
+    `;
+
+    const result = await pool.query(query);
+    
+    console.log(`✅ Procesadas ${result.rows.length} sucursales con teléfonos duplicados`);
+    
+    // Calcular estadísticas generales
+    const totalTelefonosDuplicados = result.rows.reduce((sum, row) => sum + parseInt(row.total_telefonos_duplicados), 0);
+    const totalClientesAfectados = result.rows.reduce((sum, row) => sum + parseInt(row.total_clientes_afectados), 0);
+    const sucursalesAltoRiesgo = result.rows.filter(row => row.nivel_riesgo_sucursal === 'Alto').length;
+    const sucursalesMedioRiesgo = result.rows.filter(row => row.nivel_riesgo_sucursal === 'Medio').length;
+    const sucursalesBajoRiesgo = result.rows.filter(row => row.nivel_riesgo_sucursal === 'Bajo').length;
+
+    const estadisticasGenerales = {
+      total_sucursales: result.rows.length,
+      total_telefonos_duplicados: totalTelefonosDuplicados,
+      total_clientes_afectados: totalClientesAfectados,
+      sucursales_alto_riesgo: sucursalesAltoRiesgo,
+      sucursales_medio_riesgo: sucursalesMedioRiesgo,
+      sucursales_bajo_riesgo: sucursalesBajoRiesgo,
+      promedio_telefonos_por_sucursal: Math.round(totalTelefonosDuplicados / result.rows.length)
+    };
+
+    res.json({
+      estadisticas_generales: estadisticasGenerales,
+      sucursales: result.rows
+    });
+
+  } catch (error) {
+    console.error("❌ Error al obtener dashboard de sucursales:", error);
+    res.status(500).json({ 
+      error: "Error al obtener estadísticas de sucursales",
+      message: error.message 
+    });
+  }
+});
+
+// ================= 🔍 ENDPOINT TEMPORAL PARA VERIFICAR FECHAS =================
+app.get("/verificar-fechas", async (req, res) => {
+  try {
+    console.log("🔍 Verificando rango de fechas en la base de datos...");
+    
+    const query = `
+      SELECT 
+        MIN("FechaCompra") as fecha_minima,
+        MAX("FechaCompra") as fecha_maxima,
+        COUNT(*) as total_registros,
+        COUNT(CASE WHEN "FechaCompra" >= '2025-01-01' THEN 1 END) as registros_2025,
+        COUNT(CASE WHEN "FechaCompra" >= '2024-01-01' AND "FechaCompra" < '2025-01-01' THEN 1 END) as registros_2024,
+        COUNT(CASE WHEN "FechaCompra" < '2024-01-01' THEN 1 END) as registros_anteriores
+      FROM "ventas" 
+      WHERE "FechaCompra" IS NOT NULL
+    `;
+
+    const result = await pool.query(query);
+    
+    // Consulta adicional para ver ejemplos de fechas recientes
+    const fechasRecientes = await pool.query(`
+      SELECT "FechaCompra", COUNT(*) as cantidad
+      FROM "ventas" 
+      WHERE "FechaCompra" IS NOT NULL
+      GROUP BY "FechaCompra"
+      ORDER BY "FechaCompra" DESC
+      LIMIT 15
+    `);
+
+    const estadisticas = result.rows[0];
+    
+    console.log("📅 Análisis completado:");
+    console.log(`- Fecha mínima: ${estadisticas.fecha_minima}`);
+    console.log(`- Fecha máxima: ${estadisticas.fecha_maxima}`);
+    console.log(`- Total registros: ${estadisticas.total_registros}`);
+    console.log(`- Registros 2025: ${estadisticas.registros_2025}`);
+    console.log(`- Registros 2024: ${estadisticas.registros_2024}`);
+
+    res.json({
+      rango_fechas: {
+        fecha_minima: estadisticas.fecha_minima,
+        fecha_maxima: estadisticas.fecha_maxima,
+        total_registros: estadisticas.total_registros,
+        registros_2025: estadisticas.registros_2025,
+        registros_2024: estadisticas.registros_2024,
+        registros_anteriores: estadisticas.registros_anteriores
+      },
+      fechas_recientes: fechasRecientes.rows
+    });
+
+  } catch (error) {
+    console.error("❌ Error al verificar fechas:", error);
+    res.status(500).json({ 
+      error: "Error al verificar fechas",
+      message: error.message 
+    });
+  }
+});
+
+// ================= 🔍 ENDPOINT PARA VERIFICAR FECHAS DE TELÉFONOS DUPLICADOS =================
+app.get("/verificar-fechas-telefonos", async (req, res) => {
+  try {
+    console.log("🔍 Verificando fechas de teléfonos duplicados...");
+    
+    const query = `
+      WITH telefonos_expandidos AS (
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+        
+        UNION ALL
+        
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+      ),
+      telefonos_con_fechas AS (
+        SELECT 
+          te.telefono_individual,
+          COUNT(DISTINCT te.cliente) as clientes_distintos,
+          MAX(v."FechaCompra") as ultima_fecha_registro,
+          MIN(v."FechaCompra") as primera_fecha_registro,
+          COUNT(CASE WHEN v."FechaCompra" >= '2025-01-01' THEN 1 END) as registros_2025,
+          COUNT(CASE WHEN v."FechaCompra" >= '2024-01-01' AND v."FechaCompra" < '2025-01-01' THEN 1 END) as registros_2024
+        FROM telefonos_expandidos te
+        JOIN "ventas" v ON te."ID" = v."ID"
+        WHERE te.telefono_individual IS NOT NULL 
+          AND te.telefono_individual != ''
+          AND te.telefono_individual != '0'
+          AND LENGTH(te.telefono_individual) >= 4
+          AND te.telefono_individual ~ '[1-9]'
+        GROUP BY te.telefono_individual
+        HAVING COUNT(DISTINCT te.cliente) > 1
+      )
+      SELECT 
+        telefono_individual,
+        clientes_distintos,
+        ultima_fecha_registro,
+        primera_fecha_registro,
+        registros_2025,
+        registros_2024,
+        CASE 
+          WHEN ultima_fecha_registro >= '2025-01-01' THEN 'Con fechas 2025'
+          WHEN ultima_fecha_registro >= '2024-01-01' THEN 'Solo fechas 2024'
+          ELSE 'Fechas anteriores'
+        END as categoria_fecha
+      FROM telefonos_con_fechas
+      ORDER BY ultima_fecha_registro DESC
+      LIMIT 20
+    `;
+
+    const result = await pool.query(query);
+    
+    // Estadísticas de categorías
+    const estadisticasQuery = `
+      WITH telefonos_expandidos AS (
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+        
+        UNION ALL
+        
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+      ),
+      telefonos_categorias AS (
+        SELECT 
+          te.telefono_individual,
+          COUNT(DISTINCT te.cliente) as clientes_distintos,
+          MAX(v."FechaCompra") as ultima_fecha_registro
+        FROM telefonos_expandidos te
+        JOIN "ventas" v ON te."ID" = v."ID"
+        WHERE te.telefono_individual IS NOT NULL 
+          AND te.telefono_individual != ''
+          AND te.telefono_individual != '0'
+          AND LENGTH(te.telefono_individual) >= 4
+          AND te.telefono_individual ~ '[1-9]'
+        GROUP BY te.telefono_individual
+        HAVING COUNT(DISTINCT te.cliente) > 1
+      )
+      SELECT 
+        COUNT(CASE WHEN ultima_fecha_registro >= '2025-01-01' THEN 1 END) as telefonos_con_2025,
+        COUNT(CASE WHEN ultima_fecha_registro >= '2024-01-01' AND ultima_fecha_registro < '2025-01-01' THEN 1 END) as telefonos_solo_2024,
+        COUNT(CASE WHEN ultima_fecha_registro < '2024-01-01' THEN 1 END) as telefonos_anteriores,
+        COUNT(*) as total_telefonos_duplicados
+      FROM telefonos_categorias
+    `;
+
+    const estadisticas = await pool.query(estadisticasQuery);
+    
+    console.log("📅 Análisis de fechas en teléfonos duplicados completado");
+    
+    res.json({
+      ejemplos_telefonos: result.rows,
+      estadisticas_fechas: estadisticas.rows[0]
+    });
+
+  } catch (error) {
+    console.error("❌ Error al verificar fechas de teléfonos:", error);
+    res.status(500).json({ 
+      error: "Error al verificar fechas de teléfonos",
+      message: error.message 
+    });
+  }
+});
+
+// ================= 🔍 ENDPOINT PARA ANALIZAR TELÉFONO ESPECÍFICO =================
+app.get("/analizar-telefono/:numero", async (req, res) => {
+  try {
+    const numeroTelefono = req.params.numero;
+    console.log(`🔍 Analizando teléfono específico: ${numeroTelefono}`);
+    
+    const query = `
+      SELECT 
+        "ID",
+        "Cliente",
+        "Sucursal", 
+        "Telefono",
+        "FechaCompra",
+        EXTRACT(YEAR FROM "FechaCompra") as año,
+        EXTRACT(MONTH FROM "FechaCompra") as mes,
+        EXTRACT(DAY FROM "FechaCompra") as dia
+      FROM "ventas"
+      WHERE "Telefono" LIKE '%${numeroTelefono}%'
+        OR "Telefono" = '${numeroTelefono}'
+      ORDER BY "FechaCompra" DESC
+      LIMIT 50
+    `;
+
+    const result = await pool.query(query);
+    
+    console.log(`📊 Encontrados ${result.rows.length} registros para el teléfono ${numeroTelefono}`);
+    
+    // Agrupar por cliente
+    const porCliente = {};
+    result.rows.forEach(row => {
+      const cliente = row.Cliente;
+      if (!porCliente[cliente]) {
+        porCliente[cliente] = [];
+      }
+      porCliente[cliente].push({
+        fecha: row.FechaCompra,
+        sucursal: row.Sucursal,
+        telefono_original: row.Telefono,
+        año: row.año,
+        mes: row.mes,
+        dia: row.dia
+      });
+    });
+
+    // Estadísticas
+    const clientesDistintos = Object.keys(porCliente).length;
+    const fechas2025 = result.rows.filter(row => row.año >= 2025).length;
+    const fechas2024 = result.rows.filter(row => row.año >= 2024 && row.año < 2025).length;
+    const fechaMinima = result.rows.length > 0 ? result.rows[result.rows.length - 1].FechaCompra : null;
+    const fechaMaxima = result.rows.length > 0 ? result.rows[0].FechaCompra : null;
+
+    console.log(`📅 Análisis de fechas:`);
+    console.log(`- Clientes distintos: ${clientesDistintos}`);
+    console.log(`- Registros 2025: ${fechas2025}`);
+    console.log(`- Registros 2024: ${fechas2024}`);
+    console.log(`- Fecha más antigua: ${fechaMinima}`);
+    console.log(`- Fecha más reciente: ${fechaMaxima}`);
+
+    res.json({
+      numero_analizado: numeroTelefono,
+      total_registros: result.rows.length,
+      clientes_distintos: clientesDistintos,
+      estadisticas: {
+        registros_2025: fechas2025,
+        registros_2024: fechas2024,
+        fecha_minima: fechaMinima,
+        fecha_maxima: fechaMaxima
+      },
+      por_cliente: porCliente,
+      todos_los_registros: result.rows
+    });
+
+  } catch (error) {
+    console.error("❌ Error al analizar teléfono:", error);
+    res.status(500).json({ 
+      error: "Error al analizar teléfono",
+      message: error.message 
+    });
+  }
+});
+
+// ================= 🔍 ENDPOINT PARA DEPURAR CONSULTA DEL VALIDADOR =================
+app.get("/debug-validador/:numero", async (req, res) => {
+  try {
+    const numeroTelefono = req.params.numero;
+    console.log(`🔍 Depurando por qué ${numeroTelefono} no aparece en el validador...`);
+    
+    // Paso 1: Ver si está en telefonos_expandidos
+    const paso1 = await pool.query(`
+      WITH telefonos_expandidos AS (
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original,
+          'primer_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+        
+        UNION ALL
+        
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original,
+          'segundo_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+      )
+      SELECT * FROM telefonos_expandidos 
+      WHERE telefono_individual = '${numeroTelefono}'
+      ORDER BY cliente
+    `);
+
+    // Paso 2: Ver si pasa los filtros finales
+    const paso2 = await pool.query(`
+      WITH telefonos_expandidos AS (
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original,
+          'primer_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+        
+        UNION ALL
+        
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original,
+          'segundo_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+      )
+      SELECT 
+        te.*,
+        v."FechaCompra"
+      FROM telefonos_expandidos te
+      JOIN "ventas" v ON te."ID" = v."ID"
+      WHERE te.telefono_individual = '${numeroTelefono}'
+        AND te.telefono_individual IS NOT NULL 
+        AND te.telefono_individual != ''
+        AND te.telefono_individual != '0'
+        AND te.telefono_individual NOT SIMILAR TO '^0+$'
+        AND te.telefono_individual NOT SIMILAR TO '^[0]*$'
+        AND LENGTH(te.telefono_individual) >= 4
+        AND te.telefono_individual ~ '[1-9]'
+      ORDER BY v."FechaCompra" DESC
+    `);
+
+    // Paso 3: Ver el resultado agrupado
+    const paso3 = await pool.query(`
+      WITH telefonos_expandidos AS (
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original,
+          'primer_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+        
+        UNION ALL
+        
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original,
+          'segundo_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+      )
+      SELECT 
+        telefono_individual,
+        COUNT(DISTINCT cliente) as clientes_distintos,
+        COUNT(*) as veces_usado,
+        STRING_AGG(DISTINCT cliente, ' | ') as lista_clientes,
+        MAX(v."FechaCompra") as ultima_fecha_registro
+      FROM telefonos_expandidos te
+      JOIN "ventas" v ON te."ID" = v."ID"
+      WHERE te.telefono_individual = '${numeroTelefono}'
+        AND te.telefono_individual IS NOT NULL 
+        AND te.telefono_individual != ''
+        AND te.telefono_individual != '0'
+        AND te.telefono_individual NOT SIMILAR TO '^0+$'
+        AND te.telefono_individual NOT SIMILAR TO '^[0]*$'
+        AND LENGTH(te.telefono_individual) >= 4
+        AND te.telefono_individual ~ '[1-9]'
+      GROUP BY telefono_individual
+      HAVING COUNT(DISTINCT cliente) > 1
+    `);
+
+    console.log(`📊 Resultados de depuración:`);
+    console.log(`- Paso 1 (telefonos_expandidos): ${paso1.rows.length} registros`);
+    console.log(`- Paso 2 (con JOIN y filtros): ${paso2.rows.length} registros`);
+    console.log(`- Paso 3 (agrupado final): ${paso3.rows.length} registros`);
+
+    res.json({
+      numero_analizado: numeroTelefono,
+      paso1_telefonos_expandidos: {
+        cantidad: paso1.rows.length,
+        datos: paso1.rows
+      },
+      paso2_con_join_y_filtros: {
+        cantidad: paso2.rows.length,
+        datos: paso2.rows
+      },
+      paso3_agrupado_final: {
+        cantidad: paso3.rows.length,
+        datos: paso3.rows
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ Error en depuración:", error);
+    res.status(500).json({ 
+      error: "Error en depuración",
+      message: error.message 
+    });
   }
 });
 
