@@ -1328,6 +1328,7 @@ app.get("/sucursales-alerta", async (req, res) => {
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%bsd%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%wompi%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%stripeauto%' OR
+            LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%FirstData Mexico%' OR
             LOWER(REPLACE("Cobrado_Por", ' ', '')) LIKE '%prosa%' 
             AND "Cobro" LIKE '%Cargos Automaticos%'
           )
@@ -1596,27 +1597,35 @@ app.post("/aclaraciones/insertar-multiple", async (req, res) => {
       await client.query('BEGIN');
 
       for (const fila of datosValidos) {
+        // DEBUG: Mostrar bloque y monto original
+        console.log('Bloque recibido:', fila.BLOQUE, 'Monto:', fila.MONTO);
         // Calcular MONTO_MNX automáticamente basado en el bloque
         let montoMnx = null;
-        if (fila.MONTO && fila.BLOQUE) {
-          const monto = parseFloat(fila.MONTO);
-          if (!isNaN(monto)) {
-            // Usar los tipos de cambio definidos arriba
-            const tiposCambio = {
-              "MEX": 1,        // MXN
-              "COL1": 0.0047,  // COP - Colombia
-              "COL2": 0.0047,  // COP - Colombia
-              "CRI1": 0.037,   // CRC - Costa Rica
-              "CHI": 0.019,    // CLP - Chile
-              "HON": 0.71,     // HNL - Honduras
-              "ESP1": 21.82,   // EUR - España
-              "ESP2": 21.82,   // EUR - España
-              "BRA": 3.36,     // BRL - Brasil
-              "USA1": 18.75,   // USD - USA
-            };
-            
-            const tipoCambio = tiposCambio[fila.BLOQUE] || 1; // Por defecto MXN
-            montoMnx = monto * tipoCambio;
+        let montoOriginal = fila.MONTO ? parseFloat(fila.MONTO) : null;
+        if (montoOriginal !== null && fila.BLOQUE) {
+          // Usar los tipos de cambio definidos arriba
+          const tiposCambio = {
+            "COL1": 0.0047,  // COP - Colombia
+            "COL2": 0.0047,  // COP - Colombia
+            "CRI1": 0.037,   // CRC - Costa Rica
+            "CHI": 0.019,    // CLP - Chile
+            "HON": 0.71,     // HNL - Honduras
+            "ESP1": 21.82,   // EUR - España
+            "ESP2": 21.82,   // EUR - España
+            "BRA": 3.36,     // BRL - Brasil
+            "USA1": 18.75,   // USD - USA
+          };
+          // Bloques de México: MEX, cualquier que incluya 'SIN' o 'MTY' (case-insensitive)
+          const bloque = fila.BLOQUE ? fila.BLOQUE.toUpperCase() : "";
+          if (
+            bloque === "MEX" ||
+            bloque.includes("SIN") ||
+            bloque.includes("MTY")
+          ) {
+            montoMnx = montoOriginal; // No convertir, es MXN
+          } else {
+            const tipoCambio = tiposCambio[bloque] || 1;
+            montoMnx = montoOriginal * tipoCambio;
           }
         }
 
@@ -1630,7 +1639,7 @@ app.post("/aclaraciones/insertar-multiple", async (req, res) => {
           nombre_del_comercio: fila.NOMBRE_DEL_COMERCIO || null,
           id_de_transaccion: fila.ID_DE_TRANSACCION || null,
           fecha_venta: fila.FECHA_VENTA || null,
-          monto: fila.MONTO ? parseFloat(fila.MONTO) : null,
+          monto: montoOriginal,
           num_de_tarjeta: fila.NUM_DE_TARJETA || null,
           autorizacion: fila.AUTORIZACION || null,
           cliente: fila.CLIENTE || null,
@@ -1648,12 +1657,12 @@ app.post("/aclaraciones/insertar-multiple", async (req, res) => {
 
         await client.query(`
           INSERT INTO aclaraciones (
-            "PROCESADOR", "AÑO", "MES_PETICION", "EUROSKIN", 
-            "ID_DEL_COMERCIO_AFILIACION", "NOMBRE_DEL_COMERCIO", 
-            "ID_DE_TRANSACCION", "FECHA_VENTA", "MONTO", "NUM_DE_TARJETA", 
-            "AUTORIZACION", "CLIENTE", "VENDEDORA", "SUCURSAL", 
-            "FECHA_CONTRATO", "PAQUETE", "BLOQUE", "FECHA_DE_PETICION", 
-            "FECHA_DE_RESPUESTA", "COMENTARIOS", "CAPTURA_CC", "MONTO_MNX"
+            procesador, año, mes_peticion, euroskin, 
+            id_del_comercio_afiliacion, nombre_del_comercio, 
+            id_de_transaccion, fecha_venta, monto, num_de_tarjeta, 
+            autorizacion, cliente, vendedora, sucursal, 
+            fecha_contrato, paquete, bloque, fecha_de_peticion, 
+            fecha_de_respuesta, comentarios, captura_cc, monto_mnx
           ) VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 
             $13, $14, $15, $16, $17, $18, $19, $20, $21, $22

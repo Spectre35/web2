@@ -1,0 +1,132 @@
+/* Estilos personalizados para react-data-grid en tema oscuro */
+
+.rdg-dark {
+  --rdg-background-color: rgb(17 24 39 / 0.9);
+  --rdg-header-background-color: rgb(31 41 55 / 0.9);
+  --rdg-row-hover-background-color: rgb(55 65 81 / 0.5);
+  --rdg-row-selected-background-color: rgb(59 130 246 / 0.2);
+  --rdg-selection-color: rgb(59 130 246);
+  --rdg-border-color: rgb(75 85 99);
+  --rdg-summary-border-color: rgb(75 85 99);
+  --rdg-cell-frozen-background-color: rgb(31 41 55 / 0.9);
+  --rdg-header-font-size: 12px;
+  --rdg-font-size: 12px;
+  color: rgb(243 244 246);
+  border: 1px solid rgb(75 85 99);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rdg-dark .rdg-cell {
+  border-right: 1px solid rgb(75 85 99 / 0.5);
+  border-bottom: 1px solid rgb(75 85 99 / 0.5);
+  background-color: transparent;
+}
+
+.rdg-dark .rdg-header-row {
+  background-color: rgb(31 41 55 / 0.9);
+  font-weight: 600;
+  border-bottom: 2px solid rgb(75 85 99);
+}
+
+.rdg-dark .rdg-header-cell {
+  border-right: 1px solid rgb(75 85 99);
+  background-color: rgb(31 41 55 / 0.9);
+  color: rgb(243 244 246);
+  font-weight: 600;
+}
+
+.rdg-dark .rdg-row:hover {
+  background-color: rgb(55 65 81 / 0.3);
+}
+
+.rdg-dark .rdg-row:nth-child(even) {
+  background-color: rgb(31 41 55 / 0.1);
+}
+
+.rdg-dark .rdg-cell:focus,
+.rdg-dark .rdg-cell:focus-within {
+  outline: 2px solid rgb(59 130 246);
+  outline-offset: -2px;
+}
+
+.rdg-dark .rdg-cell.rdg-cell-selected {
+  background-color: rgb(59 130 246 / 0.2);
+}
+
+/* Estilos para inputs y selects dentro de las celdas */
+.rdg-dark input[type="text"],
+.rdg-dark input[type="number"],
+.rdg-dark input[type="date"],
+.rdg-dark input[type="checkbox"],
+.rdg-dark select {
+  background-color: rgb(31 41 55);
+  color: rgb(243 244 246);
+  border: 1px solid rgb(75 85 99);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.rdg-dark input[type="text"]:focus,
+.rdg-dark input[type="number"]:focus,
+.rdg-dark input[type="date"]:focus,
+.rdg-dark select:focus {
+  outline: none;
+  border-color: rgb(59 130 246);
+  background-color: rgb(31 41 55);
+}
+
+.rdg-dark input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: rgb(59 130 246);
+}
+
+/* Scrollbars personalizados */
+.rdg-dark ::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.rdg-dark ::-webkit-scrollbar-track {
+  background: rgb(31 41 55);
+}
+
+.rdg-dark ::-webkit-scrollbar-thumb {
+  background: rgb(75 85 99);
+  border-radius: 4px;
+}
+
+.rdg-dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(107 114 128);
+}
+
+/* Estilos para el indicador de ordenamiento */
+.rdg-dark .rdg-sort-arrow {
+  color: rgb(156 163 175);
+}
+
+.rdg-dark .rdg-sort-arrow:hover {
+  color: rgb(243 244 246);
+}
+
+/* Estilos para filas seleccionadas */
+.rdg-dark .rdg-row.rdg-row-selected {
+  background-color: rgb(59 130 246 / 0.15);
+}
+
+/* Animaciones suaves */
+.rdg-dark .rdg-cell,
+.rdg-dark .rdg-row {
+  transition: background-color 0.15s ease;
+}
+
+/* Mejor contraste para texto */
+.rdg-dark .rdg-cell {
+  color: rgb(229 231 235);
+}
+
+.rdg-dark .rdg-header-cell {
+  color: rgb(243 244 246);
+}

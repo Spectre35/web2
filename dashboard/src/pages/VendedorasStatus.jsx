@@ -32,12 +32,12 @@ export default function VendedorasStatus() {
       } else {
         fecha = "-";
       }
-      let estatus = "Detonada";
+      let estatus = "Inactiva";
       let color = "bg-yellow-400 text-gray-900";
       let icon = (
         <img
           src={DetonArturo}
-          alt="Detonada"
+          alt="Inactiva"
           className="inline-block w-6 h-6 rounded-full mr-2 align-middle"
           style={{ verticalAlign: "middle" }}
         />
