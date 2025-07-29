@@ -4,12 +4,15 @@ import pkg from "pg";
 import ExcelJS from "exceljs";
 import multer from "multer";
 import fs from "fs";
-import readline from "readline";
 import QueryStream from "pg-query-stream"; // Agrega arriba
+import dotenv from "dotenv";
+import moment from "moment";
+dotenv.config();
+
 
 const { Pool } = pkg;
 const app = express();
-const PORT = 3000; // 🔄 PUERTO CAMBIADO PARA DESARROLLO
+const PORT = process.env.PORT || 3000; // Lee el puerto desde .env o usa 3000 por defecto
 
 app.use(cors());
 app.use(express.json());
@@ -1469,6 +1472,18 @@ app.get("/aclaraciones/comentarios", async (req, res) => {
   }
 });
 
+// Endpoint para obtener valores únicos de captura_cc desde la tabla aclaraciones
+app.get("/aclaraciones/captura-cc", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT "captura_cc" FROM "aclaraciones" WHERE "captura_cc" IS NOT NULL AND "captura_cc" != '' ORDER BY "captura_cc"`
+    );
+    res.json(result.rows.map(r => r.captura_cc).filter(Boolean));
+  } catch (err) {
+    res.status(500).json({ error: "Error al obtener valores de captura CC" });
+  }
+});
+
 // ===== ENDPOINTS PARA GESTIÓN DE USUARIOS SLACK =====
 
 // Obtener todos los usuarios slack
@@ -1572,18 +1587,128 @@ app.delete("/usuarios-slack/:id", async (req, res) => {
 
 // ===== FIN ENDPOINTS USUARIOS SLACK =====
 
-// Endpoint para insertar múltiples registros de aclaraciones
+// Configuración de validaciones por tipo de tabla
+const validacionesPorTipo = {
+  EFEVOO: {
+    nombre: "EFEVOO",
+    camposObligatorios: ["PROCESADOR", "ID_DE_TRANSACCION", "MONTO", "FECHA_VENTA", "AUTORIZACION"],
+    validaciones: {
+      ID_DE_TRANSACCION: { tipo: "numerico", minLength: 8, maxLength: 20 },
+      AUTORIZACION: { tipo: "alfanumerico", minLength: 6, maxLength: 12 },
+      MONTO: { tipo: "decimal", min: 0.01, max: 999999.99 },
+      NUM_DE_TARJETA: { tipo: "numerico", exactLength: [4, 6, 16] }
+    }
+  },
+  BSD: {
+    nombre: "BSD",
+    camposObligatorios: ["PROCESADOR", "ID_DE_TRANSACCION", "MONTO", "FECHA_VENTA", "NUM_DE_TARJETA"],
+    validaciones: {
+      ID_DE_TRANSACCION: { tipo: "alfanumerico", minLength: 10, maxLength: 25 },
+      NUM_DE_TARJETA: { tipo: "numerico", exactLength: [16] },
+      MONTO: { tipo: "decimal", min: 0.01, max: 999999.99 },
+      CAPTURA_CC: { tipo: "boolean" }
+    }
+  },
+  CREDOMATIC: {
+    nombre: "CREDOMATIC",
+    camposObligatorios: ["PROCESADOR", "ID_DE_TRANSACCION", "MONTO", "FECHA_VENTA", "AUTORIZACION", "NUM_DE_TARJETA"],
+    validaciones: {
+      ID_DE_TRANSACCION: { tipo: "alfanumerico", minLength: 12, maxLength: 30 },
+      AUTORIZACION: { tipo: "numerico", exactLength: [6, 8] },
+      NUM_DE_TARJETA: { tipo: "numerico", exactLength: [16] },
+      MONTO: { tipo: "decimal", min: 0.01, max: 999999.99 },
+      NO_DE_CASO: { tipo: "alfanumerico", minLength: 8, maxLength: 20 }
+    }
+  }
+};
+
+// Función para validar campo según tipo de tabla en el backend
+function validarCampoBackend(campo, valor, tipoTabla) {
+  if (!valor || valor.toString().trim() === "") return null;
+  
+  const config = validacionesPorTipo[tipoTabla];
+  if (!config || !config.validaciones[campo]) return null;
+  
+  const validacion = config.validaciones[campo];
+  const valorStr = valor.toString().trim();
+  
+  switch (validacion.tipo) {
+    case "numerico":
+      if (!/^\d+$/.test(valorStr)) {
+        return `${campo}: Debe contener solo números`;
+      }
+      if (validacion.exactLength) {
+        if (!validacion.exactLength.includes(valorStr.length)) {
+          return `${campo}: Debe tener ${validacion.exactLength.join(" o ")} dígitos`;
+        }
+      }
+      if (validacion.minLength && valorStr.length < validacion.minLength) {
+        return `${campo}: Mínimo ${validacion.minLength} dígitos`;
+      }
+      if (validacion.maxLength && valorStr.length > validacion.maxLength) {
+        return `${campo}: Máximo ${validacion.maxLength} dígitos`;
+      }
+      break;
+      
+    case "alfanumerico":
+      if (!/^[a-zA-Z0-9]+$/.test(valorStr)) {
+        return `${campo}: Solo se permiten letras y números`;
+      }
+      if (validacion.minLength && valorStr.length < validacion.minLength) {
+        return `${campo}: Mínimo ${validacion.minLength} caracteres`;
+      }
+      if (validacion.maxLength && valorStr.length > validacion.maxLength) {
+        return `${campo}: Máximo ${validacion.maxLength} caracteres`;
+      }
+      break;
+      
+    case "decimal":
+      const num = parseFloat(valorStr);
+      if (isNaN(num)) {
+        return `${campo}: Debe ser un número válido`;
+      }
+      if (validacion.min && num < validacion.min) {
+        return `${campo}: Mínimo ${validacion.min}`;
+      }
+      if (validacion.max && num > validacion.max) {
+        return `${campo}: Máximo ${validacion.max}`;
+      }
+      break;
+      
+    case "boolean":
+      if (!["true", "false", "sí", "no", "si", "1", "0"].includes(valorStr.toLowerCase())) {
+        return `${campo}: Debe ser Sí o No`;
+      }
+      break;
+  }
+  
+  return null;
+}
+
+// Endpoint para insertar múltiples registros de aclaraciones con validación por tipo
+
+
+
 app.post("/aclaraciones/insertar-multiple", async (req, res) => {
   try {
-    const { datos } = req.body;
-    
+    const { datos, tipoTabla } = req.body;
+
+    console.log(`🔍 DEBUG - Datos recibidos:`, {
+      cantidadDatos: datos ? datos.length : 0,
+      tipoTabla,
+      primeraFila: datos && datos.length > 0 ? datos[0] : null
+    });
+
     if (!datos || !Array.isArray(datos) || datos.length === 0) {
       return res.status(400).json({ error: "No se proporcionaron datos válidos" });
     }
 
-    // Validar que todos los datos tengan al menos un campo completado
-    const datosValidos = datos.filter(fila => 
-      Object.values(fila).some(valor => valor && valor.toString().trim() !== "")
+    const datosValidos = datos.filter(fila =>
+      Object.values(fila).some(valor => {
+        if (valor === null || valor === undefined) return false;
+        if (typeof valor === "string" && valor.trim() === "") return false;
+        return true;
+      })
     );
 
     if (datosValidos.length === 0) {
@@ -1596,109 +1721,131 @@ app.post("/aclaraciones/insertar-multiple", async (req, res) => {
     try {
       await client.query('BEGIN');
 
+      const errores = [];
+
       for (const fila of datosValidos) {
-        // DEBUG: Mostrar bloque y monto original
-        console.log('Bloque recibido:', fila.BLOQUE, 'Monto:', fila.MONTO);
-        // Calcular MONTO_MNX automáticamente basado en el bloque
-        let montoMnx = null;
-        let montoOriginal = fila.MONTO ? parseFloat(fila.MONTO) : null;
-        if (montoOriginal !== null && fila.BLOQUE) {
-          // Usar los tipos de cambio definidos arriba
-          const tiposCambio = {
-            "COL1": 0.0047,  // COP - Colombia
-            "COL2": 0.0047,  // COP - Colombia
-            "CRI1": 0.037,   // CRC - Costa Rica
-            "CHI": 0.019,    // CLP - Chile
-            "HON": 0.71,     // HNL - Honduras
-            "ESP1": 21.82,   // EUR - España
-            "ESP2": 21.82,   // EUR - España
-            "BRA": 3.36,     // BRL - Brasil
-            "USA1": 18.75,   // USD - USA
-          };
-          // Bloques de México: MEX, cualquier que incluya 'SIN' o 'MTY' (case-insensitive)
+        try {
+          const montoOriginal = fila.MONTO ? parseFloat(fila.MONTO) : null;
           const bloque = fila.BLOQUE ? fila.BLOQUE.toUpperCase() : "";
-          if (
-            bloque === "MEX" ||
-            bloque.includes("SIN") ||
-            bloque.includes("MTY")
-          ) {
-            montoMnx = montoOriginal; // No convertir, es MXN
-          } else {
-            const tipoCambio = tiposCambio[bloque] || 1;
-            montoMnx = montoOriginal * tipoCambio;
+
+          const tiposCambio = {
+            "COL1": 0.0047,
+            "COL2": 0.0047,
+            "CRI1": 0.037,
+            "CHI": 0.019,
+            "HON": 0.71,
+            "ESP1": 21.82,
+            "ESP2": 21.82,
+            "BRA": 3.36,
+            "USA1": 18.75
+          };
+
+          let montoMnx = null;
+          if (montoOriginal !== null) {
+            if (bloque === "MEX" || bloque.includes("SIN") || bloque.includes("MTY")) {
+              montoMnx = montoOriginal;
+            } else {
+              const tipoCambio = tiposCambio[bloque] || 1;
+              montoMnx = montoOriginal * tipoCambio;
+            }
           }
+
+          const formatearFecha = fecha => {
+            if (!fecha) return null;
+            const f = moment(fecha, ["DD/MM/YYYY", "YYYY-MM-DD"], true);
+            return f.isValid() ? f.format("YYYY-MM-DD") : null;
+          };
+
+          const valores = {
+            procesador: fila.PROCESADOR || null,
+            año: fila.AÑO || null,
+            mes_peticion: fila.MES_PETICION || null,
+            euroskin: String(fila.EUROSKIN).toLowerCase() === "true",
+            id_del_comercio_afiliacion: fila.ID_DEL_COMERCIO_AFILIACION || null,
+            nombre_del_comercio: fila.NOMBRE_DEL_COMERCIO || null,
+            id_de_transaccion: fila.ID_DE_TRANSACCION || null,
+            fecha_venta: formatearFecha(fila.FECHA_VENTA),
+            monto: montoOriginal ?? null,
+            num_de_tarjeta: fila.NUM_DE_TARJETA || null,
+            autorizacion: fila.AUTORIZACION || null,
+            cliente: fila.CLIENTE || null,
+            vendedora: fila.VENDEDORA || null,
+            sucursal: fila.SUCURSAL || null,
+            fecha_contrato: formatearFecha(fila.FECHA_CONTRATO),
+            paquete: fila.PAQUETE || null,
+            bloque: fila.BLOQUE || null,
+            fecha_de_peticion: formatearFecha(fila.FECHA_DE_PETICION),
+            fecha_de_respuesta: formatearFecha(fila.FECHA_DE_RESPUESTA),
+            comentarios: fila.COMENTARIOS || null,
+            captura_cc: fila.CAPTURA_CC || null,
+            monto_mnx: montoMnx
+          };
+
+          await client.query(`
+            INSERT INTO aclaraciones (
+              procesador, año, mes_peticion, euroskin,
+              id_del_comercio_afiliacion, nombre_del_comercio,
+              id_de_transaccion, fecha_venta, monto, num_de_tarjeta,
+              autorizacion, cliente, vendedora, sucursal,
+              fecha_contrato, paquete, bloque, fecha_de_peticion,
+              fecha_de_respuesta, comentarios, captura_cc, monto_mnx
+            ) VALUES (
+              $1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+              $11, $12, $13, $14, $15, $16, $17, $18,
+              $19, $20, $21, $22
+            )
+          `, [
+            valores.procesador, valores.año, valores.mes_peticion, valores.euroskin,
+            valores.id_del_comercio_afiliacion, valores.nombre_del_comercio,
+            valores.id_de_transaccion, valores.fecha_venta, valores.monto, valores.num_de_tarjeta,
+            valores.autorizacion, valores.cliente, valores.vendedora, valores.sucursal,
+            valores.fecha_contrato, valores.paquete, valores.bloque, valores.fecha_de_peticion,
+            valores.fecha_de_respuesta, valores.comentarios, valores.captura_cc, valores.monto_mnx
+          ]);
+
+          registrosInsertados++;
+        } catch (error) {
+          errores.push({ fila: fila, mensaje: error.message });
         }
-
-        // Preparar los valores, asegurándose de que las fechas tengan el formato correcto
-        const valores = {
-          procesador: fila.PROCESADOR || null,
-          año: fila.AÑO || null,
-          mes_peticion: fila.MES_PETICION || null,
-          euroskin: fila.EUROSKIN === true || fila.EUROSKIN === 'true' ? true : false,
-          id_del_comercio_afiliacion: fila.ID_DEL_COMERCIO_AFILIACION || null,
-          nombre_del_comercio: fila.NOMBRE_DEL_COMERCIO || null,
-          id_de_transaccion: fila.ID_DE_TRANSACCION || null,
-          fecha_venta: fila.FECHA_VENTA || null,
-          monto: montoOriginal,
-          num_de_tarjeta: fila.NUM_DE_TARJETA || null,
-          autorizacion: fila.AUTORIZACION || null,
-          cliente: fila.CLIENTE || null,
-          vendedora: fila.VENDEDORA || null,
-          sucursal: fila.SUCURSAL || null,
-          fecha_contrato: fila.FECHA_CONTRATO || null,
-          paquete: fila.PAQUETE || null,
-          bloque: fila.BLOQUE || null,
-          fecha_de_peticion: fila.FECHA_DE_PETICION || null,
-          fecha_de_respuesta: fila.FECHA_DE_RESPUESTA || null,
-          comentarios: fila.COMENTARIOS || null,
-          captura_cc: fila.CAPTURA_CC || null,
-          monto_mnx: montoMnx
-        };
-
-        await client.query(`
-          INSERT INTO aclaraciones (
-            procesador, año, mes_peticion, euroskin, 
-            id_del_comercio_afiliacion, nombre_del_comercio, 
-            id_de_transaccion, fecha_venta, monto, num_de_tarjeta, 
-            autorizacion, cliente, vendedora, sucursal, 
-            fecha_contrato, paquete, bloque, fecha_de_peticion, 
-            fecha_de_respuesta, comentarios, captura_cc, monto_mnx
-          ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 
-            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
-          )
-        `, [
-          valores.procesador, valores.año, valores.mes_peticion, valores.euroskin,
-          valores.id_del_comercio_afiliacion, valores.nombre_del_comercio,
-          valores.id_de_transaccion, valores.fecha_venta, valores.monto, valores.num_de_tarjeta,
-          valores.autorizacion, valores.cliente, valores.vendedora, valores.sucursal,
-          valores.fecha_contrato, valores.paquete, valores.bloque, valores.fecha_de_peticion,
-          valores.fecha_de_respuesta, valores.comentarios, valores.captura_cc, valores.monto_mnx
-        ]);
-
-        registrosInsertados++;
       }
 
       await client.query('COMMIT');
-      res.json({ 
-        success: true, 
-        message: `Se insertaron ${registrosInsertados} registros correctamente`,
-        registrosInsertados 
-      });
 
-    } catch (error) {
+      if (errores.length > 0) {
+        return res.status(207).json({
+          mensaje: `${registrosInsertados} registros insertados con éxito, ${errores.length} errores`,
+          errores
+        });
+      } else {
+        res.json({ mensaje: `${registrosInsertados} registros insertados correctamente.` });
+      }
+    } catch (err) {
       await client.query('ROLLBACK');
-      throw error;
+      console.error("❌ Error general en la transacción:", err.message);
+      res.status(500).json({ error: "Error general al insertar los datos", detalle: err.message });
     } finally {
       client.release();
     }
+  } catch (error) {
+    console.error("❌ Error en el servidor:", error.message);
+    res.status(500).json({ error: "Error del servidor", detalle: error.message });
+  }
+});
 
+
+// Endpoint para obtener tipos de tabla disponibles
+app.get("/aclaraciones/tipos-tabla", async (req, res) => {
+  try {
+    const tipos = Object.keys(validacionesPorTipo).map(key => ({
+      codigo: key,
+      nombre: validacionesPorTipo[key].nombre,
+      camposObligatorios: validacionesPorTipo[key].camposObligatorios
+    }));
+    
+    res.json(tipos);
   } catch (err) {
-    console.error("Error al insertar datos masivos:", err);
-    res.status(500).json({ 
-      error: "Error al insertar los datos", 
-      details: err.message 
-    });
+    console.error("Error al obtener tipos de tabla:", err);
+    res.status(500).json({ error: "Error al obtener tipos de tabla" });
   }
 });
 
@@ -1913,7 +2060,6 @@ app.get("/validar-telefonos", async (req, res) => {
           "ID",
           TRIM("Cliente") as cliente,
           TRIM("Sucursal") as sucursal,
-          "FechaCompra",
           TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
           "Telefono" as telefono_original,
           'segundo_numero' as tipo_numero
@@ -2090,18 +2236,13 @@ app.get("/dashboard-sucursales-duplicados", async (req, res) => {
           AND "Telefono" NOT LIKE '%/ 0%'
           AND "Telefono" NOT LIKE '0%'
           AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
-          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
           AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
           AND "Cliente" IS NOT NULL 
           AND "Cliente" != '' 
           AND "Cliente" != 'null'
-          AND "Sucursal" IS NOT NULL
-          AND "Sucursal" != ''
-          AND "Sucursal" != 'null'
         
         UNION ALL
         
-        -- Segunda parte de números con barra
         SELECT 
           "ID",
           TRIM("Cliente") as cliente,
@@ -2113,15 +2254,11 @@ app.get("/dashboard-sucursales-duplicados", async (req, res) => {
           AND "Telefono" LIKE '%/%'
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
-          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
           AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
           AND "Cliente" IS NOT NULL 
           AND "Cliente" != '' 
           AND "Cliente" != 'null'
-          AND "Sucursal" IS NOT NULL
-          AND "Sucursal" != ''
-          AND "Sucursal" != 'null'
       ),
       telefonos_duplicados_por_sucursal AS (
         SELECT 
@@ -2135,6 +2272,7 @@ app.get("/dashboard-sucursales-duplicados", async (req, res) => {
           AND telefono_individual != ''
           AND telefono_individual != '0'
           AND telefono_individual NOT SIMILAR TO '^0+$'
+          AND telefono_individual NOT SIMILAR TO '^[0]*$'
           AND LENGTH(telefono_individual) >= 4
           AND telefono_individual ~ '[1-9]'
         GROUP BY sucursal, telefono_individual
@@ -2622,7 +2760,6 @@ app.get("/debug-validador/:numero", async (req, res) => {
           AND "Telefono" LIKE '%/%'
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
-          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
           AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
           AND "Cliente" IS NOT NULL 
@@ -2688,7 +2825,6 @@ app.get("/debug-validador/:numero", async (req, res) => {
           AND "Telefono" LIKE '%/%'
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
-          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
           AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
           AND "Cliente" IS NOT NULL 
@@ -2745,11 +2881,194 @@ app.get("/debug-validador/:numero", async (req, res) => {
   }
 });
 
+app.get("/aclaraciones/dashboard", async (req, res) => {
+  try {
+    const { anio, bloque, mes } = req.query;
+    let where = [];
+    let values = [];
+    let idx = 1;
+
+    if (anio && anio !== "") {
+      where.push(`"año" = $${idx++}`);
+      values.push(anio);
+    }
+    if (bloque && bloque !== "") {
+      where.push(`"bloque" = $${idx++}`);
+      values.push(bloque);
+    }
+    if (mes && mes !== "") {
+      where.push(`"mes_peticion" = $${idx++}`);
+      values.push(mes);
+    }
+    const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
+
+    // 1. Total monto en disputa y cantidad de aclaraciones
+    const totalQuery = `
+      SELECT 
+        COALESCE(SUM("monto_mnx"),0) AS total_monto,
+        COUNT(*) AS total_aclaraciones
+      FROM aclaraciones
+      ${whereClause}
+      ${whereClause ? "AND" : "WHERE"} LOWER(COALESCE(captura_cc, '')) NOT IN ('ganada','perdida')
+    `;
+    const totalResult = await pool.query(totalQuery, values);
+
+    // 2. Aclaraciones por mes
+    const aclaracionesPorMesQuery = `
+      SELECT "mes_peticion" as mes, COUNT(*) as cantidad
+      FROM aclaraciones
+      ${whereClause}
+      GROUP BY "mes_peticion"
+      ORDER BY MIN("año") DESC, MIN("mes_peticion") DESC
+    `;
+    const aclaracionesPorMes = (await pool.query(aclaracionesPorMesQuery, values)).rows;
+
+    // 3. Estatus de documentación (por comentario)
+    const estatusDocQuery = `
+      SELECT 
+        COALESCE("comentarios",'SIN COMENTARIO') as comentario, 
+        COUNT(*) as cantidad
+      FROM aclaraciones
+      ${whereClause}
+      GROUP BY comentario
+      ORDER BY cantidad DESC
+    `;
+    const estatusDocRows = (await pool.query(estatusDocQuery, values)).rows;
+    const totalDoc = estatusDocRows.reduce((acc, r) => acc + Number(r.cantidad), 0);
+    const estatusDocumentacion = estatusDocRows.map(r => ({
+      comentario: r.comentario,
+      cantidad: Number(r.cantidad),
+      porcentaje: totalDoc ? Math.round((Number(r.cantidad) / totalDoc) * 100) : 0
+    }));
+
+    // 4. Top 10 bloques por aclaraciones
+    const topBloques = (await pool.query(
+      `SELECT bloque, COUNT(*) as cantidad FROM aclaraciones ${whereClause} GROUP BY bloque ORDER BY cantidad DESC LIMIT 10`, values
+    )).rows;
+
+    // 5. Top 10 sucursales por aclaraciones
+    const topSucursales = (await pool.query(
+      `SELECT sucursal, COUNT(*) as cantidad FROM aclaraciones ${whereClause} GROUP BY sucursal ORDER BY cantidad DESC LIMIT 10`, values
+    )).rows;
+
+    // 6. Top 10 bloques por monto
+    const topBloquesMonto = (await pool.query(
+      `SELECT bloque, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClause} GROUP BY bloque ORDER BY monto DESC LIMIT 10`, values
+    )).rows;
+
+    // 7. Top 10 sucursales por monto
+    const topSucursalesMonto = (await pool.query(
+      `SELECT sucursal, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClause} GROUP BY sucursal ORDER BY monto DESC LIMIT 10`, values
+    )).rows;
+
+    // 8. Top 10 vendedoras por aclaraciones
+    const topVendedoras = (await pool.query(
+      `SELECT vendedora, COUNT(*) as cantidad FROM aclaraciones ${whereClause} GROUP BY vendedora ORDER BY cantidad DESC LIMIT 10`, values
+    )).rows;
+
+    // 9. Top 10 vendedoras por monto
+    const topVendedorasMonto = (await pool.query(
+      `SELECT vendedora, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClause} GROUP BY vendedora ORDER BY monto DESC LIMIT 10`, values
+    )).rows;
+
+    // 10. Vendedores con documentación incompleta (comentarios <> 'COMPLETO')
+    // --- CORREGIDO: agrega el filtro extra correctamente ---
+    const whereVendedoresIncompletos = [...where, `LOWER(COALESCE(comentarios,'')) <> 'completo'`];
+    const valuesVendedoresIncompletos = [...values];
+    const whereClauseVendedoresIncompletos = whereVendedoresIncompletos.length ? `WHERE ${whereVendedoresIncompletos.join(" AND ")}` : "";
+    const vendedoresIncompletos = (await pool.query(
+      `SELECT vendedora, COUNT(*) as cantidad FROM aclaraciones ${whereClauseVendedoresIncompletos} GROUP BY vendedora ORDER BY cantidad DESC LIMIT 10`, valuesVendedoresIncompletos
+    )).rows;
+
+    // 11. Resolución por mes (ganadas, perdidas, en proceso)
+    const resolucionPorMes = (await pool.query(`
+      SELECT 
+        mes_peticion as mes,
+        COUNT(*) FILTER (WHERE LOWER(captura_cc) = 'ganada') as ganadas,
+        COUNT(*) FILTER (WHERE LOWER(captura_cc) = 'perdida') as perdidas,
+        COUNT(*) FILTER (WHERE LOWER(captura_cc) NOT IN ('ganada','perdida')) as en_proceso,
+        COALESCE(SUM(CASE WHEN LOWER(captura_cc) NOT IN ('ganada','perdida') THEN monto_mnx ELSE 0 END),0) as monto_en_disputa,
+        COALESCE(SUM(CASE WHEN LOWER(captura_cc) = 'ganada' THEN monto_mnx ELSE 0 END),0) as defendido,
+        COALESCE(SUM(CASE WHEN LOWER(captura_cc) = 'perdida' THEN monto_mnx ELSE 0 END),0) as perdido
+      FROM aclaraciones
+      ${whereClause}
+      GROUP BY mes_peticion
+      ORDER BY MIN(año) DESC, MIN(mes_peticion) DESC
+    `, values)).rows;
+
+    // 12. Top 10 sucursales que han perdido más dinero
+    // --- CORREGIDO: agrega el filtro extra correctamente ---
+    const whereSucursalesPerdidas = [...where, `LOWER(captura_cc) = 'perdida'`];
+    const valuesSucursalesPerdidas = [...values];
+    const whereClauseSucursalesPerdidas = whereSucursalesPerdidas.length ? `WHERE ${whereSucursalesPerdidas.join(" AND ")}` : "";
+    const topSucursalesPerdidas = (await pool.query(
+      `SELECT sucursal, COALESCE(SUM(monto_mnx),0) as montoPerdido FROM aclaraciones ${whereClauseSucursalesPerdidas} GROUP BY sucursal ORDER BY montoPerdido DESC LIMIT 10`, valuesSucursalesPerdidas
+    )).rows;
+
+    // 13. Sucursal con más dinero en disputa
+    // --- CORREGIDO: agrega el filtro extra correctamente ---
+    const whereSucursalMasDinero = [...where, `LOWER(captura_cc) NOT IN ('ganada','perdida')`];
+    const valuesSucursalMasDinero = [...values];
+    const whereClauseSucursalMasDinero = whereSucursalMasDinero.length ? `WHERE ${whereSucursalMasDinero.join(" AND ")}` : "";
+    const sucursalMasDineroEnDisputa = (await pool.query(
+      `SELECT sucursal, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClauseSucursalMasDinero} GROUP BY sucursal ORDER BY monto DESC LIMIT 1`, valuesSucursalMasDinero
+    )).rows[0] || null;
+
+    // 14. Dinero en disputa por estatus (para gráfica)
+    const graficaDineroEstatus = (await pool.query(`
+      SELECT 
+        CASE 
+          WHEN LOWER(captura_cc) = 'ganada' THEN 'Ganada'
+          WHEN LOWER(captura_cc) = 'perdida' THEN 'Perdida'
+          ELSE 'En Proceso'
+        END as estatus,
+        COALESCE(SUM(monto_mnx),0) as monto
+      FROM aclaraciones
+      ${whereClause}
+      GROUP BY estatus
+    `, values)).rows;
+
+    // 15. Cantidad de aclaraciones por estatus (para gráfica)
+    const graficaCantidadEstatus = (await pool.query(`
+      SELECT 
+        CASE 
+          WHEN LOWER(captura_cc) = 'ganada' THEN 'Ganada'
+          WHEN LOWER(captura_cc) = 'perdida' THEN 'Perdida'
+          ELSE 'En Proceso'
+        END as estatus,
+        COUNT(*) as cantidad
+      FROM aclaraciones
+      ${whereClause}
+      GROUP BY estatus
+    `, values)).rows;
+
+    res.json({
+      totalMontoEnDisputa: Number(totalResult.rows[0].total_monto),
+      totalAclaraciones: Number(totalResult.rows[0].total_aclaraciones),
+      aclaracionesPorMes,
+      estatusDocumentacion,
+      topBloques,
+      topSucursales,
+      topBloquesMonto,
+      topSucursalesMonto,
+      topVendedoras,
+      topVendedorasMonto,
+      vendedoresIncompletos,
+      resolucionPorMes,
+      topSucursalesPerdidas,
+      sucursalMasDineroEnDisputa,
+      graficaDineroEstatus,
+      graficaCantidadEstatus
+    });
+  } catch (error) {
+    console.error("❌ Error en dashboard aclaraciones:", error);
+    res.status(500).json({ error: "Error al obtener dashboard de aclaraciones", detalle: error.message });
+  }
+});
+
 // ===================  INICIO DEL SERVIDOR ===================
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Servidor ejecutándose en http://localhost:${PORT}`);
   console.log(`🌐 También disponible en http://192.168.1.111:${PORT}`);
 });
-
-

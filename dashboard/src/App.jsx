@@ -10,9 +10,10 @@ import VendedorasStatus from "./pages/VendedorasStatus";
 import SucursalBloque from "./pages/SucursalBloque";
 import SucursalesAlerta from "./pages/SucursalesAlerta";
 import Aclaraciones from "./pages/Aclaraciones";
-import IngresarAclaraciones from "./pages/IngresarAclaraciones";
 import ValidadorTelefonos from "./pages/ValidadorTelefonos";
 import DashboardSucursales from "./pages/DashboardSucursales";
+import IngresarAclaraciones from "./pages/IngresarAclaraciones";
+import DashboardAclaraciones from "./pages/DashboardAclaraciones";
 
 function App() {
   return (
@@ -29,9 +30,10 @@ function App() {
         <Route path="/sucursal-bloque" element={<SucursalBloque />} />
         <Route path="/sucursales-alerta" element={<SucursalesAlerta />} />
         <Route path="/aclaraciones" element={<Aclaraciones />} />
-      <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
         <Route path="/validador-telefonos" element={<ValidadorTelefonos />} />
         <Route path="/dashboard-sucursales" element={<DashboardSucursales />} />
+        <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
+        <Route path="/dashboard-aclaraciones" element={<DashboardAclaraciones />} />
       </Routes>
     </Router>
   );

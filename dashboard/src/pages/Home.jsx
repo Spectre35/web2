@@ -1,9 +1,11 @@
 import React from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import CeciCursed from "../assets/ceci cursed.png";
 import DetonArturo from "../assets/detonarturo.png";
 
 export default function Home() {
+  const navigate = useNavigate();
+
   // Cambia el favicon al abrir la página Home
   React.useEffect(() => {
     const favicon = document.querySelector("link[rel*='icon']");
@@ -64,12 +66,12 @@ export default function Home() {
           >
             🔍 Buscador Reporte de Prevencion
           </Link>
-          {/*<Link
+          <Link
             to="/aclaraciones"
             className="bg-gradient-to-r from-yellow-600 via-orange-400 to-red-400 animate-gradient-x text-white p-6 rounded-xl shadow-xl text-center text-lg font-bold transition hover:scale-105"
           >
             💳 Aclaraciones
-          </Link>*/}
+          </Link>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-10">
           <Link
@@ -123,6 +125,14 @@ export default function Home() {
           >
             📊 Dashboard de Recuperacion
           </Link>
+        </div>
+        <div className="p-6">
+          <button
+            className="bg-blue-600 text-white px-4 py-2 rounded mb-4"
+            onClick={() => navigate("/dashboard-aclaraciones")}
+          >
+            Ir al Dashboard de Aclaraciones
+          </button>
         </div>
       </main>
     </div>

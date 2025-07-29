@@ -9,16 +9,16 @@ function detectarIPLocal() {
   
   // Si estamos en localhost, usar localhost
   if (hostname === 'localhost' || hostname === '127.0.0.1') {
-    return "http://localhost:3000";
+    return "http://localhost:3001";
   }
   
   // Si estamos en la IP de la red, usar la IP de la red
   if (hostname === '192.168.1.111') {
-    return "http://192.168.1.111:3000";
+    return "http://192.168.1.111:3001";
   }
   
   // Por defecto usar localhost
-  return "http://localhost:3000";
+  return "http://localhost:3001";
 }
 
 export const API_BASE_URL = detectarIPLocal();
