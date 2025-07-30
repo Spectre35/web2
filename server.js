@@ -42,7 +42,7 @@ function mapearColumnas(tabla, columnas) {
   const mapeosEspecificos = {
     aclaraciones: {
       "PROCESADOR": "procesador",
-      "AÑO": "ano", 
+      "AÑO": "año", 
       "MES PETICIÓN": "mes_peticion",
       "EUROSKIN": "euroskin",
       "ID DEL COMERCIO / AFILIACIÓN": "id_del_comercio_afiliacion",
@@ -85,7 +85,7 @@ function formatearDatos(tabla, columna, valor) {
   const tiposColumnas = {
     aclaraciones: {
       procesador: 'VARCHAR',
-      ano: 'VARCHAR',
+      año: 'VARCHAR',
       mes_peticion: 'VARCHAR',
       euroskin: 'VARCHAR',
       id_del_comercio_afiliacion: 'VARCHAR',
@@ -119,43 +119,152 @@ function formatearDatos(tabla, columna, valor) {
   try {
     switch (tipoColumna) {
       case 'DATE':
-        // Validar y formatear fechas
+        // ✅ FUNCIÓN DE FECHA MEJORADA Y PROTEGIDA
         if (valor instanceof Date) {
           // Si ya es una fecha válida de Excel
+          const año = valor.getFullYear();
+          if (año < 1900 || año > 2100) {
+            console.log(`⚠️ Fecha con año inválido en ${columna}: ${año} -> null`);
+            return null;
+          }
           return valor.toISOString().split('T')[0]; // YYYY-MM-DD
         } else if (typeof valor === 'number') {
           // Si es un número de Excel (fecha serial)
-          const fecha = new Date((valor - 25569) * 86400 * 1000);
-          if (!isNaN(fecha.getTime()) && fecha.getFullYear() > 1900 && fecha.getFullYear() < 2100) {
+          if (valor < 1 || valor > 100000) {
+            console.log(`⚠️ Número de fecha serial fuera de rango en ${columna}: ${valor} -> null`);
+            return null;
+          }
+          
+          // ✅ CONVERSIÓN SEGURA DE FECHA SERIAL DE EXCEL
+          try {
+            const fecha = new Date((valor - 25569) * 86400 * 1000);
+            const año = fecha.getFullYear();
+            
+            if (isNaN(fecha.getTime()) || año < 1900 || año > 2100) {
+              console.log(`⚠️ Fecha serial inválida en ${columna}: ${valor} -> null`);
+              return null;
+            }
+            
             return fecha.toISOString().split('T')[0];
-          } else {
-            console.log(`⚠️ Fecha inválida en ${columna}: ${valor} -> null`);
+          } catch (error) {
+            console.log(`⚠️ Error al convertir fecha serial en ${columna}: ${valor} -> null`);
             return null;
           }
         } else if (typeof valor === 'string') {
-          // Intentar parsear string como fecha
-          const fecha = new Date(valor);
-          if (!isNaN(fecha.getTime()) && fecha.getFullYear() > 1900 && fecha.getFullYear() < 2100) {
-            return fecha.toISOString().split('T')[0];
-          } else {
-            console.log(`⚠️ Fecha inválida en ${columna}: ${valor} -> null`);
+          // ✅ PARSEO DE STRING CON VALIDACIONES ESTRICTAS
+          const valorLimpio = valor.trim();
+          
+          // Verificar que no tenga caracteres extraños
+          if (!/^[\d\-\/\s\.:]+$/.test(valorLimpio)) {
+            console.log(`⚠️ Fecha con caracteres inválidos en ${columna}: ${valorLimpio} -> null`);
             return null;
           }
+          
+          // Intentar diferentes formatos de fecha
+          const formatosFecha = [
+            /^\d{4}-\d{2}-\d{2}$/,     // YYYY-MM-DD
+            /^\d{2}\/\d{2}\/\d{4}$/,   // DD/MM/YYYY
+            /^\d{1,2}\/\d{1,2}\/\d{4}$/, // D/M/YYYY
+            /^\d{4}\/\d{2}\/\d{2}$/    // YYYY/MM/DD
+          ];
+          
+          const esFormatoValido = formatosFecha.some(formato => formato.test(valorLimpio));
+          
+          if (!esFormatoValido) {
+            console.log(`⚠️ Formato de fecha no reconocido en ${columna}: ${valorLimpio} -> null`);
+            return null;
+          }
+          
+          // Intentar parsear la fecha
+          let fecha;
+          
+          if (/^\d{4}-\d{2}-\d{2}$/.test(valorLimpio)) {
+            // Formato YYYY-MM-DD
+            fecha = new Date(valorLimpio + 'T00:00:00.000Z');
+          } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(valorLimpio)) {
+            // Formato DD/MM/YYYY
+            const [dia, mes, año] = valorLimpio.split('/');
+            fecha = new Date(año, mes - 1, dia);
+          } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(valorLimpio)) {
+            // Formato D/M/YYYY
+            const [dia, mes, año] = valorLimpio.split('/');
+            fecha = new Date(año, mes - 1, dia);
+          } else if (/^\d{4}\/\d{2}\/\d{2}$/.test(valorLimpio)) {
+            // Formato YYYY/MM/DD
+            const [año, mes, dia] = valorLimpio.split('/');
+            fecha = new Date(año, mes - 1, dia);
+          } else {
+            console.log(`⚠️ No se pudo parsear fecha en ${columna}: ${valorLimpio} -> null`);
+            return null;
+          }
+          
+          // Validar que la fecha sea válida
+          if (isNaN(fecha.getTime())) {
+            console.log(`⚠️ Fecha parseada inválida en ${columna}: ${valorLimpio} -> null`);
+            return null;
+          }
+          
+          const año = fecha.getFullYear();
+          if (año < 1900 || año > 2100) {
+            console.log(`⚠️ Año fuera de rango en ${columna}: ${año} -> null`);
+            return null;
+          }
+          
+          return fecha.toISOString().split('T')[0];
         } else {
-          console.log(`⚠️ Fecha inválida en ${columna}: ${valor} -> null`);
+          console.log(`⚠️ Tipo de fecha no reconocido en ${columna}: ${typeof valor} -> null`);
           return null;
         }
 
-      case 'DECIMAL':
-        // Validar y formatear números decimales
-        if (typeof valor === 'number') {
-          return isNaN(valor) ? null : valor;
-        } else if (typeof valor === 'string') {
-          const numero = parseFloat(valor.replace(/[,$]/g, ''));
-          return isNaN(numero) ? null : numero;
-        } else {
-          return null;
-        }
+                case 'DECIMAL':
+                // ✅ MEJORADO: Solo aplicar normalización de formato europeo/americano a monto_mnx
+                if (typeof valor === 'number') {
+                  return isNaN(valor) ? null : valor;
+                } else if (typeof valor === 'string') {
+                  const valorLimpio = valor.trim();
+                  
+                  // ✅ SOLO aplicar conversión de formato europeo para monto_mnx
+                  if (columna === 'monto_mnx') {
+                    // Detectar formato europeo vs americano solo para monto_mnx
+                    const tieneComaDecimal = valorLimpio.indexOf(',') > -1 && valorLimpio.lastIndexOf(',') > valorLimpio.lastIndexOf('.');
+                    
+                    let numeroNormalizado;
+                    
+                    if (tieneComaDecimal) {
+                      // Formato europeo (4.000,45) -> normalizar a formato americano
+                      console.log(`🔄 Convirtiendo formato europeo en monto_mnx: ${valorLimpio}`);
+                      numeroNormalizado = valorLimpio.replace(/\./g, '').replace(',', '.');
+                    } else {
+                      // Formato americano (4,000.45) o número simple
+                      numeroNormalizado = valorLimpio.replace(/,/g, '');
+                    }
+                    
+                    // Eliminar cualquier carácter no numérico excepto punto decimal y signo negativo
+                    numeroNormalizado = numeroNormalizado.replace(/[^0-9.-]/g, '');
+                    
+                    const numero = parseFloat(numeroNormalizado);
+                    
+                    if (isNaN(numero)) {
+                      console.log(`⚠️ No se pudo convertir monto_mnx a número: ${valorLimpio} -> null`);
+                      return null;
+                    }
+                    
+                    console.log(`✅ Conversión exitosa en monto_mnx: ${valorLimpio} -> ${numero}`);
+                    return numero;
+                  } else {
+                    // ✅ Para otras columnas DECIMAL, solo limpieza básica (sin conversión de formato)
+                    const numeroNormalizado = valorLimpio.replace(/,/g, '');
+                    const numero = parseFloat(numeroNormalizado);
+                    
+                    if (isNaN(numero)) {
+                      return null;
+                    }
+                    
+                    return numero;
+                  }
+                } else {
+                  return null;
+                }
 
       case 'VARCHAR':
       case 'TEXT':
@@ -172,13 +281,18 @@ function formatearDatos(tabla, columna, valor) {
         if (columna.toLowerCase().includes('tarjeta') && valor != null) {
           return String(valor).replace(/\.0+$/, '');
         } else if (columna.toLowerCase().includes('fecha') && valor instanceof Date) {
+          const año = valor.getFullYear();
+          if (año < 1900 || año > 2100) {
+            console.log(`⚠️ Fecha genérica con año inválido en ${columna}: ${año} -> null`);
+            return null;
+          }
           return valor.toISOString().split('T')[0];
         } else {
           return valor;
         }
     }
   } catch (error) {
-    console.log(`⚠️ Error formateando ${columna}: ${valor} -> null`);
+    console.log(`⚠️ Error formateando ${columna}: ${valor} -> null (${error.message})`);
     return null;
   }
 }
@@ -1700,6 +1814,8 @@ app.post("/aclaraciones/insertar-multiple", async (req, res) => {
     });
 
     if (!datos || !Array.isArray(datos) || datos.length === 0) {
+     
+ 
       return res.status(400).json({ error: "No se proporcionaron datos válidos" });
     }
 
@@ -2271,8 +2387,6 @@ app.get("/dashboard-sucursales-duplicados", async (req, res) => {
         WHERE telefono_individual IS NOT NULL 
           AND telefono_individual != ''
           AND telefono_individual != '0'
-          AND telefono_individual NOT SIMILAR TO '^0+$'
-          AND telefono_individual NOT SIMILAR TO '^[0]*$'
           AND LENGTH(telefono_individual) >= 4
           AND telefono_individual ~ '[1-9]'
         GROUP BY sucursal, telefono_individual
@@ -2421,8 +2535,7 @@ app.get("/verificar-fechas-telefonos", async (req, res) => {
               TRIM(SPLIT_PART("Telefono", '/', 1))
             ELSE 
               TRIM("Telefono")
-          END as telefono_individual,
-          "Telefono" as telefono_original
+          END as telefono_individual
         FROM "ventas"
         WHERE "Telefono" IS NOT NULL 
           AND "Telefono" != '' 
@@ -2442,8 +2555,7 @@ app.get("/verificar-fechas-telefonos", async (req, res) => {
           "ID",
           TRIM("Cliente") as cliente,
           TRIM("Sucursal") as sucursal,
-          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
-          "Telefono" as telefono_original
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual
         FROM "ventas"
         WHERE "Telefono" IS NOT NULL 
           AND "Telefono" LIKE '%/%'
@@ -2760,6 +2872,7 @@ app.get("/debug-validador/:numero", async (req, res) => {
           AND "Telefono" LIKE '%/%'
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
           AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
           AND "Cliente" IS NOT NULL 
@@ -2781,6 +2894,8 @@ app.get("/debug-validador/:numero", async (req, res) => {
         AND te.telefono_individual ~ '[1-9]'
       ORDER BY v."FechaCompra" DESC
     `);
+
+    // Paso 3: Ver el resultado agrupado
 
     // Paso 3: Ver el resultado agrupado
     const paso3 = await pool.query(`
@@ -2825,6 +2940,7 @@ app.get("/debug-validador/:numero", async (req, res) => {
           AND "Telefono" LIKE '%/%'
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
           AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
           AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
           AND "Cliente" IS NOT NULL 
@@ -2900,16 +3016,27 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
       where.push(`"mes_peticion" = $${idx++}`);
       values.push(mes);
     }
+    
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // 1. Total monto en disputa y cantidad de aclaraciones
+    // 1. ✅ CORREGIDO: Total de aclaraciones y monto en disputa (solo "en proceso")
     const totalQuery = `
       SELECT 
-        COALESCE(SUM("monto_mnx"),0) AS total_monto,
-        COUNT(*) AS total_aclaraciones
+        COUNT(*) AS total_aclaraciones,
+        COALESCE(SUM("monto_mnx"),0) AS total_monto_general,
+        COALESCE(SUM(CASE 
+          WHEN LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida') 
+          OR LOWER(COALESCE("captura_cc",'')) = 'en proceso'
+          THEN "monto_mnx" 
+          ELSE 0 
+        END),0) AS total_monto_en_disputa,
+        COUNT(CASE 
+          WHEN LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida') 
+          OR LOWER(COALESCE("captura_cc",'')) = 'en proceso'
+          THEN 1 
+        END) AS aclaraciones_en_proceso
       FROM aclaraciones
       ${whereClause}
-      ${whereClause ? "AND" : "WHERE"} LOWER(COALESCE(captura_cc, '')) NOT IN ('ganada','perdida')
     `;
     const totalResult = await pool.query(totalQuery, values);
 
@@ -2919,7 +3046,13 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
       FROM aclaraciones
       ${whereClause}
       GROUP BY "mes_peticion"
-      ORDER BY MIN("año") DESC, MIN("mes_peticion") DESC
+      ORDER BY 
+        CASE "mes_peticion"
+          WHEN 'ENERO' THEN 1 WHEN 'FEBRERO' THEN 2 WHEN 'MARZO' THEN 3
+          WHEN 'ABRIL' THEN 4 WHEN 'MAYO' THEN 5 WHEN 'JUNIO' THEN 6
+          WHEN 'JULIO' THEN 7 WHEN 'AGOSTO' THEN 8 WHEN 'SEPTIEMBRE' THEN 9
+          WHEN 'OCTUBRE' THEN 10 WHEN 'NOVIEMBRE' THEN 11 WHEN 'DICIEMBRE' THEN 12
+          ELSE 13 END
     `;
     const aclaracionesPorMes = (await pool.query(aclaracionesPorMesQuery, values)).rows;
 
@@ -2942,109 +3075,101 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
     }));
 
     // 4. Top 10 bloques por aclaraciones
-    const topBloques = (await pool.query(
-      `SELECT bloque, COUNT(*) as cantidad FROM aclaraciones ${whereClause} GROUP BY bloque ORDER BY cantidad DESC LIMIT 10`, values
-    )).rows;
+    const topBloquesQuery = `
+      SELECT "bloque", COUNT(*) as cantidad 
+      FROM aclaraciones 
+      ${whereClause} 
+      GROUP BY "bloque" 
+      ORDER BY cantidad DESC 
+      LIMIT 10
+    `;
+    const topBloques = (await pool.query(topBloquesQuery, values)).rows;
 
     // 5. Top 10 sucursales por aclaraciones
-    const topSucursales = (await pool.query(
-      `SELECT sucursal, COUNT(*) as cantidad FROM aclaraciones ${whereClause} GROUP BY sucursal ORDER BY cantidad DESC LIMIT 10`, values
-    )).rows;
+    const topSucursalesQuery = `
+      SELECT "sucursal", COUNT(*) as cantidad 
+      FROM aclaraciones 
+      ${whereClause} 
+      GROUP BY "sucursal" 
+      ORDER BY cantidad DESC 
+      LIMIT 10
+    `;
+    const topSucursales = (await pool.query(topSucursalesQuery, values)).rows;
 
     // 6. Top 10 bloques por monto
     const topBloquesMonto = (await pool.query(
-      `SELECT bloque, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClause} GROUP BY bloque ORDER BY monto DESC LIMIT 10`, values
+      `SELECT "bloque", COALESCE(SUM("monto_mnx"),0) as monto FROM aclaraciones ${whereClause} GROUP BY "bloque" ORDER BY monto DESC LIMIT 10`, values
     )).rows;
 
     // 7. Top 10 sucursales por monto
     const topSucursalesMonto = (await pool.query(
-      `SELECT sucursal, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClause} GROUP BY sucursal ORDER BY monto DESC LIMIT 10`, values
+      `SELECT "sucursal", COALESCE(SUM("monto_mnx"),0) as monto FROM aclaraciones ${whereClause} GROUP BY "sucursal" ORDER BY monto DESC LIMIT 10`, values
     )).rows;
 
     // 8. Top 10 vendedoras por aclaraciones
     const topVendedoras = (await pool.query(
-      `SELECT vendedora, COUNT(*) as cantidad FROM aclaraciones ${whereClause} GROUP BY vendedora ORDER BY cantidad DESC LIMIT 10`, values
+      `SELECT "vendedora", COUNT(*) as cantidad FROM aclaraciones ${whereClause} GROUP BY "vendedora" ORDER BY cantidad DESC LIMIT 10`, values
     )).rows;
 
     // 9. Top 10 vendedoras por monto
     const topVendedorasMonto = (await pool.query(
-      `SELECT vendedora, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClause} GROUP BY vendedora ORDER BY monto DESC LIMIT 10`, values
+      `SELECT "vendedora", COALESCE(SUM("monto_mnx"),0) as monto FROM aclaraciones ${whereClause} GROUP BY "vendedora" ORDER BY monto DESC LIMIT 10`, values
     )).rows;
 
-    // 10. Vendedores con documentación incompleta (comentarios <> 'COMPLETO')
-    // --- CORREGIDO: agrega el filtro extra correctamente ---
-    const whereVendedoresIncompletos = [...where, `LOWER(COALESCE(comentarios,'')) <> 'completo'`];
-    const valuesVendedoresIncompletos = [...values];
-    const whereClauseVendedoresIncompletos = whereVendedoresIncompletos.length ? `WHERE ${whereVendedoresIncompletos.join(" AND ")}` : "";
+    // 10. Vendedores con documentación incompleta
+    let whereIncompletos = [...where];
+    let valuesIncompletos = [...values];
+    
+    whereIncompletos.push(`LOWER(COALESCE("comentarios",'')) <> 'completo'`);
+    const whereClauseIncompletos = whereIncompletos.length ? `WHERE ${whereIncompletos.join(" AND ")}` : "";
+    
     const vendedoresIncompletos = (await pool.query(
-      `SELECT vendedora, COUNT(*) as cantidad FROM aclaraciones ${whereClauseVendedoresIncompletos} GROUP BY vendedora ORDER BY cantidad DESC LIMIT 10`, valuesVendedoresIncompletos
+      `SELECT "vendedora", COUNT(*) as cantidad FROM aclaraciones ${whereClauseIncompletos} GROUP BY "vendedora" ORDER BY cantidad DESC LIMIT 10`, 
+      valuesIncompletos
     )).rows;
 
-    // 11. Resolución por mes (ganadas, perdidas, en proceso)
+    // 11. Resolución por mes
     const resolucionPorMes = (await pool.query(`
       SELECT 
-        mes_peticion as mes,
-        COUNT(*) FILTER (WHERE LOWER(captura_cc) = 'ganada') as ganadas,
-        COUNT(*) FILTER (WHERE LOWER(captura_cc) = 'perdida') as perdidas,
-        COUNT(*) FILTER (WHERE LOWER(captura_cc) NOT IN ('ganada','perdida')) as en_proceso,
-        COALESCE(SUM(CASE WHEN LOWER(captura_cc) NOT IN ('ganada','perdida') THEN monto_mnx ELSE 0 END),0) as monto_en_disputa,
-        COALESCE(SUM(CASE WHEN LOWER(captura_cc) = 'ganada' THEN monto_mnx ELSE 0 END),0) as defendido,
-        COALESCE(SUM(CASE WHEN LOWER(captura_cc) = 'perdida' THEN monto_mnx ELSE 0 END),0) as perdido
+        "mes_peticion" as mes,
+        COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) = 'ganada') as ganadas,
+        COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) = 'perdida') as perdidas,
+        COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida')) as "enProceso",
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida') THEN "monto_mnx" ELSE 0 END),0) as "montoEnDisputa",
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'ganada' THEN "monto_mnx" ELSE 0 END),0) as defendido,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'perdida' THEN "monto_mnx" ELSE 0 END),0) as perdido
       FROM aclaraciones
       ${whereClause}
-      GROUP BY mes_peticion
-      ORDER BY MIN(año) DESC, MIN(mes_peticion) DESC
+      GROUP BY "mes_peticion"
+      ORDER BY 
+        CASE "mes_peticion"
+          WHEN 'ENERO' THEN 1 WHEN 'FEBRERO' THEN 2 WHEN 'MARZO' THEN 3
+          WHEN 'ABRIL' THEN 4 WHEN 'MAYO' THEN 5 WHEN 'JUNIO' THEN 6
+          WHEN 'JULIO' THEN 7 WHEN 'AGOSTO' THEN 8 WHEN 'SEPTIEMBRE' THEN 9
+          WHEN 'OCTUBRE' THEN 10 WHEN 'NOVIEMBRE' THEN 11 WHEN 'DICIEMBRE' THEN 12
+          ELSE 13 END
     `, values)).rows;
 
     // 12. Top 10 sucursales que han perdido más dinero
-    // --- CORREGIDO: agrega el filtro extra correctamente ---
-    const whereSucursalesPerdidas = [...where, `LOWER(captura_cc) = 'perdida'`];
-    const valuesSucursalesPerdidas = [...values];
-    const whereClauseSucursalesPerdidas = whereSucursalesPerdidas.length ? `WHERE ${whereSucursalesPerdidas.join(" AND ")}` : "";
+    let wherePerdidas = [...where];
+    let valuesPerdidas = [...values];
+    
+    wherePerdidas.push(`LOWER(COALESCE("captura_cc",'')) = 'perdida'`);
+    const whereClausePerdidas = wherePerdidas.length ? `WHERE ${wherePerdidas.join(" AND ")}` : "";
+    
     const topSucursalesPerdidas = (await pool.query(
-      `SELECT sucursal, COALESCE(SUM(monto_mnx),0) as montoPerdido FROM aclaraciones ${whereClauseSucursalesPerdidas} GROUP BY sucursal ORDER BY montoPerdido DESC LIMIT 10`, valuesSucursalesPerdidas
+      `SELECT "sucursal", COALESCE(SUM("monto_mnx"),0) as monto_perdido FROM aclaraciones ${whereClausePerdidas} GROUP BY "sucursal" ORDER BY monto_perdido DESC LIMIT 10`, 
+      valuesPerdidas
     )).rows;
 
-    // 13. Sucursal con más dinero en disputa
-    // --- CORREGIDO: agrega el filtro extra correctamente ---
-    const whereSucursalMasDinero = [...where, `LOWER(captura_cc) NOT IN ('ganada','perdida')`];
-    const valuesSucursalMasDinero = [...values];
-    const whereClauseSucursalMasDinero = whereSucursalMasDinero.length ? `WHERE ${whereSucursalMasDinero.join(" AND ")}` : "";
-    const sucursalMasDineroEnDisputa = (await pool.query(
-      `SELECT sucursal, COALESCE(SUM(monto_mnx),0) as monto FROM aclaraciones ${whereClauseSucursalMasDinero} GROUP BY sucursal ORDER BY monto DESC LIMIT 1`, valuesSucursalMasDinero
-    )).rows[0] || null;
-
-    // 14. Dinero en disputa por estatus (para gráfica)
-    const graficaDineroEstatus = (await pool.query(`
-      SELECT 
-        CASE 
-          WHEN LOWER(captura_cc) = 'ganada' THEN 'Ganada'
-          WHEN LOWER(captura_cc) = 'perdida' THEN 'Perdida'
-          ELSE 'En Proceso'
-        END as estatus,
-        COALESCE(SUM(monto_mnx),0) as monto
-      FROM aclaraciones
-      ${whereClause}
-      GROUP BY estatus
-    `, values)).rows;
-
-    // 15. Cantidad de aclaraciones por estatus (para gráfica)
-    const graficaCantidadEstatus = (await pool.query(`
-      SELECT 
-        CASE 
-          WHEN LOWER(captura_cc) = 'ganada' THEN 'Ganada'
-          WHEN LOWER(captura_cc) = 'perdida' THEN 'Perdida'
-          ELSE 'En Proceso'
-        END as estatus,
-        COUNT(*) as cantidad
-      FROM aclaraciones
-      ${whereClause}
-      GROUP BY estatus
-    `, values)).rows;
-
+    // ✅ RESPUESTA CORREGIDA: Devolver datos estructurados correctamente
     res.json({
-      totalMontoEnDisputa: Number(totalResult.rows[0].total_monto),
-      totalAclaraciones: Number(totalResult.rows[0].total_aclaraciones),
+      total: {
+        totalAclaraciones: Number(totalResult.rows[0].total_aclaraciones),
+        totalMontoGeneral: Number(totalResult.rows[0].total_monto_general),
+        totalMontoEnDisputa: Number(totalResult.rows[0].total_monto_en_disputa),
+        aclaracionesEnProceso: Number(totalResult.rows[0].aclaraciones_en_proceso)
+      },
       aclaracionesPorMes,
       estatusDocumentacion,
       topBloques,
@@ -3055,18 +3180,14 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
       topVendedorasMonto,
       vendedoresIncompletos,
       resolucionPorMes,
-      topSucursalesPerdidas,
-      sucursalMasDineroEnDisputa,
-      graficaDineroEstatus,
-      graficaCantidadEstatus
+      topSucursalesPerdidas
     });
   } catch (error) {
-    console.error("❌ Error en dashboard aclaraciones:", error);
-    res.status(500).json({ error: "Error al obtener dashboard de aclaraciones", detalle: error.message });
+    console.error("Error en dashboard de aclaraciones:", error);
+    res.status(500).json({ error: "Error al obtener datos del dashboard de aclaraciones" });
   }
 });
-
-// ===================  INICIO DEL SERVIDOR ===================
+// ====================  INICIO DEL SERVIDOR ====================
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Servidor ejecutándose en http://localhost:${PORT}`);
