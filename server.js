@@ -17,6 +17,57 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3000 po
 app.use(cors());
 app.use(express.json());
 
+// 🔒 RESTRICCIÓN POR IP PARA DATOS CONFIDENCIALES
+const IPS_AUTORIZADAS_DATOS = [
+  '127.0.0.1', '::1',                    // Localhost (desarrollo)
+  '192.168.1.0/24', '192.168.0.0/24',   // Redes locales comunes
+  process.env.IP_AUTORIZADA_1 || '',     // IP desde variable de entorno
+  process.env.IP_AUTORIZADA_2 || '',     // IP adicional desde variable de entorno
+].filter(Boolean); // Remover valores vacíos
+
+// Middleware para proteger endpoints con datos confidenciales
+const protegerDatos = (req, res, next) => {
+  // Obtener IP real considerando proxies (Render usa proxies)
+  const forwarded = req.headers['x-forwarded-for'];
+  const clientIP = forwarded ? forwarded.split(',')[0].trim() : 
+                   req.connection.remoteAddress || 
+                   req.socket.remoteAddress ||
+                   req.ip;
+  
+  const cleanIP = clientIP.replace(/^::ffff:/, '');
+  
+  console.log(`🔍 Intento de acceso a datos desde IP: ${cleanIP}`);
+  console.log(`🔒 IPs autorizadas:`, IPS_AUTORIZADAS_DATOS);
+  
+  // Verificar si la IP está autorizada
+  const isAuthorized = IPS_AUTORIZADAS_DATOS.some(authorizedIP => {
+    if (authorizedIP.includes('/')) {
+      // Manejo básico de rangos CIDR (192.168.1.0/24)
+      const [network, mask] = authorizedIP.split('/');
+      const networkBase = network.split('.').slice(0, parseInt(mask) / 8).join('.');
+      const clientBase = cleanIP.split('.').slice(0, parseInt(mask) / 8).join('.');
+      return networkBase === clientBase;
+    }
+    return authorizedIP === cleanIP;
+  });
+  
+  if (isAuthorized) {
+    console.log(`✅ IP autorizada para datos: ${cleanIP}`);
+    next();
+  } else {
+    console.log(`❌ IP NO autorizada para datos: ${cleanIP}`);
+    res.status(403).json({ 
+      error: 'Acceso denegado desde esta ubicación',
+      message: 'Los datos confidenciales solo son accesibles desde ubicaciones autorizadas',
+      ip: cleanIP,
+      timestamp: new Date().toISOString()
+    });
+  }
+};
+
+// Configurar Express para confiar en proxies (necesario para Render)
+app.set('trust proxy', true);
+
 // ✅ Conexión a la base de datos - automática para Railway
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_OnhVP53dwERt@ep-sweet-bird-aeqhnyu4-pooler.c-2.us-east-2.aws.neon.tech:5432/buscadores?sslmode=require",
@@ -414,7 +465,7 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
 });
 
 // ✅ Endpoint para borrar registros del año 2025 de una tabla
-app.delete("/delete-all/:tabla", async (req, res) => {
+app.delete("/delete-all/:tabla", protegerDatos, async (req, res) => {
   const tabla = req.params.tabla;
   
   // Validar que solo se pueda borrar de caja y ventas
@@ -715,7 +766,8 @@ if (tabla === "aclaraciones") {
 });
 
 ["cargos_auto", "caja", "ventas", "aclaraciones"].forEach((tabla) => {
-  app.get(`/${tabla}`, async (req, res) => {
+  // 🔒 Proteger endpoints con datos confidenciales
+  app.get(`/${tabla}`, protegerDatos, async (req, res) => {
     try {
       const { pagina = 1, limite = 1000, ...filtros } = req.query;
       const { query, values } = generarConsulta(tabla, filtros, pagina, limite);
@@ -1512,7 +1564,7 @@ app.get("/cargos_auto/procesadores", async (req, res) => {
   }
 });
 
-app.get("/aclaraciones/procesadores", async (req, res) => {
+app.get("/aclaraciones/procesadores", protegerDatos, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "procesador" FROM "aclaraciones" WHERE "procesador" IS NOT NULL ORDER BY "procesador"`
@@ -1523,7 +1575,7 @@ app.get("/aclaraciones/procesadores", async (req, res) => {
   }
 });
 
-app.get("/aclaraciones/sucursales", async (req, res) => {
+app.get("/aclaraciones/sucursales", protegerDatos, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "sucursal" FROM "aclaraciones" WHERE "sucursal" IS NOT NULL ORDER BY "sucursal"`
@@ -1535,7 +1587,7 @@ app.get("/aclaraciones/sucursales", async (req, res) => {
 });
 
 // Endpoint para obtener vendedoras desde la tabla ventas
-app.get("/aclaraciones/vendedoras", async (req, res) => {
+app.get("/aclaraciones/vendedoras", protegerDatos, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "Vendedor" FROM "ventas" 
@@ -1552,7 +1604,7 @@ app.get("/aclaraciones/vendedoras", async (req, res) => {
 });
 
 // Endpoint para obtener bloques desde la tabla ventas
-app.get("/aclaraciones/bloques", async (req, res) => {
+app.get("/aclaraciones/bloques", protegerDatos, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "Bloque" FROM "ventas" 
@@ -1569,7 +1621,7 @@ app.get("/aclaraciones/bloques", async (req, res) => {
 });
 
 // Endpoint para obtener comentarios comunes desde aclaraciones
-app.get("/aclaraciones/comentarios-comunes", async (req, res) => {
+app.get("/aclaraciones/comentarios-comunes", protegerDatos, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT "comentarios", COUNT(*) as frecuencia
@@ -1589,7 +1641,7 @@ app.get("/aclaraciones/comentarios-comunes", async (req, res) => {
 });
 
 // Endpoint para obtener opciones de captura CC desde aclaraciones
-app.get("/aclaraciones/captura-cc", async (req, res) => {
+app.get("/aclaraciones/captura-cc", protegerDatos, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "captura_cc" FROM "aclaraciones" 
@@ -1654,7 +1706,7 @@ app.get("/aclaraciones/captura-cc", async (req, res) => {
 });
 
 // Endpoint para actualizar registros de aclaraciones
-app.put("/aclaraciones/actualizar", async (req, res) => {
+app.put("/aclaraciones/actualizar", protegerDatos, async (req, res) => {
   try {
     const { registros } = req.body;
     
@@ -3234,7 +3286,7 @@ app.get("/debug-validador/:numero", async (req, res) => {
   }
 });
 
-app.get("/aclaraciones/dashboard", async (req, res) => {
+app.get("/aclaraciones/dashboard", protegerDatos, async (req, res) => {
   try {
     const { anio, bloque, mes } = req.query;
     let where = [];
