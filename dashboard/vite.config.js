@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: parseInt(process.env.PORT) || 5174,
+    historyApiFallback: true, // Para SPA routing en desarrollo
   },
   build: {
     outDir: 'dist',
@@ -19,5 +20,6 @@ export default defineConfig({
   // Para SPA routing en producción
   preview: {
     port: parseInt(process.env.PORT) || 5174,
+    historyApiFallback: true,
   }
 })
