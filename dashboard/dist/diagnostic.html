@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🚨 Diagnóstico SPA - Render</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #111827;
+            color: #ffffff;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        .card {
+            background: #1f2937;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .title {
+            color: #ef4444;
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+        .info-item {
+            margin-bottom: 10px;
+        }
+        .label {
+            color: #60a5fa;
+            font-weight: bold;
+        }
+        .button {
+            background: #2563eb;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            text-decoration: none;
+            display: inline-block;
+            margin: 10px 10px 10px 0;
+        }
+        .button:hover {
+            background: #1d4ed8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="title">🚨 Diagnóstico SPA - Problema de Routing</h1>
+        
+        <div class="card">
+            <h2>📊 Información de la Página</h2>
+            <div class="info-item">
+                <span class="label">URL Actual:</span> <span id="current-url"></span>
+            </div>
+            <div class="info-item">
+                <span class="label">Hostname:</span> <span id="hostname"></span>
+            </div>
+            <div class="info-item">
+                <span class="label">Pathname:</span> <span id="pathname"></span>
+            </div>
+            <div class="info-item">
+                <span class="label">User Agent:</span> <span id="user-agent"></span>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>🛠️ Posibles Soluciones</h2>
+            <p><strong>1. Problema de _redirects:</strong> El archivo de redirección no está funcionando en Render.</p>
+            <p><strong>2. Problema de build:</strong> El build no se desplegó correctamente.</p>
+            <p><strong>3. Problema de configuración:</strong> render.yaml no está configurado correctamente.</p>
+        </div>
+
+        <div class="card">
+            <h2>🎯 Pruebas Rápidas</h2>
+            <a href="/" class="button">🏠 Ir a Inicio</a>
+            <a href="/recuperacion" class="button">📊 Recuperación</a>
+            <a href="/aclaraciones" class="button">📝 Aclaraciones</a>
+            <a href="/ventas" class="button">💰 Ventas</a>
+        </div>
+    </div>
+
+    <script>
+        // Llenar información dinámica
+        document.getElementById('current-url').textContent = window.location.href;
+        document.getElementById('hostname').textContent = window.location.hostname;
+        document.getElementById('pathname').textContent = window.location.pathname;
+        document.getElementById('user-agent').textContent = navigator.userAgent;
+
+        // Log para debug
+        console.log('🚨 DIAGNÓSTICO SPA');
+        console.log('URL:', window.location.href);
+        console.log('Hostname:', window.location.hostname);
+        console.log('Pathname:', window.location.pathname);
+    </script>
+</body>
+</html>
