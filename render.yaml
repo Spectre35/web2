@@ -30,40 +30,7 @@ services:
             value: no-cache
     routes:
       - type: rewrite
-        source: /aclaraciones
-        destination: /index.html
-      - type: rewrite
-        source: /ventas
-        destination: /index.html
-      - type: rewrite
-        source: /caja
-        destination: /index.html
-      - type: rewrite
-        source: /cargos-auto
-        destination: /index.html
-      - type: rewrite
-        source: /panel
-        destination: /index.html
-      - type: rewrite
-        source: /recuperacion
-        destination: /index.html
-      - type: rewrite
-        source: /dashboard-*
-        destination: /index.html
-      - type: rewrite
-        source: /validador-telefonos
-        destination: /index.html
-      - type: rewrite
-        source: /vendedoras-status
-        destination: /index.html
-      - type: rewrite
-        source: /sucursal-bloque
-        destination: /index.html
-      - type: rewrite
-        source: /sucursales-alerta
-        destination: /index.html
-      - type: rewrite
-        source: /ingresar-aclaraciones
+        source: /*
         destination: /index.html
     envVars:
       - key: VITE_API_URL
