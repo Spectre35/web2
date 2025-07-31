@@ -1,1 +1,6 @@
+# SPA routing para React Router
 /*    /index.html   200
+
+# Headers para seguridad
+/*    X-Frame-Options: DENY    200
+/*    X-Content-Type-Options: nosniff    200

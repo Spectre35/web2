@@ -7,4 +7,17 @@ export default defineConfig({
   server: {
     port: parseInt(process.env.PORT) || 5174,
   },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets',
+    rollupOptions: {
+      output: {
+        manualChunks: undefined,
+      },
+    },
+  },
+  // Para SPA routing en producción
+  preview: {
+    port: parseInt(process.env.PORT) || 5174,
+  }
 })

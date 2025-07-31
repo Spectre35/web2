@@ -46,8 +46,17 @@ class ConfigManager {
   }
   
   static #buildProduction() {
-    // URL codificada con ROT13 - mantiene números y símbolos intactos
-    const encoded = 'uggcf://ohfpnqberf-obbg-jro2.baeraqre.pbz';
+    const hostname = window.location.hostname;
+    
+    // Mapeo específico frontend -> backend
+    if (hostname.includes('caegosfraudes')) {
+      // Para caegosfraudes.onrender.com -> buscadores.onrender.com
+      const encoded = 'uggcf://ohfpnqberf.baeraqre.pbz';
+      return this.#decode(encoded);
+    }
+    
+    // Para otros dominios usar el backend por defecto
+    const encoded = 'uggcf://ohfpnqberf.baeraqre.pbz';
     return this.#decode(encoded);
   }
   
