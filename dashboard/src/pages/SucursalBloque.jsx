@@ -36,12 +36,6 @@ export default function SucursalBloque() {
           <h1 className="text-2xl font-bold text-gray-100 drop-shadow">
             🏢 Buscador Sucursal - Bloque
           </h1>
-          <Link
-            to="/"
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
-          >
-            🏠 Ir al Home
-          </Link>
         </div>
         <div className="mb-4 flex gap-4 items-center">
           <select

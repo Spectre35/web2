@@ -1,8 +1,8 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
+// import DatePicker from "react-datepicker";
+// import "react-datepicker/dist/react-datepicker.css";
 import { formatearFecha, formatearFechasEnObjeto } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
 
@@ -156,7 +156,8 @@ export default function Recuperacion() {
     Number(monto).toLocaleString("es-MX", { style: "currency", currency: "MXN", minimumFractionDigits: 2 });
 
   return (
-    <div className="p-6 min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="p-6 min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900" style={{ transform: 'scale(0.95)', transformOrigin: 'top center' }}>
+      
       <div className="backdrop-blur-lg bg-white/10 rounded-xl shadow-2xl p-6 w-full border border-white/20">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold text-gray-100 drop-shadow">
@@ -169,73 +170,66 @@ export default function Recuperacion() {
             >
               📊 Ver Dashboard de Gráficas
             </Link>
-            <Link
-              to="/"
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
-            >
-              🏠 Ir al Home
-            </Link>
           </div>
         </div>
         
         {/* Filtros modernizados */}
-        <div className="mb-6 bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
-            <div className="space-y-2">
-              <label className="text-gray-200 font-semibold text-sm flex items-center gap-2">
-                🏢 Bloque:
-              </label>
-              <select 
-                className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                value={bloque} 
-                onChange={e => setBloque(e.target.value)}
-              >
-                <option value="">Todos los bloques</option>
-                {bloques.map(b => <option key={b} value={b}>{b}</option>)}
-              </select>
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-gray-200 font-semibold text-sm flex items-center gap-2">
-                🏪 Sucursal:
-              </label>
-              <select
-                className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                value={sucursal}
-                onChange={e => setSucursal(e.target.value)}
-              >
-                <option value="">Todas las sucursales</option>
-                {sucursales.map(suc => (
-                  <option key={suc} value={suc}>{suc}</option>
-                ))}
-              </select>
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-gray-200 font-semibold text-sm flex items-center gap-2">
-                📅 Fecha Inicio:
-              </label>
-              <DatePicker
-                selected={fechaInicio}
-                onChange={date => setFechaInicio(date)}
-                dateFormat="yyyy-MM-dd"
-                className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                placeholderText="Selecciona fecha inicio"
-              />
-            </div>
-            
-            <div className="space-y-2">
-              <label className="text-gray-200 font-semibold text-sm flex items-center gap-2">
-                📅 Fecha Fin:
-              </label>
-              <DatePicker
-                selected={fechaFin}
-                onChange={date => setFechaFin(date)}
-                dateFormat="yyyy-MM-dd"
-                className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                placeholderText="Selecciona fecha fin"
-                maxDate={new Date()}
-              />
+        <div className="mb-6 bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-4 sm:p-6">
+          <div className="w-full overflow-x-auto">
+            <div className="min-w-[340px] grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-1 items-end">
+              <div className="space-y-1">
+                <label className="text-gray-200 font-semibold text-xs sm:text-sm flex items-center gap-2">
+                  🏢 Bloque:
+                </label>
+                <select 
+                  className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-2 sm:p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-xs sm:text-sm"
+                  value={bloque} 
+                  onChange={e => setBloque(e.target.value)}
+                >
+                  <option value="">Todos los bloques</option>
+                  {bloques.map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-gray-200 font-semibold text-xs sm:text-sm flex items-center gap-2">
+                  🏪 Sucursal:
+                </label>
+                <select
+                  className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-2 sm:p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-xs sm:text-sm"
+                  value={sucursal}
+                  onChange={e => setSucursal(e.target.value)}
+                >
+                  <option value="">Todas las sucursales</option>
+                  {sucursales.map(suc => (
+                    <option key={suc} value={suc}>{suc}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-gray-200 font-semibold text-xs sm:text-sm flex items-center gap-2">
+                  📅 Fecha Inicio:
+                </label>
+                <input
+                  type="date"
+                  value={fechaInicio ? fechaInicio.toISOString().slice(0, 10) : ''}
+                  onChange={e => setFechaInicio(e.target.value ? new Date(e.target.value) : null)}
+                  className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-2 sm:p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-xs sm:text-sm [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70 hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                  placeholder="Selecciona fecha inicio"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-gray-200 font-semibold text-xs sm:text-sm flex items-center gap-2">
+                  📅 Fecha Fin:
+                </label>
+                <input
+                  type="date"
+                  value={fechaFin ? fechaFin.toISOString().slice(0, 10) : ''}
+                  onChange={e => setFechaFin(e.target.value ? new Date(e.target.value) : null)}
+                  max={new Date().toISOString().slice(0, 10)}
+                  className="w-full border border-gray-600/50 bg-gray-900/60 backdrop-blur-sm text-gray-100 p-2 sm:p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-xs sm:text-sm [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70 hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                  placeholder="Selecciona fecha fin"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -248,7 +242,7 @@ export default function Recuperacion() {
         </div>
         
         {/* Tabla principal de recuperación por mes */}
-        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 mb-8">
+        <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 mb-8 table-container" style={{ position: 'relative', zIndex: '1' }}>
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
               📊 Recuperación por Mes
@@ -258,8 +252,8 @@ export default function Recuperacion() {
             </div>
           </div>
           
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-max bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl">
+          <div className="w-full overflow-x-auto">
+            <table className="min-w-[700px] w-full bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl">
               <thead>
                 <tr className="bg-gradient-to-r from-gray-700/80 to-gray-800/80 text-left">
                   <th className="p-4 text-gray-100 font-semibold text-sm uppercase tracking-wide border-r border-gray-600/30">
@@ -347,22 +341,21 @@ export default function Recuperacion() {
         {/* Grid para tablas lado a lado */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* Tabla Vendedora */}
-          <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6">
-            <div className="flex items-center justify-between mb-6">
-              <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
+          <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 min-w-[420px] table-container" style={{ position: 'relative', zIndex: '1' }}>
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 min-w-[340px]">
+              <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2 whitespace-normal break-words min-w-[220px]">
                 👩‍💼 Recuperación por Vendedora
               </h2>
-              <div className="text-sm text-gray-400">
+              <div className="text-sm text-gray-400 mt-2 sm:mt-0">
                 MXN
               </div>
             </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-fit bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl">
+            <div className="w-full overflow-x-auto">
+              <table className="min-w-[700px] w-full bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl text-xs" style={{ transform: 'scale(0.9)', transformOrigin: 'top left' }}>
                 <thead>
                   <tr className="bg-gradient-to-r from-gray-700/80 to-gray-800/80 text-left">
                     <th 
-                      className="p-3 text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors"
+                      className="p-1 min-w-[80px] text-gray-100 font-semibold text-xs uppercase tracking-wide border-r border-gray-600/30 cursor-pointer hover:bg-gray-600/30 transition-colors whitespace-normal break-words"
                       onClick={() => handleSort('vendedora', 'vendedora')}
                     >
                       <div className="flex items-center">
@@ -444,8 +437,8 @@ export default function Recuperacion() {
                       else if (v.porcentajeRecuperado >= 36) color = "bg-yellow-400 text-gray-900";
                       return (
                         <tr key={i} className={`${i % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-600/30 transition-colors duration-200`}>
-                          <td className="p-3 text-gray-200 font-medium border-r border-gray-600/20 text-xs">
-                            <div className="max-w-[120px] truncate" title={v.vendedora}>
+                          <td className="p-1 text-gray-200 font-medium border-r border-gray-600/20 text-xs whitespace-normal break-words">
+                            <div className="max-w-[120px] whitespace-normal break-words" title={v.vendedora}>
                               {v.vendedora}
                             </div>
                           </td>
@@ -479,8 +472,8 @@ export default function Recuperacion() {
                               {formatoMoneda(v.ventasTotal)}
                             </span>
                           </td>
-                          <td className={`p-3 font-bold border-r border-gray-600/20 text-xs ${color} rounded-md text-center`}>
-                            {v.ventasTotal ? `${v.porcentajeRecuperado}%` : "-"}
+                          <td className={`p-1 font-bold border-r border-gray-600/20 text-xs ${color} rounded-md text-center`}>
+                            <span className="text-xs">{v.ventasTotal ? `${v.porcentajeRecuperado}%` : "-"}</span>
                           </td>
                         </tr>
                       );
@@ -492,18 +485,17 @@ export default function Recuperacion() {
 
           {/* Tabla Sucursal */}
           {resumenSucursal.length > 0 && (
-            <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2">
+            <div className="bg-gray-800/30 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 min-w-[420px] table-container" style={{ position: 'relative', zIndex: '1' }}>
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-6 min-w-[340px]">
+                <h2 className="text-xl font-bold text-gray-100 flex items-center gap-2 whitespace-normal break-words min-w-[220px]">
                   🏢 Recuperación por Sucursal
                 </h2>
-                <div className="text-sm text-gray-400">
+                <div className="text-sm text-gray-400 mt-2 sm:mt-0">
                   MXN
                 </div>
               </div>
-              
-              <div className="w-full">
-                <table className="w-full bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl text-xs">
+              <div className="w-full overflow-x-auto">
+              <table className="min-w-[700px] w-full bg-white/5 backdrop-blur-sm rounded-lg overflow-hidden shadow-xl text-xs" style={{ transform: 'scale(0.9)', transformOrigin: 'top left' }}>
                   <thead>
                     <tr className="bg-gradient-to-r from-gray-700/80 to-gray-800/80 text-left">
                       <th 
@@ -608,8 +600,8 @@ export default function Recuperacion() {
                         
                         return (
                           <tr key={i} className={`${i % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-600/30 transition-colors duration-200`}>
-                            <td className="p-2 text-gray-200 font-medium border-r border-gray-600/20 text-xs">
-                              <div className="truncate" title={s.sucursal}>
+                            <td className="p-1 text-gray-200 font-medium border-r border-gray-600/20 text-xs whitespace-normal break-words">
+                              <div className="max-w-[100px] whitespace-normal break-words" title={s.sucursal}>
                                 {s.sucursal}
                               </div>
                             </td>

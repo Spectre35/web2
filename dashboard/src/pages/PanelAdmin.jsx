@@ -2,7 +2,7 @@ import { useState } from "react";
 import UploadFile from "../components/UploadFile";
 import { Link } from "react-router-dom";
 
-const PASSWORD = "Excelentemente"; // Cambia esto
+const PASSWORD = "1202"; // Cambia esto
 
 export default function PanelAdmin() {
   const [autorizado, setAutorizado] = useState(false);

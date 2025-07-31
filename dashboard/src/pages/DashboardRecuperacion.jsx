@@ -5,8 +5,8 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell
 } from "recharts";
-import DatePicker from "react-datepicker";
-import "react-datepicker/dist/react-datepicker.css";
+// import DatePicker from "react-datepicker";
+// import "react-datepicker/dist/react-datepicker.css";
 import { formatearFecha, formatearFechasEnObjeto } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
 
@@ -159,25 +159,25 @@ export default function DashboardRecuperacion() {
             
             <div>
               <label className="block text-gray-300 font-medium mb-2">Fecha Inicio:</label>
-              <DatePicker
-                selected={fechaInicio}
-                onChange={date => setFechaInicio(date)}
-                dateFormat="yyyy-MM-dd"
-                className="w-full border border-gray-600 bg-gray-800/70 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholderText="Selecciona fecha inicio"
+              <input
+                type="date"
+                value={fechaInicio ? fechaInicio.toISOString().slice(0, 10) : ''}
+                onChange={e => setFechaInicio(e.target.value ? new Date(e.target.value) : null)}
+                className="w-full border border-gray-600 bg-gray-800/70 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70 hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                placeholder="Selecciona fecha inicio"
                 disabled={loading}
               />
             </div>
             
             <div>
               <label className="block text-gray-300 font-medium mb-2">Fecha Fin:</label>
-              <DatePicker
-                selected={fechaFin}
-                onChange={date => setFechaFin(date)}
-                dateFormat="yyyy-MM-dd"
-                className="w-full border border-gray-600 bg-gray-800/70 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholderText="Selecciona fecha fin"
-                maxDate={new Date()}
+              <input
+                type="date"
+                value={fechaFin ? fechaFin.toISOString().slice(0, 10) : ''}
+                onChange={e => setFechaFin(e.target.value ? new Date(e.target.value) : null)}
+                max={new Date().toISOString().slice(0, 10)}
+                className="w-full border border-gray-600 bg-gray-800/70 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent [&::-webkit-calendar-picker-indicator]:invert [&::-webkit-calendar-picker-indicator]:opacity-70 hover:[&::-webkit-calendar-picker-indicator]:opacity-100"
+                placeholder="Selecciona fecha fin"
                 disabled={loading}
               />
             </div>

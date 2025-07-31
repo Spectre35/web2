@@ -17,14 +17,10 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3000 po
 app.use(cors());
 app.use(express.json());
 
-// ✅ Conexión a la base de datos "buscadores"
+// ✅ Conexión a la base de datos - automática para Railway
 const pool = new Pool({
-  host: "ep-sweet-bird-aeqhnyu4-pooler.c-2.us-east-2.aws.neon.tech",
-  database: "buscadores",
-  user: "neondb_owner",
-  password: "npg_OnhVP53dwERt",
-  port: 5432,
-  ssl: { rejectUnauthorized: false },
+  connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_OnhVP53dwERt@ep-sweet-bird-aeqhnyu4-pooler.c-2.us-east-2.aws.neon.tech:5432/buscadores?sslmode=require",
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   max: 50, // ✅ hasta 50 conexiones simultáneas
 });
 
@@ -1542,11 +1538,70 @@ app.get("/aclaraciones/sucursales", async (req, res) => {
 app.get("/aclaraciones/vendedoras", async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT DISTINCT "Vendedor" FROM "ventas" WHERE "Vendedor" IS NOT NULL ORDER BY "Vendedor"`
+      `SELECT DISTINCT "Vendedor" FROM "ventas" 
+       WHERE "Vendedor" IS NOT NULL 
+       AND "Vendedor" != ''
+       ORDER BY "Vendedor"
+       LIMIT 200`
     );
     res.json(result.rows.map(r => r.Vendedor).filter(Boolean));
   } catch (err) {
+    console.error("Error al obtener vendedoras:", err);
     res.status(500).json({ error: "Error al obtener vendedoras" });
+  }
+});
+
+// Endpoint para obtener bloques desde la tabla ventas
+app.get("/aclaraciones/bloques", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT "Bloque" FROM "ventas" 
+       WHERE "Bloque" IS NOT NULL 
+       AND "Bloque" != ''
+       ORDER BY "Bloque" 
+       LIMIT 100`
+    );
+    res.json(result.rows.map(r => r.Bloque).filter(Boolean));
+  } catch (err) {
+    console.error("Error al obtener bloques:", err);
+    res.status(500).json({ error: "Error al obtener bloques" });
+  }
+});
+
+// Endpoint para obtener comentarios comunes desde aclaraciones
+app.get("/aclaraciones/comentarios-comunes", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT "comentarios", COUNT(*) as frecuencia
+       FROM "aclaraciones" 
+       WHERE "comentarios" IS NOT NULL 
+       AND "comentarios" != '' 
+       AND "comentarios" != 'ND'
+       GROUP BY "comentarios"
+       ORDER BY frecuencia DESC, "comentarios"
+       LIMIT 50`
+    );
+    res.json(result.rows.map(r => r.comentarios).filter(Boolean));
+  } catch (err) {
+    console.error("Error al obtener comentarios comunes:", err);
+    res.status(500).json({ error: "Error al obtener comentarios comunes" });
+  }
+});
+
+// Endpoint para obtener opciones de captura CC desde aclaraciones
+app.get("/aclaraciones/captura-cc", async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT DISTINCT "captura_cc" FROM "aclaraciones" 
+       WHERE "captura_cc" IS NOT NULL 
+       AND "captura_cc" != ''
+       ORDER BY "captura_cc"
+       LIMIT 20`
+    );
+    res.json(result.rows.map(r => r.captura_cc).filter(Boolean));
+  } catch (err) {
+    console.error("Error al obtener opciones de captura CC:", err);
+    res.status(500).json({ error: "Error al obtener opciones de captura CC" });
   }
 });
 
@@ -1595,6 +1650,187 @@ app.get("/aclaraciones/captura-cc", async (req, res) => {
     res.json(result.rows.map(r => r.captura_cc).filter(Boolean));
   } catch (err) {
     res.status(500).json({ error: "Error al obtener valores de captura CC" });
+  }
+});
+
+// Endpoint para actualizar registros de aclaraciones
+app.put("/aclaraciones/actualizar", async (req, res) => {
+  try {
+    const { registros } = req.body;
+    
+    console.log("🔄 Recibida solicitud de actualización de aclaraciones");
+    console.log("📊 Número de registros a actualizar:", registros?.length || 0);
+    
+    if (!registros || !Array.isArray(registros)) {
+      return res.status(400).json({ error: "Se requiere un array de registros" });
+    }
+
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
+      console.log("✅ Transacción iniciada");
+      
+      const resultados = [];
+      
+      for (const registro of registros) {
+        const { id_original, datos_nuevos } = registro;
+        
+        console.log("🔍 Procesando registro:", {
+          id_transaccion: id_original?.id_de_transaccion,
+          num_tarjeta: id_original?.num_de_tarjeta,
+          campos_a_actualizar: Object.keys(datos_nuevos || {})
+        });
+        
+        if (!id_original || !datos_nuevos) {
+          console.log("⚠️ Registro omitido: falta id_original o datos_nuevos");
+          continue;
+        }
+        
+        // Construir la query de UPDATE dinámicamente
+        const camposActualizar = [];
+        const valores = [];
+        let contador = 1;
+        
+        // Recorrer los campos que se van a actualizar
+        for (const [campo, valor] of Object.entries(datos_nuevos)) {
+          if (valor !== null && valor !== undefined) {
+            // Validar y formatear campos especiales
+            let valorFormateado = valor;
+            
+            // Campos de fecha: si están vacíos, establecer como NULL
+            const camposFecha = ['fecha_venta', 'fecha_contrato', 'fecha_de_peticion', 'fecha_de_respuesta'];
+            if (camposFecha.includes(campo)) {
+              if (valor === '' || valor === null || valor === undefined) {
+                valorFormateado = null;
+              } else {
+                // Validar formato de fecha
+                const fechaValida = new Date(valor);
+                if (isNaN(fechaValida.getTime())) {
+                  console.warn(`Fecha inválida para campo ${campo}: ${valor}`);
+                  continue; // Saltar este campo si la fecha no es válida
+                }
+                valorFormateado = valor;
+              }
+            }
+            
+            // Campos numéricos: convertir strings vacíos a NULL
+            const camposNumericos = ['monto', 'monto_mnx', 'año'];
+            if (camposNumericos.includes(campo)) {
+              if (valor === '' || valor === null || valor === undefined) {
+                valorFormateado = null;
+              } else {
+                // Validar que sea un número
+                const numeroValido = parseFloat(valor);
+                if (isNaN(numeroValido)) {
+                  console.warn(`Número inválido para campo ${campo}: ${valor}`);
+                  continue; // Saltar este campo si no es un número válido
+                }
+                valorFormateado = valor;
+              }
+            }
+            
+            // Campos booleanos para EUROSKIN
+            if (campo === 'euroskin') {
+              if (valor === '' || valor === null || valor === undefined) {
+                valorFormateado = null;
+              } else {
+                valorFormateado = valor;
+              }
+            }
+            
+            camposActualizar.push(`"${campo}" = $${contador}`);
+            valores.push(valorFormateado);
+            contador++;
+          }
+        }
+        
+        if (camposActualizar.length === 0) {
+          continue;
+        }
+        
+        // Agregar el ID original para la condición WHERE
+        valores.push(id_original.id_de_transaccion);
+        valores.push(id_original.num_de_tarjeta);
+        
+        const updateQuery = `
+          UPDATE "aclaraciones" 
+          SET ${camposActualizar.join(', ')}
+          WHERE "id_de_transaccion" = $${contador} 
+          AND "num_de_tarjeta" = $${contador + 1}
+        `;
+        
+        console.log("🔧 Query a ejecutar:", updateQuery);
+        console.log("📝 Valores:", valores);
+        
+        // Debug: Verificar si el registro existe
+        const debugQuery = `
+          SELECT COUNT(*) as count
+          FROM "aclaraciones" 
+          WHERE "id_de_transaccion" = $1 
+          AND "num_de_tarjeta" = $2
+        `;
+        const debugResult = await client.query(debugQuery, [
+          id_original.id_de_transaccion,
+          id_original.num_de_tarjeta
+        ]);
+        console.log("🔍 Debug - Registro encontrado:", debugResult.rows[0]);
+        
+        // Debug adicional: buscar registros similares
+        if (debugResult.rows[0].count === 0) {
+          console.log("🔍 No se encontró registro exacto. Buscando similares...");
+          
+          // Buscar por ID de transacción únicamente
+          const similarQuery = `
+            SELECT "id_de_transaccion", "num_de_tarjeta", "fecha_venta"
+            FROM "aclaraciones" 
+            WHERE "id_de_transaccion" = $1 
+            LIMIT 3
+          `;
+          const similarResult = await client.query(similarQuery, [id_original.id_de_transaccion]);
+          console.log("🔍 Debug - Registros con mismo ID transacción:", similarResult.rows);
+          
+          // Buscar por número de tarjeta
+          const tarjetaQuery = `
+            SELECT "id_de_transaccion", "num_de_tarjeta", "fecha_venta"
+            FROM "aclaraciones" 
+            WHERE "num_de_tarjeta" = $1 
+            LIMIT 3
+          `;
+          const tarjetaResult = await client.query(tarjetaQuery, [id_original.num_de_tarjeta]);
+          console.log("🔍 Debug - Registros con mismo num tarjeta:", tarjetaResult.rows);
+        }
+        
+        const result = await client.query(updateQuery, valores);
+        
+        console.log("✅ Query ejecutada. Filas afectadas:", result.rowCount);
+        
+        resultados.push({
+          id_original,
+          actualizado: result.rowCount > 0,
+          filas_afectadas: result.rowCount
+        });
+      }
+      
+      await client.query('COMMIT');
+      console.log("💾 Transacción confirmada (COMMIT)");
+      
+      res.json({
+        success: true,
+        registros_procesados: resultados.length,
+        resultados
+      });
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    
+  } catch (error) {
+    console.error("❌ Error al actualizar aclaraciones:", error);
+    res.status(500).json({ error: "Error al actualizar registros" });
   }
 });
 
@@ -3083,7 +3319,7 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
       FROM aclaraciones 
       ${whereClause} 
       GROUP BY "bloque" 
-      ORDER BY cantidad DESC 
+      ORDER BY cantidad DESC  
       LIMIT 10
     `;
     const topBloques = (await pool.query(topBloquesQuery, values)).rows;
@@ -3192,6 +3428,17 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
     res.status(500).json({ error: "Error al obtener datos del dashboard de aclaraciones" });
   }
 });
+
+// ====================  HEALTH CHECK PARA RENDER/RAILWAY ====================
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // ====================  INICIO DEL SERVIDOR ====================
 
 app.listen(PORT, '0.0.0.0', () => {

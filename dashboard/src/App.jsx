@@ -1,10 +1,10 @@
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
 import React, { Suspense, lazy } from "react";
 const PanelAdmin = lazy(() => import("./pages/PanelAdmin"));
 const CargosAuto = lazy(() => import("./pages/CargosAuto"));
 const Caja = lazy(() => import("./pages/Caja"));
 const Ventas = lazy(() => import("./pages/Ventas"));
-const Home = lazy(() => import("./pages/Home"));
+// const Home = lazy(() => import("./pages/Home")); // Eliminado - ya no se usa
 const Recuperacion = lazy(() => import("./pages/Recuperacion"));
 const DashboardRecuperacion = lazy(() => import("./pages/DashboardRecuperacion"));
 const VendedorasStatus = lazy(() => import("./pages/VendedorasStatus"));
@@ -23,7 +23,7 @@ function App() {
       <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-white text-xl">Cargando...</div>}>
         <Routes>
           <Route element={<DashboardLayout />}>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={<Navigate to="/recuperacion" replace />} />
             <Route path="/cargos-auto" element={<CargosAuto />} />
             <Route path="/caja" element={<Caja />} />
             <Route path="/ventas" element={<Ventas />} />

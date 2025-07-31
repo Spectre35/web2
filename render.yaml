@@ -1,0 +1,3 @@
+# Build configuration for Render
+buildCommand = "cd dashboard && npm install && npm run build"
+publishPath = "dashboard/dist"

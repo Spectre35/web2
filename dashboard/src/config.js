@@ -17,6 +17,11 @@ function detectarIPLocal() {
     return "http://192.168.1.245:3001";
   }
   
+  // Si estamos en producción (Render), usar la URL del backend en Railway
+  if (hostname.includes('onrender.com') || hostname.includes('render.com')) {
+    return "https://tu-backend.up.railway.app"; // Esto lo cambiaremos después
+  }
+  
   // Por defecto usar localhost
   return "http://localhost:3001";
 }

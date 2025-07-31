@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import axios from "axios";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
+import { useMainScroll } from "../layouts/DashboardLayout";
 
 export default function CargosAuto() {
   const [datos, setDatos] = useState([]);
@@ -28,6 +29,7 @@ export default function CargosAuto() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
   const limite = 1000;
+  const mainRef = useMainScroll();
 
   useEffect(() => {
     obtenerSucursales();
@@ -126,6 +128,7 @@ export default function CargosAuto() {
       setDatos(res.data.datos.map(formatearFechasEnObjeto));
       setTotal(res.data.total);
       setCargando(false);
+      if (mainRef?.current) mainRef.current.scrollTop = 0;
     } catch (error) {
       setCargando(false);
       console.error('Error al obtener datos:', error);

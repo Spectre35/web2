@@ -977,24 +977,6 @@ export default function IngresarAclaraciones() {
   return (
     <div className="p-4 bg-gray-900 text-gray-200 min-h-screen">
       <div className="w-full max-w-none mx-auto">
-        {/* Botones de navegación */}
-        <div className="flex justify-start items-center mb-4 space-x-3">
-          <button
-            onClick={() => navigate('/')}
-            className="px-4 py-2 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 transition flex items-center space-x-2"
-          >
-            <span>🏠</span>
-            <span>Home</span>
-          </button>
-          <button
-            onClick={() => navigate('/aclaraciones')}
-            className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition flex items-center space-x-2"
-          >
-            <span>📋</span>
-            <span>Aclaraciones</span>
-          </button>
-        </div>
-
         <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-blue-400">Ingresar Aclaraciones</h1>

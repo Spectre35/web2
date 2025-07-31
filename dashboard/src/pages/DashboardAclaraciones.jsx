@@ -279,7 +279,7 @@ export default function DashboardAclaraciones() {
                     </div>
                     <div className="text-red-400 text-2xl font-bold mb-2 flex flex-col">
                       <span>{resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseInt(curr.perdidas) || 0), 0) || 0} perdidas</span>
-                      <span className="text-lg text-red-300 font-semibold">{formatCurrency(resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseFloat(curr.perdido) || 0), 0) || 0)}</span>
+                      <span className="text-lg text-red-300 font-semibold">{formatCurrency(resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseFloat(curr.montoPerdido) || 0), 0) || 0)}</span>
                     </div>
                     <div className="text-gray-300 text-sm font-medium">Perdidas y monto perdido</div>
                     <div className="w-full bg-gray-700/50 rounded-full h-2 mt-3">
