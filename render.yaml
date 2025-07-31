@@ -14,9 +14,8 @@ services:
         value: 10000
 
   # Frontend Static Site  
-  - type: web
+  - type: static
     name: sistema-aclaraciones-frontend
-    env: static
     buildCommand: cd dashboard && npm install && npm run build
     staticPublishPath: dashboard/dist
     headers:
