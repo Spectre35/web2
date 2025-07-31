@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: '/', // Asegurar base correcta para Render
   server: {
     port: parseInt(process.env.PORT) || 5174,
     historyApiFallback: true, // Para SPA routing en desarrollo

@@ -1,4 +1,8 @@
+# 🔧 Configuración alternativa para Render (Static Site)
+
+# OPCIÓN 1: Configuración mínima y limpia
 services:
+  # Backend separado
   - type: web
     name: buscadores-backend
     env: node
@@ -8,6 +12,7 @@ services:
       - key: NODE_ENV
         value: production
 
+  # Frontend como Static Site puro
   - type: static
     name: buscadores-frontend
     buildCommand: npm install && npm run build
