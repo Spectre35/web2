@@ -3491,6 +3491,22 @@ app.get('/health', (req, res) => {
   });
 });
 
+// ====================  HEALTH CHECK ENDPOINT ====================
+// Endpoint para keep-alive (mantener el servicio activo)
+app.get('/health-check', (req, res) => {
+  const healthStatus = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    service: 'Backend API',
+    message: 'Servicio funcionando correctamente'
+  };
+  
+  console.log(`🏓 Health check realizado - Uptime: ${Math.floor(process.uptime() / 60)}m`);
+  res.status(200).json(healthStatus);
+});
+
 // ====================  INICIO DEL SERVIDOR ====================
 
 app.listen(PORT, '0.0.0.0', () => {
