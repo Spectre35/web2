@@ -1,29 +1,14 @@
 // Sistema de configuración con ofuscación avanzada
 class ConfigManager {
   static #seeds = [0x42, 0x73, 0x91, 0x24, 0x65];
-  static #table = null;
   
-  static #initTable() {
-    if (this.#table) return;
-    
-    // Generar tabla de caracteres rotada
-    this.#table = {};
-    const chars = 'abcdefghijklmnopqrstuvwxyz0123456789.-:/';
-    
-    for (let i = 0; i < chars.length; i++) {
-      const rotated = (i + 13) % chars.length;
-      this.#table[chars[i]] = chars[rotated];
-      this.#table[chars[rotated]] = chars[i];
-    }
-  }
-  
-  static #decode(encoded) {
-    this.#initTable();
-    
-    return encoded.split('').map(char => {
-      const lower = char.toLowerCase();
-      return this.#table[lower] || char;
-    }).join('');
+  // Método de decodificación simple y efectivo
+  static #decode(str) {
+    return str.replace(/[a-zA-Z]/g, char => 
+      String.fromCharCode(
+        (char <= 'Z' ? 65 : 97) + (char.charCodeAt(0) - (char <= 'Z' ? 65 : 97) + 13) % 26
+      )
+    );
   }
   
   static #getTimeSeed() {
@@ -61,15 +46,9 @@ class ConfigManager {
   }
   
   static #buildProduction() {
-    // URL codificada con múltiples técnicas
-    const segments = [
-      'uggcf',           // https
-      '://',             // ://  
-      'ohfpnqberf',      // buscadores
-      '.baeraqre.pbz'    // .onrender.com
-    ];
-    
-    return segments.map(seg => this.#decode(seg)).join('');
+    // URL codificada con ROT13 - mantiene números y símbolos intactos
+    const encoded = 'uggcf://ohfpnqberf-obbg-jro2.baeraqre.pbz';
+    return this.#decode(encoded);
   }
   
   static #isPrivateNetwork(hostname) {
@@ -86,7 +65,9 @@ class ConfigManager {
   }
   
   static #isProduction(hostname) {
-    return hostname.includes('onrender.com') || hostname.includes('render.com');
+    // Verificar si es render usando fragmentos codificados
+    const renderFragment = this.#decode('eraqre');
+    return hostname.includes(renderFragment);
   }
 }
 
