@@ -1,5 +1,5 @@
 // Debug de configuración para verificar URLs
-import { ConfigManager } from '../utils/configManager.js';
+import { ConfigManager } from './configManager.js';
 
 export const debugConfig = () => {
   console.group('🔍 DEBUG CONFIGURACIÓN');
@@ -18,7 +18,7 @@ const getEnvironmentType = () => {
   }
   
   if (hostname.includes('render.com') || hostname.includes('render')) {
-    return '🚀 PRODUCCI�N (Render)';
+    return '🚀 PRODUCCIÓN (Render)';
   }
   
   // Verificar red privada

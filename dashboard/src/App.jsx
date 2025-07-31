@@ -1,5 +1,13 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useEffect } from "react";
+
+// Debug - solo en producción para diagnosticar
+if (typeof window !== 'undefined') {
+  console.log('🚀 APP DEBUG:');
+  console.log('📍 Current URL:', window.location.href);
+  console.log('🌐 Hostname:', window.location.hostname);
+  console.log('📁 Pathname:', window.location.pathname);
+}
 const PanelAdmin = lazy(() => import("./pages/PanelAdmin"));
 const CargosAuto = lazy(() => import("./pages/CargosAuto"));
 const Caja = lazy(() => import("./pages/Caja"));
@@ -15,6 +23,7 @@ const ValidadorTelefonos = lazy(() => import("./pages/ValidadorTelefonos"));
 const DashboardSucursales = lazy(() => import("./pages/DashboardSucursales"));
 const IngresarAclaraciones = lazy(() => import("./pages/IngresarAclaraciones"));
 const DashboardAclaraciones = lazy(() => import("./pages/DashboardAclaraciones"));
+const DiagnosticPage = lazy(() => import("./pages/DiagnosticPage"));
 import DashboardLayout from "./layouts/DashboardLayout";
 
 function App() {
@@ -38,6 +47,10 @@ function App() {
             <Route path="/dashboard-sucursales" element={<DashboardSucursales />} />
             <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
             <Route path="/dashboard-aclaraciones" element={<DashboardAclaraciones />} />
+            {/* Ruta de diagnóstico para debugging */}
+            <Route path="/diagnostic" element={<DiagnosticPage />} />
+            {/* Catch-all route para rutas no encontradas */}
+            <Route path="*" element={<DiagnosticPage />} />
           </Route>
         </Routes>
       </Suspense>
