@@ -12,7 +12,7 @@ dotenv.config();
 
 const { Pool } = pkg;
 const app = express();
-const PORT = process.env.PORT || 3000; // Lee el puerto desde .env o usa 3000 por defecto
+const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3000 por defecto
 
 app.use(cors());
 app.use(express.json());
@@ -2176,6 +2176,7 @@ app.get("/validar-telefonos", async (req, res) => {
           "ID",
           TRIM("Cliente") as cliente,
           TRIM("Sucursal") as sucursal,
+          "FechaCompra",
           TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
           "Telefono" as telefono_original,
           'segundo_numero' as tipo_numero
@@ -3019,7 +3020,7 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
     
     const whereClause = where.length ? `WHERE ${where.join(" AND ")}` : "";
 
-    // 1. ✅ CORREGIDO: Total de aclaraciones y monto en disputa (solo "en proceso")
+    // 1. ✅ CORREGIDO: Total de aclaraciones, monto en disputa, ganadas y monto ganado
     const totalQuery = `
       SELECT 
         COUNT(*) AS total_aclaraciones,
@@ -3034,7 +3035,9 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
           WHEN LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida') 
           OR LOWER(COALESCE("captura_cc",'')) = 'en proceso'
           THEN 1 
-        END) AS aclaraciones_en_proceso
+        END) AS aclaraciones_en_proceso,
+        COUNT(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'ganada' THEN 1 END) AS aclaraciones_ganadas,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'ganada' THEN "monto_mnx" ELSE 0 END),0) AS monto_ganado
       FROM aclaraciones
       ${whereClause}
     `;
@@ -3042,7 +3045,7 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
 
     // 2. Aclaraciones por mes
     const aclaracionesPorMesQuery = `
-      SELECT "mes_peticion" as mes, COUNT(*) as cantidad
+      SELECT "mes_peticion" as mes, COUNT(*) as cantidad, COALESCE(SUM("monto_mnx"),0) as monto
       FROM aclaraciones
       ${whereClause}
       GROUP BY "mes_peticion"
@@ -3113,7 +3116,7 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
 
     // 9. Top 10 vendedoras por monto
     const topVendedorasMonto = (await pool.query(
-      `SELECT "vendedora", COALESCE(SUM("monto_mnx"),0) as monto FROM aclaraciones ${whereClause} GROUP BY "vendedora" ORDER BY monto DESC LIMIT 10`, values
+      `SELECT "vendedora", COUNT(*) as cantidad, COALESCE(SUM("monto_mnx"),0) as monto FROM aclaraciones ${whereClause} GROUP BY "vendedora" ORDER BY monto DESC LIMIT 10`, values
     )).rows;
 
     // 10. Vendedores con documentación incompleta
@@ -3136,8 +3139,8 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
         COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) = 'perdida') as perdidas,
         COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida')) as "enProceso",
         COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida') THEN "monto_mnx" ELSE 0 END),0) as "montoEnDisputa",
-        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'ganada' THEN "monto_mnx" ELSE 0 END),0) as defendido,
-        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'perdida' THEN "monto_mnx" ELSE 0 END),0) as perdido
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'ganada' THEN "monto_mnx" ELSE 0 END),0) as "montoDefendido",
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'perdida' THEN "monto_mnx" ELSE 0 END),0) as "montoPerdido"
       FROM aclaraciones
       ${whereClause}
       GROUP BY "mes_peticion"
@@ -3168,7 +3171,9 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
         totalAclaraciones: Number(totalResult.rows[0].total_aclaraciones),
         totalMontoGeneral: Number(totalResult.rows[0].total_monto_general),
         totalMontoEnDisputa: Number(totalResult.rows[0].total_monto_en_disputa),
-        aclaracionesEnProceso: Number(totalResult.rows[0].aclaraciones_en_proceso)
+        aclaracionesEnProceso: Number(totalResult.rows[0].aclaraciones_en_proceso),
+        aclaracionesGanadas: Number(totalResult.rows[0].aclaraciones_ganadas),
+        montoGanado: Number(totalResult.rows[0].monto_ganado)
       },
       aclaracionesPorMes,
       estatusDocumentacion,

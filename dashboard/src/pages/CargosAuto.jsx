@@ -179,12 +179,6 @@ export default function CargosAuto() {
       {/* Header */}
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold text-gray-100">🔍 Buscador Cargos Auto</h1>
-        <Link
-          to="/"
-          className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
-        >
-          🏠 Ir al Home
-        </Link>
       </div>
 
       {/* Información de última actualización */}

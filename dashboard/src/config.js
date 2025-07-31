@@ -13,8 +13,8 @@ function detectarIPLocal() {
   }
   
   // Si estamos en la IP de la red, usar la IP de la red
-  if (hostname === '192.168.1.111') {
-    return "http://192.168.1.111:3001";
+  if (hostname === '192.168.1.245') {
+    return "http://192.168.1.245:3001";
   }
   
   // Por defecto usar localhost

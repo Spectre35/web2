@@ -128,12 +128,6 @@ export default function Aclaraciones() {
           >
             📝 Ingresar Datos
           </Link>
-          <Link 
-            to="/" 
-            className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-lg font-semibold transition-all duration-300 hover:scale-105 shadow-lg flex items-center gap-2"
-          >
-            🏠 Ir al Home
-          </Link>
         </div>
       </div>
 

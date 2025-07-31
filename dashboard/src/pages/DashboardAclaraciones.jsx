@@ -8,14 +8,19 @@ import {
 } from 'recharts';
 
 // Utilidades para formateo
-const formatCurrency = n => n?.toLocaleString("es-MX", { style: "currency", currency: "MXN" }) || "$0";
+function formatCurrency(monto) {
+  if (monto === null || monto === undefined || isNaN(monto)) return '$0.00';
+  const num = typeof monto === 'string' ? parseFloat(monto) : monto;
+  if (isNaN(num)) return '$0.00';
+  return num.toLocaleString('es-MX', { style: 'currency', currency: 'MXN' });
+}
 
 // Colores para las gráficas
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82CA9D', '#FF6B6B', '#4ECDC4'];
 
 export default function DashboardAclaraciones() {
   // Estados existentes
-  const [anio, setAnio] = useState("");
+  const [anio, setAnio] = useState("2025");
   const [bloque, setBloque] = useState("");
   const [mes, setMes] = useState("");
   const [resumen, setResumen] = useState(null);
@@ -151,12 +156,6 @@ export default function DashboardAclaraciones() {
                 📋 Tablas
               </button>
             </div>
-            <button
-              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-6 py-3 rounded-xl font-semibold transition-all duration-300 hover:scale-105 shadow-lg"
-              onClick={() => window.location.href = "/"}
-            >
-              🏠 Home
-            </button>
           </div>
         </div>
 
@@ -219,23 +218,7 @@ export default function DashboardAclaraciones() {
             {vistaActual === 'resumen' && (
               <>
                 {/* Métricas principales mejoradas */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                  <div className="bg-gradient-to-br from-blue-500/20 to-blue-600/10 backdrop-blur-sm border border-blue-500/30 rounded-xl p-6 shadow-lg hover:scale-105 transition-transform duration-300">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="text-blue-400 text-2xl">💰</div>
-                      <div className="text-xs text-gray-400 bg-blue-900/30 px-2 py-1 rounded-full">
-                        Monto Total
-                      </div>
-                    </div>
-                    <div className="text-blue-400 text-2xl font-bold mb-2">
-                      {formatCurrency(resumen.total?.totalMontoEnDisputa || 0)}
-                    </div>
-                    <div className="text-gray-300 text-sm font-medium">En disputa</div>
-                    <div className="w-full bg-gray-700/50 rounded-full h-2 mt-3">
-                      <div className="bg-blue-500 h-2 rounded-full" style={{width: '85%'}}></div>
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">                 
                   <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/10 backdrop-blur-sm border border-purple-500/30 rounded-xl p-6 shadow-lg hover:scale-105 transition-transform duration-300">
                     <div className="flex items-center justify-between mb-4">
                       <div className="text-purple-400 text-2xl">📋</div>
@@ -259,10 +242,11 @@ export default function DashboardAclaraciones() {
                         Exitosas
                       </div>
                     </div>
-                    <div className="text-green-400 text-2xl font-bold mb-2">
-                      {resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseInt(curr.ganadas) || 0), 0) || 0}
+                    <div className="text-green-400 text-2xl font-bold mb-2 flex flex-col">
+                      <span>{resumen.total?.aclaracionesGanadas || 0} ganadas</span>
+                      <span className="text-lg text-green-300 font-semibold">{formatCurrency(resumen.total?.montoGanado || 0)}</span>
                     </div>
-                    <div className="text-gray-300 text-sm font-medium">Ganadas</div>
+                    <div className="text-gray-300 text-sm font-medium">Ganadas y cantidad ganada</div>
                     <div className="w-full bg-gray-700/50 rounded-full h-2 mt-3">
                       <div className="bg-green-500 h-2 rounded-full" style={{width: '60%'}}></div>
                     </div>
@@ -275,12 +259,31 @@ export default function DashboardAclaraciones() {
                         Pendientes
                       </div>
                     </div>
-                    <div className="text-yellow-400 text-2xl font-bold mb-2">
-                      {resumen.total?.aclaracionesEnProceso || 0}
+                    <div className="text-yellow-400 text-2xl font-bold mb-2 flex flex-col">
+                      <span>{resumen.total?.aclaracionesEnProceso || 0} en proceso</span>
+                      <span className="text-lg text-yellow-300 font-semibold">{formatCurrency(resumen.total?.totalMontoEnDisputa || 0)}</span>
                     </div>
-                    <div className="text-gray-300 text-sm font-medium">En proceso</div>
+                    <div className="text-gray-300 text-sm font-medium">En proceso y monto en disputa</div>
                     <div className="w-full bg-gray-700/50 rounded-full h-2 mt-3">
                       <div className="bg-yellow-500 h-2 rounded-full" style={{width: '45%'}}></div>
+                    </div>
+                  </div>
+
+                  {/* Tarjeta de Perdidas */}
+                  <div className="bg-gradient-to-br from-red-500/20 to-red-600/10 backdrop-blur-sm border border-red-500/30 rounded-xl p-6 shadow-lg hover:scale-105 transition-transform duration-300">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="text-red-400 text-2xl">❌</div>
+                      <div className="text-xs text-gray-400 bg-red-900/30 px-2 py-1 rounded-full">
+                        Perdidas
+                      </div>
+                    </div>
+                    <div className="text-red-400 text-2xl font-bold mb-2 flex flex-col">
+                      <span>{resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseInt(curr.perdidas) || 0), 0) || 0} perdidas</span>
+                      <span className="text-lg text-red-300 font-semibold">{formatCurrency(resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseFloat(curr.perdido) || 0), 0) || 0)}</span>
+                    </div>
+                    <div className="text-gray-300 text-sm font-medium">Perdidas y monto perdido</div>
+                    <div className="w-full bg-gray-700/50 rounded-full h-2 mt-3">
+                      <div className="bg-red-500 h-2 rounded-full" style={{width: '30%'}}></div>
                     </div>
                   </div>
                 </div>
@@ -412,245 +415,148 @@ export default function DashboardAclaraciones() {
                     </div>
                   </div>
                 </div>
-
-                {/* Gráfica radial - Métricas principales */}
-                <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
-                  <h3 className="text-xl font-semibold text-gray-100 mb-4">🎯 Métricas Principales</h3>
-                  <div className="h-96">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <RadialBarChart cx="50%" cy="50%" innerRadius="20%" outerRadius="90%" data={metricsData}>
-                        <RadialBar dataKey="value" cornerRadius={10} fill="#8884d8" />
-                        <Legend />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#1F2937', 
-                            border: '1px solid #374151',
-                            borderRadius: '8px'
-                          }} 
-                        />
-                      </RadialBarChart>
-                    </ResponsiveContainer>
-                  </div>
-                </div>
               </div>
             )}
 
-            {/* Vista Tablas mejoradas */}
+            {/* Vista Tablas mejoradas - Organizadas por categorías */}
             {vistaActual === 'tablas' && (
-              <div className="space-y-8">
+              <div className="space-y-12">
                 
-                {/* Tablas principales organizadas */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* GRUPO 1: ANÁLISIS TEMPORAL - Tablas por Mes */}
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-100 flex items-center">
+                    <span className="mr-3">📅</span>
+                    Análisis Temporal por Mes
+                  </h2>
                   
-                  {/* Tabla: Aclaraciones por mes */}
-                  <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
-                    <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3">
-                      <h3 className="font-semibold text-white flex items-center">
-                        <span className="mr-2">📅</span>
-                        Aclaraciones por Mes
-                      </h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-900/60 border-b border-gray-700">
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Mes</th>
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Cantidad</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {resumen.aclaracionesPorMes?.map((row, i) => (
-                            <tr key={row.mes} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-blue-900/30 transition-colors duration-200`}>
-                              <td className="px-4 py-3 text-gray-100 font-medium">{row.mes}</td>
-                              <td className="px-4 py-3">
-                                <span className="bg-blue-600/20 text-blue-300 px-2 py-1 rounded-full text-xs font-semibold">
-                                  {row.cantidad}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Tabla: Estatus de documentación */}
-                  <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
-                    <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-4 py-3">
-                      <h3 className="font-semibold text-white flex items-center">
-                        <span className="mr-2">📄</span>
-                        Estatus Documentación
-                      </h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-900/60 border-b border-gray-700">
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Comentario</th>
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Cantidad</th>
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">%</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {resumen.estatusDocumentacion?.map((row, i) => (
-                            <tr key={row.comentario} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-purple-900/30 transition-colors duration-200`}>
-                              <td className="px-4 py-3 text-gray-100 font-medium">{row.comentario}</td>
-                              <td className="px-4 py-3">
-                                <span className="bg-purple-600/20 text-purple-300 px-2 py-1 rounded-full text-xs font-semibold">
-                                  {row.cantidad}
-                                </span>
-                              </td>
-                              <td className="px-4 py-3">
-                                <span className="bg-green-600/20 text-green-300 px-2 py-1 rounded-full text-xs font-semibold">
-                                  {row.porcentaje}%
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Tabla: Vendedores con documentación incompleta */}
-                  <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
-                    <div className="bg-gradient-to-r from-red-600 to-red-700 px-4 py-3">
-                      <h3 className="font-semibold text-white flex items-center">
-                        <span className="mr-2">⚠️</span>
-                        Documentación Incompleta
-                      </h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-900/60 border-b border-gray-700">
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Vendedora</th>
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Cantidad</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {resumen.vendedoresIncompletos?.map((row, i) => (
-                            <tr key={row.vendedora} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-red-900/30 transition-colors duration-200`}>
-                              <td className="px-4 py-3 text-gray-100 font-medium">{row.vendedora}</td>
-                              <td className="px-4 py-3">
-                                <span className="bg-red-600/20 text-red-300 px-2 py-1 rounded-full text-xs font-semibold">
-                                  {row.cantidad}
-                                </span>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tablas detalladas - Top rankings */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  
-                  {/* Tabla: Resolución por mes */}
-                  <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
-                    <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-3">
-                      <h3 className="font-semibold text-white flex items-center">
-                        <span className="mr-2">📊</span>
-                        Resolución por Mes
-                      </h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-900/60 border-b border-gray-700">
-                            <th className="px-3 py-3 text-left font-semibold text-gray-200">Mes</th>
-                            <th className="px-3 py-3 text-left font-semibold text-gray-200">Ganadas</th>
-                            <th className="px-3 py-3 text-left font-semibold text-gray-200">Perdidas</th>
-                            <th className="px-3 py-3 text-left font-semibold text-gray-200">En Proceso</th>
-                            <th className="px-3 py-3 text-left font-semibold text-gray-200">Monto Disputa</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {resumen.resolucionPorMes?.map((row, i) => (
-                            <tr key={row.mes} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-indigo-900/30 transition-colors duration-200`}>
-                              <td className="px-3 py-3 text-gray-100 font-medium">{row.mes}</td>
-                              <td className="px-3 py-3">
-                                <span className="bg-green-600/20 text-green-300 px-2 py-1 rounded-full text-xs font-semibold">
-                                  {row.ganadas}
-                                </span>
-                              </td>
-                              <td className="px-3 py-3">
-                                <span className="bg-red-600/20 text-red-300 px-2 py-1 rounded-full text-xs font-semibold">
-                                  {row.perdidas}
-                                </span>
-                              </td>
-                              <td className="px-3 py-3">
-                                <span className="bg-yellow-600/20 text-yellow-300 px-2 py-1 rounded-full text-xs font-semibold">
-                                  {row.enProceso}
-                                </span>
-                              </td>
-                              <td className="px-3 py-3 text-blue-300 font-semibold text-xs">
-                                {formatCurrency(row.montoEnDisputa)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Tabla: Top sucursales que han perdido más dinero */}
-                  <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
-                    <div className="bg-gradient-to-r from-red-600 to-orange-600 px-4 py-3">
-                      <h3 className="font-semibold text-white flex items-center">
-                        <span className="mr-2">💸</span>
-                        Top Pérdidas por Sucursal
-                      </h3>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead>
-                          <tr className="bg-gray-900/60 border-b border-gray-700">
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Sucursal</th>
-                            <th className="px-4 py-3 text-left font-semibold text-gray-200">Monto Perdido</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {resumen.topSucursalesPerdidas?.map((row, i) => (
-                            <tr key={row.sucursal} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-red-900/30 transition-colors duration-200`}>
-                              <td className="px-4 py-3 text-gray-100 font-medium">{row.sucursal}</td>
-                              <td className="px-4 py-3 text-red-300 font-semibold">
-                                {formatCurrency(row.monto_perdido)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Tablas adicionales en acordeón */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { data: resumen.topBloques, title: "Top Bloques", key: "bloque", value: "cantidad", icon: "🏢", color: "blue" },
-                    { data: resumen.topSucursales, title: "Top Sucursales", key: "sucursal", value: "cantidad", icon: "🏪", color: "green" },
-                    { data: resumen.topVendedoras, title: "Top Vendedoras", key: "vendedora", value: "cantidad", icon: "👩‍💼", color: "purple" },
-                    { data: resumen.topBloquesMonto, title: "Bloques por Monto", key: "bloque", value: "monto", icon: "💰", color: "yellow", isCurrency: true }
-                  ].map((table, index) => (
-                    <div key={index} className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
-                      <div className={`bg-gradient-to-r from-${table.color}-600 to-${table.color}-700 px-4 py-3`}>
-                        <h3 className="font-semibold text-white text-sm flex items-center">
-                          <span className="mr-2">{table.icon}</span>
-                          {table.title}
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Cantidad de aclaraciones por mes */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">📊</span>
+                          Aclaraciones por Mes
                         </h3>
                       </div>
-                      <div className="max-h-64 overflow-y-auto">
-                        <table className="w-full text-xs">
+                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-4 py-3 text-left font-semibold text-gray-200">Mes</th>
+                              <th className="px-4 py-3 text-center font-semibold text-gray-200">Cantidad</th>
+                              <th className="px-4 py-3 text-center font-semibold text-gray-200">Monto</th>
+                            </tr>
+                          </thead>
                           <tbody>
-                            {table.data?.slice(0, 10).map((row, i) => (
-                              <tr key={i} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-${table.color}-900/30 transition-colors duration-200`}>
-                                <td className="px-3 py-2 text-gray-100 font-medium">{row[table.key]}</td>
-                                <td className="px-3 py-2 text-right">
-                                  <span className={`bg-${table.color}-600/20 text-${table.color}-300 px-2 py-1 rounded-full text-xs font-semibold`}>
-                                    {table.isCurrency ? formatCurrency(row[table.value]) : row[table.value]}
+                            {resumen.aclaracionesPorMes?.map((row, i) => (
+                              <tr key={row.mes} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-blue-900/30 transition-colors duration-200`}>
+                                <td className="px-4 py-3 text-gray-100 font-medium">{row.mes}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="bg-blue-600/20 text-blue-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    {row.cantidad}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center text-blue-300 font-semibold text-xs">
+                                  {formatCurrency(row.monto)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Desglose de resolución por mes */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-indigo-600 to-indigo-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">📈</span>
+                          Resolución Detallada por Mes
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-2 py-3 text-left font-semibold text-gray-200">Mes</th>
+                              <th className="px-2 py-3 text-center font-semibold text-gray-200">Ganadas</th>
+                              <th className="px-2 py-3 text-center font-semibold text-gray-200">Perdidas</th>
+                              <th className="px-2 py-3 text-center font-semibold text-gray-200">En Proceso</th>
+                              <th className="px-2 py-3 text-center font-semibold text-gray-200">Monto Disputa</th>
+                              <th className="px-2 py-3 text-center font-semibold text-gray-200">Monto Defendido</th>
+                              <th className="px-2 py-3 text-center font-semibold text-gray-200">Monto Perdido</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.resolucionPorMes?.map((row, i) => (
+                              <tr key={row.mes} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-indigo-900/30 transition-colors duration-200`}>
+                                <td className="px-2 py-3 text-gray-100 font-medium">{row.mes}</td>
+                                <td className="px-2 py-3 text-center">
+                                  <span className="bg-green-600/20 text-green-300 px-2 py-1 rounded-full text-xs font-semibold">
+                                    {row.ganadas}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-3 text-center">
+                                  <span className="bg-red-600/20 text-red-300 px-2 py-1 rounded-full text-xs font-semibold">
+                                    {row.perdidas}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-3 text-center">
+                                  <span className="bg-yellow-600/20 text-yellow-300 px-2 py-1 rounded-full text-xs font-semibold">
+                                    {row.enProceso}
+                                  </span>
+                                </td>
+                                <td className="px-2 py-3 text-center text-blue-300 font-semibold text-xs">
+                                  {formatCurrency(row.montoEnDisputa)}
+                                </td>
+                                <td className="px-2 py-3 text-green-300 font-semibold text-xs">
+                                  {formatCurrency(row.montoDefendido)}
+                                </td>
+                                <td className="px-2 py-3 text-red-300 font-semibold text-xs">
+                                  {formatCurrency(row.montoPerdido)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* GRUPO 2: ANÁLISIS POR BLOQUES */}
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-100 flex items-center">
+                    <span className="mr-3">🏢</span>
+                    Análisis por Bloques
+                  </h2>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Top 10 bloques por aclaración */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-blue-600 to-blue-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">🏢</span>
+                          Top 10 Bloques por Aclaración
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-4 py-3 text-left font-semibold text-gray-200">#</th>
+                              <th className="px-4 py-3 text-left font-semibold text-gray-200">Bloque</th>
+                              <th className="px-4 py-3 text-center font-semibold text-gray-200">Cantidad</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.topBloques?.slice(0, 10).map((row, i) => (
+                              <tr key={row.bloque} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-blue-900/30 transition-colors duration-200`}>
+                                <td className="px-4 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                                <td className="px-4 py-3 text-gray-100 font-medium">{row.bloque}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="bg-blue-600/20 text-blue-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    {row.cantidad}
                                   </span>
                                 </td>
                               </tr>
@@ -659,7 +565,360 @@ export default function DashboardAclaraciones() {
                         </table>
                       </div>
                     </div>
-                  ))}
+
+                    {/* Top 10 bloques por monto */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-yellow-600 to-yellow-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">💰</span>
+                          Top 10 Bloques por Monto
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-4 py-3 text-left font-semibold text-gray-200">#</th>
+                              <th className="px-4 py-3 text-left font-semibold text-gray-200">Bloque</th>
+                              <th className="px-4 py-3 text-center font-semibold text-gray-200">Monto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.topBloquesMonto?.slice(0, 10).map((row, i) => (
+                              <tr key={row.bloque} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-yellow-900/30 transition-colors duration-200`}>
+                                <td className="px-4 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                                <td className="px-4 py-3 text-gray-100 font-medium">{row.bloque}</td>
+                                <td className="px-4 py-3 text-center text-yellow-300 font-semibold text-xs">
+                                  {formatCurrency(row.monto)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* GRUPO 3: ANÁLISIS POR SUCURSALES */}
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-100 flex items-center">
+                    <span className="mr-3">🏪</span>
+                    Análisis por Sucursales
+                  </h2>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Top 10 sucursales por aclaración */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-green-600 to-green-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">🏪</span>
+                          Top 10 Sucursales por Aclaración
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">#</th>
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">Sucursal</th>
+                              <th className="px-3 py-3 text-center font-semibold text-gray-200">Cantidad</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.topSucursales?.slice(0, 10).map((row, i) => (
+                              <tr key={row.sucursal} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-green-900/30 transition-colors duration-200`}>
+                                <td className="px-3 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                                <td className="px-3 py-3 text-gray-100 font-medium">{row.sucursal}</td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className="bg-green-600/20 text-green-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    {row.cantidad}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Top 10 sucursales por monto */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-cyan-600 to-cyan-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">💵</span>
+                          Top 10 Sucursales por Monto
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">#</th>
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">Sucursal</th>
+                              <th className="px-3 py-3 text-center font-semibold text-gray-200">Monto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.topSucursalesMonto?.slice(0, 10).map((row, i) => (
+                              <tr key={row.sucursal} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-cyan-900/30 transition-colors duration-200`}>
+                                <td className="px-3 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                                <td className="px-3 py-3 text-gray-100 font-medium">{row.sucursal}</td>
+                                <td className="px-3 py-3 text-center text-cyan-300 font-semibold text-xs">
+                                  {formatCurrency(row.monto)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Sucursales con más pérdidas */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-red-600 to-red-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">💸</span>
+                          Sucursales con Más Pérdidas
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">#</th>
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">Sucursal</th>
+                              <th className="px-3 py-3 text-center font-semibold text-gray-200">Monto Perdido</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.topSucursalesPerdidas?.slice(0, 10).map((row, i) => (
+                              <tr key={row.sucursal} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-red-900/30 transition-colors duration-200`}>
+                                <td className="px-3 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                                <td className="px-3 py-3 text-gray-100 font-medium">{row.sucursal}</td>
+                                <td className="px-3 py-3 text-center text-red-300 font-semibold text-xs">
+                                  {formatCurrency(row.monto_perdido)}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* GRUPO 4: ANÁLISIS POR VENDEDORAS */}
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-100 flex items-center">
+                    <span className="mr-3">👩‍💼</span>
+                    Análisis por Vendedoras
+                  </h2>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    {/* Top 10 vendedoras por aclaración */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">👩‍💼</span>
+                          Top 10 Vendedoras por Aclaración
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">#</th>
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">Vendedora</th>
+                              <th className="px-3 py-3 text-center font-semibold text-gray-200">Cantidad</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.topVendedoras?.slice(0, 10).map((row, i) => (
+                              <tr key={row.vendedora} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-purple-900/30 transition-colors duration-200`}>
+                                <td className="px-3 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                                <td className="px-3 py-3 text-gray-100 font-medium">{row.vendedora}</td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className="bg-purple-600/20 text-purple-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    {row.cantidad}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Top 10 vendedoras por aclaración y monto */}
+                  <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                    <div className="bg-gradient-to-r from-pink-600 to-pink-700 px-4 py-3">
+                      <h3 className="font-semibold text-white flex items-center">
+                        <span className="mr-2">💎</span>
+                        Top 10 Vendedoras por Monto
+                      </h3>
+                    </div>
+                    <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="sticky top-0 bg-gray-900/80">
+                          <tr className="border-b border-gray-700">
+                            <th className="px-3 py-3 text-left font-semibold text-gray-200">#</th>
+                            <th className="px-3 py-3 text-left font-semibold text-gray-200">Vendedora</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-200">Cantidad</th>
+                            <th className="px-3 py-3 text-center font-semibold text-gray-200">Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {resumen.topVendedorasMonto?.slice(0, 10).map((row, i) => (
+                            <tr key={row.vendedora} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-pink-900/30 transition-colors duration-200`}>
+                              <td className="px-3 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                              <td className="px-3 py-3 text-gray-100 font-medium">{row.vendedora}</td>
+                              <td className="px-3 py-3 text-center">
+                                <span className="bg-pink-600/20 text-pink-300 px-2 py-1 rounded-full text-xs font-semibold">
+                                  {row.cantidad}
+                                </span>
+                              </td>
+                              <td className="px-3 py-3 text-center text-pink-300 font-semibold text-xs">
+                                {formatCurrency(row.monto)}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                    {/* Vendedoras con documentación incompleta */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-orange-600 to-orange-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">⚠️</span>
+                          Documentación Incompleta
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">#</th>
+                              <th className="px-3 py-3 text-left font-semibold text-gray-200">Vendedora</th>
+                              <th className="px-3 py-3 text-center font-semibold text-gray-200">Incompletas</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.vendedoresIncompletos?.slice(0, 10).map((row, i) => (
+                              <tr key={row.vendedora} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-orange-900/30 transition-colors duration-200`}>
+                                <td className="px-3 py-3 text-gray-400 font-semibold">{i + 1}</td>
+                                <td className="px-3 py-3 text-gray-100 font-medium">{row.vendedora}</td>
+                                <td className="px-3 py-3 text-center">
+                                  <span className="bg-orange-600/20 text-orange-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    {row.cantidad}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* GRUPO 5: ANÁLISIS DE ESTATUS Y RESOLUCIÓN */}
+                <div className="space-y-6">
+                  <h2 className="text-2xl font-bold text-gray-100 flex items-center">
+                    <span className="mr-3">📋</span>
+                    Análisis de Estatus y Resolución
+                  </h2>
+                  
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Estatus de documentación */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-teal-600 to-teal-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">📄</span>
+                          Estatus de Documentación
+                        </h3>
+                      </div>
+                      <div className="overflow-x-auto max-h-80 overflow-y-auto">
+                        <table className="w-full text-sm">
+                          <thead className="sticky top-0 bg-gray-900/80">
+                            <tr className="border-b border-gray-700">
+                              <th className="px-4 py-3 text-left font-semibold text-gray-200">Estatus</th>
+                              <th className="px-4 py-3 text-center font-semibold text-gray-200">Cantidad</th>
+                              <th className="px-4 py-3 text-center font-semibold text-gray-200">Porcentaje</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {resumen.estatusDocumentacion?.map((row, i) => (
+                              <tr key={row.comentario} className={`${i % 2 === 0 ? 'bg-gray-900/40' : 'bg-gray-800/40'} hover:bg-teal-900/30 transition-colors duration-200`}>
+                                <td className="px-4 py-3 text-gray-100 font-medium">{row.comentario}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="bg-teal-600/20 text-teal-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    {row.cantidad}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  <span className="bg-green-600/20 text-green-300 px-3 py-1 rounded-full text-xs font-semibold">
+                                    {row.porcentaje}%
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Tabla de ganadas, perdidas, en proceso */}
+                    <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl overflow-hidden shadow-lg">
+                      <div className="bg-gradient-to-r from-slate-600 to-slate-700 px-4 py-3">
+                        <h3 className="font-semibold text-white flex items-center">
+                          <span className="mr-2">⚖️</span>
+                          Resumen de Resolución
+                        </h3>
+                      </div>
+                      <div className="p-6 space-y-4">
+                        <div className="grid grid-cols-1 gap-4">
+                          <div className="flex justify-between items-center p-4 bg-green-900/20 border border-green-500/30 rounded-lg">
+                            <div className="flex items-center">
+                              <span className="text-green-400 text-xl mr-3">✅</span>
+                              <span className="text-gray-100 font-medium">Ganadas</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-green-400 font-bold text-lg">{resumen.total?.aclaracionesGanadas || 0}</div>
+                              <div className="text-green-300 text-sm">{formatCurrency(resumen.total?.montoGanado || 0)}</div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center p-4 bg-red-900/20 border border-red-500/30 rounded-lg">
+                            <div className="flex items-center">
+                              <span className="text-red-400 text-xl mr-3">❌</span>
+                              <span className="text-gray-100 font-medium">Perdidas</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-red-400 font-bold text-lg">
+                                {resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseInt(curr.perdidas) || 0), 0) || 0}
+                              </div>
+                              <div className="text-red-300 text-sm">
+                                {formatCurrency(resumen.resolucionPorMes?.reduce((acc, curr) => acc + (parseFloat(curr.montoPerdido) || 0), 0) || 0)}
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-between items-center p-4 bg-yellow-900/20 border border-yellow-500/30 rounded-lg">
+                            <div className="flex items-center">
+                              <span className="text-yellow-400 text-xl mr-3">⏳</span>
+                              <span className="text-gray-100 font-medium">En Proceso</span>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-yellow-400 font-bold text-lg">{resumen.total?.aclaracionesEnProceso || 0}</div>
+                              <div className="text-yellow-300 text-sm">{formatCurrency(resumen.total?.totalMontoEnDisputa || 0)}</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
             )}

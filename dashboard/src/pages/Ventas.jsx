@@ -227,7 +227,7 @@ export default function Ventas() {
           >
             <div
               style={{
-                width: `${Math.max(1200, columnas.length * 155)}px`,
+                width: `${Math.max(1200, columnas.length * 300)}px`,
                 height: "12px",
                 background:
                   "linear-gradient(90deg, rgba(59, 130, 246, 0.3) 0%, rgba(147, 51, 234, 0.3) 100%)",

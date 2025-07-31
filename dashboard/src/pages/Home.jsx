@@ -127,12 +127,12 @@ export default function Home() {
           </Link>
         </div>
         <div className="p-6">
-          <button
-            className="bg-blue-600 text-white px-4 py-2 rounded mb-4"
-            onClick={() => navigate("/dashboard-aclaraciones")}
+          <Link
+            to="/dashboard-aclaraciones"
+            className="bg-gradient-to-r from-yellow-600 via-yellow-400 to-pink-400 animate-gradient-x text-white px-8 py-4 rounded-xl shadow-xl hover:scale-105 transition font-semibold text-lg text-center block"
           >
-            Ir al Dashboard de Aclaraciones
-          </button>
+            📊 Dashboard de Aclaraciones
+          </Link>
         </div>
       </main>
     </div>
