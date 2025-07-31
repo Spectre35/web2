@@ -1,3 +1,24 @@
-# Build configuration for Render
-buildCommand = "cd dashboard && npm install && npm run build"
-publishPath = "dashboard/dist"
+# Render deployment configuration
+
+# Backend Service
+services:
+  - type: web
+    name: sistema-aclaraciones-backend
+    env: node
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+
+  # Frontend Static Site  
+  - type: web
+    name: sistema-aclaraciones-frontend
+    env: static
+    buildCommand: cd dashboard && npm install && npm run build
+    staticPublishPath: dashboard/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://sistema-aclaraciones-backend.onrender.com
