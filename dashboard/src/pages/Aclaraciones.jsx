@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
@@ -37,7 +37,35 @@ export default function Aclaraciones() {
   const [cargando, setCargando] = useState(false);
   const [total, setTotal] = useState(0);
   const [fechaUltima, setFechaUltima] = useState("");
-  const [limite, setLimite] = useState(250); // Límite dinámico
+  const [estiloTabla, setEstiloTabla] = useState(true); // true = responsive, false = scroll horizontal
+  const [limite, setLimite] = useState(100); // Límite optimizado
+  const [indicePaginaInterna, setIndicePaginaInterna] = useState(0); // Para paginación dinámica del array
+
+  // Scroll optimization references
+  const scrollTopRef = useRef(null);
+  const tableContainerRef = useRef(null);
+  const throttleTimeoutRef = useRef(null);
+
+  // Throttled scroll function for smooth performance
+  const throttleScroll = useCallback((callback, delay = 16) => {
+    if (throttleTimeoutRef.current) return;
+    throttleTimeoutRef.current = requestAnimationFrame(() => {
+      callback();
+      throttleTimeoutRef.current = null;
+    });
+  }, []);
+
+  const handleTopScroll = throttleScroll((e) => {
+    if (tableContainerRef.current && e.target.scrollTop > 0) {
+      tableContainerRef.current.scrollTop = e.target.scrollTop;
+    }
+  });
+
+  const handleTableScroll = throttleScroll((e) => {
+    if (scrollTopRef.current && e.target.scrollTop > 0) {
+      scrollTopRef.current.scrollTop = e.target.scrollTop;
+    }
+  });
 
   // Estados para el modal de contraseña de ingreso
   const [mostrarModalPassword, setMostrarModalPassword] = useState(false);
@@ -58,6 +86,9 @@ export default function Aclaraciones() {
   const [comentariosComunes, setComentariosComunes] = useState([]);
   const [capturaCC, setCapturaCC] = useState([]);
   const [cargandoOpciones, setCargandoOpciones] = useState(false);
+  
+  // Estado para mostrar notificación de conversión
+  const [notificacionConversion, setNotificacionConversion] = useState("");
   
   const PASSWORD_CORRECTA = "admin123"; // Contraseña para ambos casos
 
@@ -127,7 +158,7 @@ export default function Aclaraciones() {
     }
   };
 
-  const obtenerDatos = async () => {
+  const obtenerDatos = useCallback(async () => {
     setCargando(true);
     try {
       const params = new URLSearchParams({
@@ -157,9 +188,23 @@ export default function Aclaraciones() {
     } finally {
       setCargando(false);
     }
-  };
+  }, [pagina, limite, busqueda, procesador, sucursal, fechaInicio, fechaFin, montoMin, montoMax]);
 
-  const exportarExcel = () => {
+  // Optimized pagination handlers
+  const handlePrevPage = useCallback(() => {
+    setPagina((p) => Math.max(p - 1, 1));
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    setPagina((p) => Math.min(p + 1, Math.ceil(total / limite)));
+  }, [total, limite]);
+
+  const handleSearchSubmit = useCallback(() => {
+    setPagina(1);
+    obtenerDatos();
+  }, [obtenerDatos]);
+
+  const exportarExcel = useCallback(() => {
     const datosExcel = datos.map(row => ({
       "Procesador": row.procesador || "",
       "Año": row.año || "",
@@ -189,7 +234,7 @@ export default function Aclaraciones() {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Aclaraciones");
     XLSX.writeFile(wb, `aclaraciones_${new Date().toISOString().split('T')[0]}.xlsx`);
-  };
+  }, [datos]);
 
   const columnas = datos.length > 0 ? Object.keys(datos[0]) : [];
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
@@ -248,13 +293,95 @@ export default function Aclaraciones() {
   };
 
   const actualizarCampo = (filaIndex, campo, valor) => {
-    setDatosEditados(prev => ({
-      ...prev,
-      [filaIndex]: {
-        ...prev[filaIndex],
-        [campo]: valor
+    setDatosEditados(prev => {
+      const nuevosEditados = {
+        ...prev,
+        [filaIndex]: {
+          ...prev[filaIndex],
+          [campo]: valor
+        }
+      };
+
+      // 💰 CONVERSIÓN AUTOMÁTICA DE MONTO A MXN
+      if (campo === 'monto' && valor && !isNaN(valor)) {
+        const filaOriginal = datos[parseInt(filaIndex)];
+        const bloque = filaOriginal?.bloque || '';
+        
+        // DEBUG: Ver qué está pasando con los datos
+        console.log('🔍 DEBUG Conversión:');
+        console.log('- filaIndex:', filaIndex);
+        console.log('- filaOriginal:', filaOriginal);
+        console.log('- bloque detectado:', bloque);
+        console.log('- valor a convertir:', valor);
+        
+        // Tipos de cambio basados en el backend (sincronizados)
+        const tiposCambio = {
+          "CAN": 13.90,
+          "COL": 0.0045,
+          "PER": 4.98,
+          "ARG": 0.018,
+          "HON": 0.71,
+          "ESP1": 21.82,
+          "ESP2": 21.82,
+          "BRA": 3.36,
+          "USA1": 18.75
+        };
+
+        let montoMnx = null;
+        const montoOriginal = parseFloat(valor);
+        
+        console.log('- montoOriginal parseado:', montoOriginal);
+        console.log('- tipoCambio disponible para', bloque, ':', tiposCambio[bloque]);
+        
+        if (montoOriginal !== null && !isNaN(montoOriginal)) {
+          if (bloque === "MEX" || bloque.includes("SIN") || bloque.includes("MTY")) {
+            // Si es México, el monto ya está en MXN
+            montoMnx = montoOriginal;
+            console.log('- Es MEX, no se convierte:', montoMnx);
+          } else if (tiposCambio[bloque]) {
+            // Convertir usando el tipo de cambio del bloque
+            const tipoCambio = tiposCambio[bloque];
+            montoMnx = montoOriginal * tipoCambio;
+            console.log(`- Conversión: ${montoOriginal} × ${tipoCambio} = ${montoMnx}`);
+          } else {
+            // Si no hay tipo de cambio para el bloque, intentar detectar por país
+            console.log('⚠️ No se encontró tipo de cambio para bloque:', bloque);
+            console.log('- Intentando detectar país por otros campos...');
+            
+            // Buscar país en otros campos de la fila
+            const filaCompleta = JSON.stringify(filaOriginal).toLowerCase();
+            if (filaCompleta.includes('colombia') || filaCompleta.includes('col')) {
+              montoMnx = montoOriginal * 0.0045;
+              console.log('- Detectado Colombia por contenido, aplicando 0.0045');
+            } else if (filaCompleta.includes('canada') || filaCompleta.includes('can')) {
+              montoMnx = montoOriginal * 13.90;
+              console.log('- Detectado Canadá por contenido, aplicando 13.90');
+            } else {
+              // Por defecto, asumir que es peso mexicano
+              montoMnx = montoOriginal;
+              console.log('- Sin detección, asumiendo MXN');
+            }
+          }
+          
+          // Redondear a 2 decimales
+          montoMnx = Math.round(montoMnx * 100) / 100;
+          
+          // Actualizar automáticamente el monto_mnx
+          nuevosEditados[filaIndex].monto_mnx = montoMnx;
+          
+          // Mostrar notificación
+          const tipoCambioFinal = tiposCambio[bloque] || (montoMnx / montoOriginal);
+          setNotificacionConversion(`💰 ${valor} ${bloque || 'AUTO'} × ${tipoCambioFinal.toFixed(4)} = $${montoMnx} MXN`);
+          setTimeout(() => setNotificacionConversion(""), 3000);
+          
+          console.log(`💰 Conversión final: ${valor} ${bloque || 'AUTO'} -> $${montoMnx} MXN`);
+        } else {
+          console.log('❌ Valor no válido para conversión:', valor);
+        }
       }
-    }));
+
+      return nuevosEditados;
+    });
   };
 
   const guardarCambios = async () => {
@@ -638,14 +765,35 @@ export default function Aclaraciones() {
                               onChange={(e) => actualizarCampo(idx, col, e.target.value)}
                               className="w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
                             />
-                          ) : col === 'monto' || col === 'monto_mnx' ? (
+                          ) : col === 'monto' ? (
                             <input
                               type="number"
                               step="0.01"
                               value={datosEditados[idx]?.[col] || row[col]?.toString() || ""}
                               onChange={(e) => actualizarCampo(idx, col, e.target.value)}
                               className="w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
+                              placeholder="Monto original"
+                              title="Al editar este campo, se calculará automáticamente el monto en MXN"
                             />
+                          ) : col === 'monto_mnx' ? (
+                            <div className="relative">
+                              <input
+                                type="number"
+                                step="0.01"
+                                value={datosEditados[idx]?.[col] || row[col]?.toString() || ""}
+                                onChange={(e) => actualizarCampo(idx, col, e.target.value)}
+                                className={`w-full px-1 py-0 rounded border focus:outline-none text-xs h-6 ${
+                                  datosEditados[idx]?.monto_mnx ? 
+                                  'bg-green-700/50 text-green-100 border-green-500 focus:border-green-400' : 
+                                  'bg-gray-700 text-white border-gray-600 focus:border-blue-500'
+                                }`}
+                                placeholder="Auto-calculado"
+                                title={datosEditados[idx]?.monto_mnx ? 'Convertido automáticamente desde el monto original' : 'Monto en pesos mexicanos'}
+                              />
+                              {datosEditados[idx]?.monto_mnx && (
+                                <span className="absolute -top-1 -right-1 text-green-400 text-xs">🔄</span>
+                              )}
+                            </div>
                           ) : (
                             <input
                               type="text"
@@ -790,6 +938,16 @@ export default function Aclaraciones() {
                 ❌ Cancelar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notificación de conversión automática */}
+      {notificacionConversion && (
+        <div className="fixed top-4 right-4 bg-green-600 text-white px-4 py-3 rounded-lg shadow-xl z-50 animate-pulse">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">💰</span>
+            <span className="font-medium">{notificacionConversion}</span>
           </div>
         </div>
       )}

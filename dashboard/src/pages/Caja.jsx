@@ -1,8 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import { block } from "million/react";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
+import { useMainScroll } from "../layouts/DashboardLayout";
 
 export default function Caja() {
   const [datos, setDatos] = useState([]);
@@ -19,7 +21,40 @@ export default function Caja() {
   const [cargando, setCargando] = useState(false);
   const [total, setTotal] = useState(0);
   const [fechaUltima, setFechaUltima] = useState("");
-  const limite = 1000; // o el valor que uses
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const limite = 100; // límite optimizado
+  const mainRef = useMainScroll();
+
+  // Referencias para optimizar el scroll
+  const scrollTopRef = useRef(null);
+  const tableContainerRef = useRef(null);
+  const throttleTimeoutRef = useRef(null);
+
+  // Función de throttling para el scroll
+  const throttleScroll = useCallback((callback, delay = 16) => {
+    return (...args) => {
+      if (!throttleTimeoutRef.current) {
+        throttleTimeoutRef.current = requestAnimationFrame(() => {
+          callback(...args);
+          throttleTimeoutRef.current = null;
+        });
+      }
+    };
+  }, []);
+
+  // Handlers optimizados para scroll
+  const handleTopScroll = throttleScroll((e) => {
+    if (tableContainerRef.current && !tableContainerRef.current.isScrolling) {
+      tableContainerRef.current.scrollLeft = e.target.scrollLeft;
+    }
+  });
+
+  const handleTableScroll = throttleScroll((e) => {
+    if (scrollTopRef.current && !scrollTopRef.current.isScrolling) {
+      scrollTopRef.current.scrollLeft = e.target.scrollLeft;
+    }
+  });
 
   useEffect(() => {
     obtenerSucursales();
@@ -34,16 +69,16 @@ export default function Caja() {
       .catch(() => setFechaUltima(""));
   }, []);
 
-  const obtenerSucursales = async () => {
+  const obtenerSucursales = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/sucursales`);
       setSucursales(res.data);
     } catch (error) {
       console.error("Error al obtener sucursales", error);
     }
-  };
+  }, []);
 
-  const obtenerDatos = async () => {
+  const obtenerDatos = useCallback(async () => {
     try {
       setCargando(true);
       const res = await axios.get(`${API_BASE_URL}/caja`, {
@@ -57,18 +92,24 @@ export default function Caja() {
           tarjeta: tarjeta,
           terminacion: terminacion,
           pagina: pagina,
+          monto_max: montoMax,
+          tarjeta: tarjeta,
+          terminacion: terminacion,
+          pagina: pagina,
           limite: limite,
         },
       });
       setDatos(res.data.datos.map(formatearFechasEnObjeto));
       setTotal(res.data.total);
       setCargando(false);
+      if (mainRef?.current) mainRef.current.scrollTop = 0;
     } catch (error) {
       setCargando(false);
+      console.error('Error al obtener datos:', error);
     }
-  };
+  }, [busqueda, sucursal, fechaInicio, fechaFin, montoMin, montoMax, tarjeta, terminacion, pagina, limite, mainRef]);
 
-  const exportarExcel = () => {
+  const exportarExcel = useCallback(() => {
     const params = new URLSearchParams({
       cliente: busqueda,
       sucursal: sucursal,
@@ -80,7 +121,21 @@ export default function Caja() {
       terminacion: terminacion,
     });
     window.location.href = `${API_BASE_URL}/caja/exportar?${params.toString()}`;
-  };
+  }, [busqueda, sucursal, fechaInicio, fechaFin, montoMin, montoMax, tarjeta, terminacion]);
+
+  // Optimized pagination handlers
+  const handlePrevPage = useCallback(() => {
+    setPagina((p) => Math.max(p - 1, 1));
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    setPagina((p) => Math.min(p + 1, Math.ceil(total / limite)));
+  }, [total, limite]);
+
+  const handleSearchSubmit = useCallback(() => {
+    setPagina(1);
+    obtenerDatos();
+  }, [obtenerDatos]);
 
   // Definir el orden específico de las columnas para la tabla Caja
   const ordenColumnasDeseado = [
@@ -94,6 +149,46 @@ export default function Caja() {
   const columnas = ordenColumnasDeseado.filter(col => columnasDisponibles.includes(col));
 
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
+
+  // Componente optimizado para la tabla con Million.js
+  const TablaOptimizada = block(({ datos, columnas }) => (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="bg-gray-700/50 text-left">
+          {columnas.map((col, i) => (
+            <th key={i} className="p-3 font-semibold text-gray-200">
+              {col}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {datos.length > 0 ? (
+          datos.map((row, i) => (
+            <tr
+              key={i}
+              className="border-b border-gray-700/30 hover:bg-gray-700/30 transition-colors"
+            >
+              {columnas.map((col, j) => (
+                <td key={j} className="p-3 text-gray-300">
+                  {row[col]?.toString()}
+                </td>
+              ))}
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td
+              colSpan={columnas.length}
+              className="text-center p-8 text-gray-500"
+            >
+              No hay resultados para mostrar
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  ));
 
   return (
     <div className="p-6 min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
@@ -162,10 +257,7 @@ export default function Caja() {
         {/* Botones de acción */}
         <div className="flex gap-4 mb-6">
           <button
-            onClick={() => {
-              setPagina(1);
-              obtenerDatos();
-            }}
+            onClick={handleSearchSubmit}
             className="bg-gradient-to-r from-blue-600 to-blue-400 hover:from-blue-700 hover:to-blue-500 text-white px-6 py-2 rounded-lg font-semibold shadow-lg transition-all duration-300"
           >
             🔍 Buscar
@@ -186,39 +278,7 @@ export default function Caja() {
                 <div className="text-gray-400 text-lg">Cargando...</div>
               </div>
             ) : (
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-700/50 text-left">
-                    {columnas.map((col, i) => (
-                      <th key={i} className="p-3 font-semibold text-gray-200">
-                        {col}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {datos.length > 0 ? (
-                    datos.map((row, i) => (
-                      <tr key={i} className="border-b border-gray-700/30 hover:bg-gray-700/30 transition-colors">
-                        {columnas.map((col, j) => (
-                          <td key={j} className="p-3 text-gray-300">
-                            {row[col]?.toString()}
-                          </td>
-                        ))}
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td
-                        colSpan={columnas.length}
-                        className="text-center p-8 text-gray-500"
-                      >
-                        No hay resultados para mostrar
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              <TablaOptimizada datos={datos} columnas={columnas} />
             )}
           </div>
         </div>
@@ -226,7 +286,7 @@ export default function Caja() {
         {/* Paginación */}
         <div className="flex justify-center items-center gap-4 mt-6">
           <button
-            onClick={() => setPagina((p) => Math.max(p - 1, 1))}
+            onClick={handlePrevPage}
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
             disabled={pagina === 1}
           >
@@ -236,7 +296,7 @@ export default function Caja() {
             Página {pagina} de {totalPaginas} | Total: {total} registros
           </span>
           <button
-            onClick={() => setPagina((p) => Math.min(p + 1, totalPaginas))}
+            onClick={handleNextPage}
             className="bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded-lg text-white transition disabled:opacity-50"
             disabled={pagina === totalPaginas}
           >

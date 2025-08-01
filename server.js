@@ -2583,6 +2583,490 @@ app.get("/validar-telefonos", async (req, res) => {
   }
 });
 
+// 🆕 Endpoint para obtener teléfonos duplicados de una sucursal específica
+app.get("/validar-telefonos/sucursal/:sucursal", async (req, res) => {
+  try {
+    const { sucursal } = req.params;
+    console.log(`🔍 Obteniendo teléfonos duplicados para la sucursal: ${sucursal}`);
+    
+    const query = `
+      WITH telefonos_expandidos AS (
+        -- Expandir números con barras a registros individuales
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original,
+          'primer_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
+          AND TRIM("Sucursal") = $1
+        
+        UNION ALL
+        
+        -- Segunda parte de números con barra
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original,
+          'segundo_numero' as tipo_numero
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != '0'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT SIMILAR TO '^0+$'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) >= 4
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) ~ '[1-9]'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
+          AND TRIM("Sucursal") = $1
+      ),
+      telefonos_duplicados AS (
+        SELECT 
+          telefono_individual,
+          COUNT(DISTINCT cliente) as clientes_distintos,
+          COUNT(*) as veces_usado,
+          STRING_AGG(DISTINCT cliente, ' | ') as lista_clientes,
+          STRING_AGG(DISTINCT sucursal, ' | ') as sucursales,
+          STRING_AGG(DISTINCT telefono_original, ' | ') as telefonos_originales,
+          MAX("FechaCompra") as ultima_fecha_registro,
+          MIN("FechaCompra") as primera_fecha_registro,
+          COUNT(DISTINCT sucursal) as cantidad_sucursales
+        FROM telefonos_expandidos
+        WHERE telefono_individual IS NOT NULL 
+          AND telefono_individual != ''
+          AND telefono_individual != '0'
+          AND telefono_individual NOT SIMILAR TO '^0+$'
+          AND telefono_individual NOT SIMILAR TO '^[0]*$'
+          AND LENGTH(telefono_individual) >= 4
+          AND telefono_individual ~ '[1-9]'
+        GROUP BY telefono_individual
+        HAVING COUNT(DISTINCT cliente) > 1
+      )
+      SELECT 
+        telefono_individual,
+        clientes_distintos,
+        veces_usado,
+        lista_clientes,
+        sucursales,
+        telefonos_originales,
+        ultima_fecha_registro,
+        primera_fecha_registro,
+        cantidad_sucursales
+      FROM telefonos_duplicados
+      ORDER BY ultima_fecha_registro DESC, clientes_distintos DESC, veces_usado DESC
+    `;
+
+    const result = await pool.query(query, [sucursal]);
+    
+    console.log(`✅ Encontrados ${result.rows.length} teléfonos duplicados para ${sucursal}`);
+    
+    // Procesar los resultados
+    const telefonosDuplicados = result.rows.map(row => ({
+      telefono: row.telefono_individual,
+      clientesDistintos: row.clientes_distintos,
+      vecesUsado: row.veces_usado,
+      clientes: row.lista_clientes.split(' | '),
+      sucursales: row.sucursales.split(' | '),
+      telefonosOriginales: row.telefonos_originales.split(' | '),
+      ultimaFechaRegistro: row.ultima_fecha_registro,
+      primeraFechaRegistro: row.primera_fecha_registro,
+      cantidadSucursales: row.cantidad_sucursales,
+      riesgo: row.clientes_distintos >= 4 ? 'Alto' : 
+              row.clientes_distintos === 3 ? 'Medio' : 'Bajo'
+    }));
+
+    res.json({
+      sucursal: sucursal,
+      total: telefonosDuplicados.length,
+      datos: telefonosDuplicados
+    });
+
+  } catch (error) {
+    console.error("❌ Error al obtener teléfonos de la sucursal:", error);
+    res.status(500).json({ 
+      error: "Error al obtener teléfonos duplicados de la sucursal",
+      message: error.message 
+    });
+  }
+});
+
+// 🆕 Endpoint para obtener análisis de teléfonos duplicados por meses
+app.get("/dashboard-telefonos-meses", async (req, res) => {
+  try {
+    console.log("📊 Obteniendo análisis de teléfonos duplicados por meses");
+    
+    const query = `
+      WITH telefonos_expandidos AS (
+        -- Expandir números con barras a registros individuales
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original,
+          TO_CHAR("FechaCompra", 'YYYY-MM') as mes_anio
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
+        
+        UNION ALL
+        
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original,
+          TO_CHAR("FechaCompra", 'YYYY-MM') as mes_anio
+        FROM "ventas"
+        WHERE "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT LIKE '0%'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
+      ),
+      telefonos_duplicados AS (
+        SELECT 
+          te.mes_anio,
+          te.telefono_individual,
+          COUNT(DISTINCT te.cliente) as clientes_distintos,
+          COUNT(*) as veces_usado,
+          STRING_AGG(DISTINCT te.cliente, ' | ' ORDER BY te.cliente) as lista_clientes,
+          STRING_AGG(DISTINCT te.sucursal, ' | ' ORDER BY te.sucursal) as sucursales,
+          STRING_AGG(DISTINCT te.telefono_original, ' | ') as telefonos_originales,
+          MAX(te."FechaCompra") as ultima_fecha_registro,
+          MIN(te."FechaCompra") as primera_fecha_registro,
+          COUNT(DISTINCT te.sucursal) as cantidad_sucursales
+        FROM telefonos_expandidos te
+        GROUP BY te.mes_anio, te.telefono_individual
+        HAVING COUNT(DISTINCT te.cliente) > 1
+      )
+      SELECT 
+        mes_anio,
+        telefono_individual,
+        clientes_distintos,
+        veces_usado,
+        lista_clientes,
+        sucursales,
+        telefonos_originales,
+        ultima_fecha_registro,
+        primera_fecha_registro,
+        cantidad_sucursales
+      FROM telefonos_duplicados
+      ORDER BY mes_anio DESC, clientes_distintos DESC, veces_usado DESC
+    `;
+
+    const result = await pool.query(query);
+    
+    console.log(`✅ Encontrados ${result.rows.length} registros de análisis por meses`);
+    
+    // Procesar los resultados agrupados por mes
+    const analysisByMonth = {};
+    
+    result.rows.forEach(row => {
+      const mesAnio = row.mes_anio;
+      if (!analysisByMonth[mesAnio]) {
+        // Extraer año y mes del formato "YYYY-MM"
+        const [anio, mesNumero] = mesAnio.split('-');
+        const meses = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                      'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+        const nombreMes = meses[parseInt(mesNumero) - 1];
+        
+        analysisByMonth[mesAnio] = {
+          mes_anio: mesAnio,
+          mes: nombreMes,
+          anio: parseInt(anio),
+          mes_numero: parseInt(mesNumero),
+          totalTelefonosDuplicados: 0,
+          telefonos: []
+        };
+      }
+      
+      analysisByMonth[mesAnio].totalTelefonosDuplicados++;
+      analysisByMonth[mesAnio].telefonos.push({
+        telefono: row.telefono_individual,
+        clientesDistintos: row.clientes_distintos,
+        vecesUsado: row.veces_usado,
+        clientes: row.lista_clientes.split(' | '),
+        sucursales: row.sucursales.split(' | '),
+        telefonosOriginales: row.telefonos_originales.split(' | '),
+        ultimaFechaRegistro: row.ultima_fecha_registro,
+        primeraFechaRegistro: row.primera_fecha_registro,
+        cantidadSucursales: row.cantidad_sucursales,
+        riesgo: row.clientes_distintos >= 4 ? 'Alto' : 
+                row.clientes_distintos === 3 ? 'Medio' : 'Bajo'
+      });
+    });
+
+    const monthsArray = Object.values(analysisByMonth).sort((a, b) => b.mes_anio.localeCompare(a.mes_anio));
+
+    // Calcular estadísticas para cada mes
+    const monthsWithStats = monthsArray.map(month => {
+      const totalClientesAfectados = [...new Set(month.telefonos.flatMap(t => t.clientes))].length;
+      const totalRegistros = month.telefonos.reduce((sum, t) => sum + t.vecesUsado, 0);
+      const sucursalesAfectadas = [...new Set(month.telefonos.flatMap(t => t.sucursales))].length;
+      const promedioDiario = Math.round(totalRegistros / 30 * 10) / 10; // Asumiendo 30 días por mes
+      
+      // Determinar nivel de riesgo del mes
+      const telefonosAltoRiesgo = month.telefonos.filter(t => t.riesgo === 'Alto').length;
+      const nivelRiesgo = telefonosAltoRiesgo > 5 ? 'Alto' : 
+                         telefonosAltoRiesgo > 2 ? 'Medio' : 'Bajo';
+      
+      return {
+        ...month,
+        total_telefonos_duplicados: month.totalTelefonosDuplicados,
+        total_clientes_afectados: totalClientesAfectados,
+        total_registros: totalRegistros,
+        promedio_diario: promedioDiario,
+        sucursales_afectadas: sucursalesAfectadas,
+        nivel_riesgo: nivelRiesgo
+      };
+    });
+
+    // Estadísticas generales
+    const estadisticasGenerales = {
+      total_registros: monthsWithStats.length,
+      total_telefonos_duplicados: monthsWithStats.reduce((sum, m) => sum + m.total_telefonos_duplicados, 0),
+      total_clientes_afectados: monthsWithStats.reduce((sum, m) => sum + m.total_clientes_afectados, 0),
+      promedio_mensual: Math.round(monthsWithStats.reduce((sum, m) => sum + m.total_telefonos_duplicados, 0) / monthsWithStats.length * 10) / 10
+    };
+
+    res.json({
+      total: monthsWithStats.length,
+      datos: monthsWithStats,
+      estadisticas_generales: estadisticasGenerales
+    });
+
+  } catch (error) {
+    console.error("❌ Error al obtener análisis por meses:", error);
+    res.status(500).json({ 
+      error: "Error al obtener análisis de teléfonos por meses",
+      message: error.message 
+    });
+  }
+});
+
+// 🆕 Endpoint para obtener análisis de teléfonos duplicados por días
+app.get("/dashboard-telefonos-dias", async (req, res) => {
+  try {
+    console.log("📊 Obteniendo análisis de teléfonos duplicados por días");
+    
+    const query = `
+      WITH telefonos_expandidos AS (
+        -- Expandir números con barras a registros individuales
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          CASE 
+            WHEN "Telefono" LIKE '%/%' THEN
+              TRIM(SPLIT_PART("Telefono", '/', 1))
+            ELSE 
+              TRIM("Telefono")
+          END as telefono_individual,
+          "Telefono" as telefono_original,
+          TO_CHAR("FechaCompra", 'YYYY-MM-DD') as fecha_dia
+        FROM "ventas"
+        WHERE "Telefono" IS NOT NULL 
+          AND "Telefono" != '' 
+          AND "Telefono" != 'null'
+          AND "Telefono" != '/'
+          AND "Telefono" NOT LIKE '%/ 0%'
+          AND "Telefono" NOT LIKE '0%'
+          AND TRIM("Telefono") NOT SIMILAR TO '^0+$'
+          AND TRIM("Telefono") NOT SIMILAR TO '^[/\s]*0+[/\s]*$'
+          AND LENGTH(REPLACE(REPLACE(TRIM("Telefono"), '/', ''), ' ', '')) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
+          AND "FechaCompra" >= CURRENT_DATE - INTERVAL '30 days'  -- Solo últimos 30 días
+        
+        UNION ALL
+        
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          TRIM(SPLIT_PART("Telefono", '/', 2)) as telefono_individual,
+          "Telefono" as telefono_original,
+          TO_CHAR("FechaCompra", 'YYYY-MM-DD') as fecha_dia
+        FROM "ventas"
+        WHERE "Telefono" LIKE '%/%'
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) != ''
+          AND TRIM(SPLIT_PART("Telefono", '/', 2)) NOT LIKE '0%'
+          AND LENGTH(TRIM(SPLIT_PART("Telefono", '/', 2))) > 3
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "FechaCompra" IS NOT NULL
+          AND "FechaCompra" >= CURRENT_DATE - INTERVAL '30 days'  -- Solo últimos 30 días
+      ),
+      telefonos_duplicados AS (
+        SELECT 
+          te.fecha_dia,
+          te.telefono_individual,
+          COUNT(DISTINCT te.cliente) as clientes_distintos,
+          COUNT(*) as veces_usado,
+          STRING_AGG(DISTINCT te.cliente, ' | ' ORDER BY te.cliente) as lista_clientes,
+          STRING_AGG(DISTINCT te.sucursal, ' | ' ORDER BY te.sucursal) as sucursales,
+          STRING_AGG(DISTINCT te.telefono_original, ' | ') as telefonos_originales,
+          MAX(te."FechaCompra") as ultima_fecha_registro,
+          MIN(te."FechaCompra") as primera_fecha_registro,
+          COUNT(DISTINCT te.sucursal) as cantidad_sucursales
+        FROM telefonos_expandidos te
+        GROUP BY te.fecha_dia, te.telefono_individual
+        HAVING COUNT(DISTINCT te.cliente) > 1
+      )
+      SELECT 
+        fecha_dia,
+        telefono_individual,
+        clientes_distintos,
+        veces_usado,
+        lista_clientes,
+        sucursales,
+        telefonos_originales,
+        ultima_fecha_registro,
+        primera_fecha_registro,
+        cantidad_sucursales
+      FROM telefonos_duplicados
+      ORDER BY fecha_dia DESC, clientes_distintos DESC, veces_usado DESC
+    `;
+
+    const result = await pool.query(query);
+    
+    console.log(`✅ Encontrados ${result.rows.length} registros de análisis por días`);
+    
+    // Procesar los resultados agrupados por día
+    const analysisByDay = {};
+    
+    result.rows.forEach(row => {
+      const fechaDia = row.fecha_dia;
+      if (!analysisByDay[fechaDia]) {
+        // Obtener el día de la semana en español
+        const fecha = new Date(fechaDia);
+        const diasSemana = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+        const diaSemana = diasSemana[fecha.getDay()];
+        
+        analysisByDay[fechaDia] = {
+          fecha: fechaDia,
+          dia_semana: diaSemana,
+          totalTelefonosDuplicados: 0,
+          telefonos: []
+        };
+      }
+      
+      analysisByDay[fechaDia].totalTelefonosDuplicados++;
+      analysisByDay[fechaDia].telefonos.push({
+        telefono: row.telefono_individual,
+        clientesDistintos: row.clientes_distintos,
+        vecesUsado: row.veces_usado,
+        clientes: row.lista_clientes.split(' | '),
+        sucursales: row.sucursales.split(' | '),
+        telefonosOriginales: row.telefonos_originales.split(' | '),
+        ultimaFechaRegistro: row.ultima_fecha_registro,
+        primeraFechaRegistro: row.primera_fecha_registro,
+        cantidadSucursales: row.cantidad_sucursales,
+        riesgo: row.clientes_distintos >= 4 ? 'Alto' : 
+                row.clientes_distintos === 3 ? 'Medio' : 'Bajo'
+      });
+    });
+
+    const daysArray = Object.values(analysisByDay).sort((a, b) => b.fecha.localeCompare(a.fecha));
+
+    // Calcular estadísticas para cada día
+    const daysWithStats = daysArray.map(day => {
+      const totalClientesAfectados = [...new Set(day.telefonos.flatMap(t => t.clientes))].length;
+      const totalRegistros = day.telefonos.reduce((sum, t) => sum + t.vecesUsado, 0);
+      const sucursalesAfectadas = [...new Set(day.telefonos.flatMap(t => t.sucursales))].length;
+      
+      // Determinar nivel de riesgo del día
+      const telefonosAltoRiesgo = day.telefonos.filter(t => t.riesgo === 'Alto').length;
+      const nivelRiesgo = telefonosAltoRiesgo > 3 ? 'Alto' : 
+                         telefonosAltoRiesgo > 1 ? 'Medio' : 'Bajo';
+      
+      return {
+        ...day,
+        total_telefonos_duplicados: day.totalTelefonosDuplicados,
+        total_clientes_afectados: totalClientesAfectados,
+        total_registros: totalRegistros,
+        sucursales_afectadas: sucursalesAfectadas,
+        nivel_riesgo: nivelRiesgo
+      };
+    });
+
+    // Estadísticas generales
+    const estadisticasGenerales = {
+      total_registros: daysWithStats.length,
+      total_telefonos_duplicados: daysWithStats.reduce((sum, d) => sum + d.total_telefonos_duplicados, 0),
+      total_clientes_afectados: daysWithStats.reduce((sum, d) => sum + d.total_clientes_afectados, 0),
+      promedio_diario: Math.round(daysWithStats.reduce((sum, d) => sum + d.total_telefonos_duplicados, 0) / daysWithStats.length * 10) / 10
+    };
+
+    res.json({
+      total: daysWithStats.length,
+      datos: daysWithStats,
+      estadisticas_generales: estadisticasGenerales
+    });
+
+  } catch (error) {
+    console.error("❌ Error al obtener análisis por días:", error);
+    res.status(500).json({ 
+      error: "Error al obtener análisis de teléfonos por días",
+      message: error.message 
+    });
+  }
+});
+
 // Endpoint para obtener estadísticas de teléfonos
 app.get("/estadisticas-telefonos", async (req, res) => {
   try {
@@ -3478,6 +3962,46 @@ app.get("/aclaraciones/dashboard", protegerDatos, async (req, res) => {
   } catch (error) {
     console.error("Error en dashboard de aclaraciones:", error);
     res.status(500).json({ error: "Error al obtener datos del dashboard de aclaraciones" });
+  }
+});
+
+// ====================  ENDPOINT COBRANZA MENSUAL 2025 ====================
+app.get("/cobranza-mensual-2025", async (req, res) => {
+  try {
+    console.log("🔍 Solicitando cobranza mensual 2025...");
+    
+    const query = `
+      SELECT 
+        EXTRACT(MONTH FROM "fecha_cobro") as mes_numero,
+        CASE EXTRACT(MONTH FROM "fecha_cobro")
+          WHEN 1 THEN 'ENERO'
+          WHEN 2 THEN 'FEBRERO'
+          WHEN 3 THEN 'MARZO'
+          WHEN 4 THEN 'ABRIL'
+          WHEN 5 THEN 'MAYO'
+          WHEN 6 THEN 'JUNIO'
+          WHEN 7 THEN 'JULIO'
+          WHEN 8 THEN 'AGOSTO'
+          WHEN 9 THEN 'SEPTIEMBRE'
+          WHEN 10 THEN 'OCTUBRE'
+          WHEN 11 THEN 'NOVIEMBRE'
+          WHEN 12 THEN 'DICIEMBRE'
+        END as mes,
+        COUNT(*) as cantidad,
+        COALESCE(SUM("monto_cobro"), 0) as monto
+      FROM recuperacion 
+      WHERE EXTRACT(YEAR FROM "fecha_cobro") = 2025
+      GROUP BY EXTRACT(MONTH FROM "fecha_cobro")
+      ORDER BY mes_numero
+    `;
+
+    const result = await pool.query(query);
+    console.log(`✅ Cobranza mensual 2025 obtenida: ${result.rows.length} meses`);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error("❌ Error al obtener cobranza mensual 2025:", error);
+    res.status(500).json({ error: "Error al obtener cobranza mensual 2025", details: error.message });
   }
 });
 

@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import { block } from "million/react";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
 import { useMainScroll } from "../layouts/DashboardLayout";
@@ -22,14 +23,36 @@ export default function CargosAuto() {
   const [cargando, setCargando] = useState(false);
   const [total, setTotal] = useState(0);
   const [fechaUltima, setFechaUltima] = useState("");
-  const [alertaProcesadores, setAlertaProcesadores] = useState([]);
-  const [mostrarAlerta, setMostrarAlerta] = useState(true);
-  const [alertaSucursales, setAlertaSucursales] = useState([]);
-  const [mostrarAlertaSucursales, setMostrarAlertaSucursales] = useState(true);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef(null);
-  const limite = 1000;
+  const limite = 100;
   const mainRef = useMainScroll();
+
+  // Scroll optimization references
+  const scrollTopRef = useRef(null);
+  const tableContainerRef = useRef(null);
+  const throttleTimeoutRef = useRef(null);
+
+  // Throttled scroll function for smooth performance
+  const throttleScroll = useCallback((callback, delay = 16) => {
+    if (throttleTimeoutRef.current) return;
+    throttleTimeoutRef.current = requestAnimationFrame(() => {
+      callback();
+      throttleTimeoutRef.current = null;
+    });
+  }, []);
+
+  const handleTopScroll = throttleScroll((e) => {
+    if (tableContainerRef.current && e.target.scrollTop > 0) {
+      tableContainerRef.current.scrollTop = e.target.scrollTop;
+    }
+  });
+
+  const handleTableScroll = throttleScroll((e) => {
+    if (scrollTopRef.current && e.target.scrollTop > 0) {
+      scrollTopRef.current.scrollTop = e.target.scrollTop;
+    }
+  });
 
   useEffect(() => {
     obtenerSucursales();
@@ -45,42 +68,17 @@ export default function CargosAuto() {
       .catch(() => setFechaUltima(""));
   }, []);
 
-  useEffect(() => {
-    axios
-      .get(`${API_BASE_URL}/cargos_auto/procesadores-alerta`)
-      .then((res) => {
-        setAlertaProcesadores(res.data);
-        setMostrarAlerta(res.data.length > 0);
-      })
-      .catch((error) => {
-        console.error("Error al obtener alertas", error);
-      });
-  }, []);
-
-  // Nuevo: useEffect para obtener alertas de sucursales
-  useEffect(() => {
-    axios
-      .get(`${API_BASE_URL}/sucursales-alerta`)
-      .then((res) => {
-        setAlertaSucursales(res.data);
-        setMostrarAlertaSucursales(res.data.length > 0);
-      })
-      .catch((error) => {
-        console.error("Error al obtener alertas de sucursales", error);
-      });
-  }, []);
-
-  const obtenerSucursales = async () => {
+  const obtenerSucursales = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/sucursales`);
       setSucursales(res.data);
     } catch (error) {
       console.error("Error al obtener sucursales", error);
     }
-  };
+  }, []);
 
   // Nuevo: obtener procesadores individuales
-  const obtenerProcesadores = async () => {
+  const obtenerProcesadores = useCallback(async () => {
     try {
       const res = await axios.get(`${API_BASE_URL}/cargos_auto/procesadores`);
       // Ordena y limpia solo para mostrar en el dropdown
@@ -93,9 +91,9 @@ export default function CargosAuto() {
     } catch (error) {
       setProcesadores([]);
     }
-  };
+  }, []);
 
-  const obtenerDatos = async () => {
+  const obtenerDatos = useCallback(async () => {
     try {
       setCargando(true);
       const res = await axios.get(`${API_BASE_URL}/cargos_auto`, {
@@ -133,9 +131,9 @@ export default function CargosAuto() {
       setCargando(false);
       console.error('Error al obtener datos:', error);
     }
-  };
+  }, [busqueda, sucursal, fechaInicio, fechaFin, montoMin, montoMax, tarjeta, terminacion, procesadorSeleccionado, pagina, limite, mainRef]);
 
-  const exportarExcel = () => {
+  const exportarExcel = useCallback(() => {
     const params = new URLSearchParams();
     if (busqueda) params.append("cliente", busqueda);
     if (sucursal) params.append("sucursal", sucursal);
@@ -148,7 +146,21 @@ export default function CargosAuto() {
     // Serializa procesadores como múltiples parámetros
     procesadorSeleccionado.forEach(p => params.append("procesadores", p));
     window.location.href = `${API_BASE_URL}/cargos_auto/exportar?${params.toString()}`;
-  };
+  }, [busqueda, sucursal, fechaInicio, fechaFin, montoMin, montoMax, tarjeta, terminacion, procesadorSeleccionado]);
+
+  // Optimized pagination handlers
+  const handlePrevPage = useCallback(() => {
+    setPagina((p) => Math.max(p - 1, 1));
+  }, []);
+
+  const handleNextPage = useCallback(() => {
+    setPagina((p) => Math.min(p + 1, Math.ceil(total / limite)));
+  }, [total, limite]);
+
+  const handleSearchSubmit = useCallback(() => {
+    setPagina(1);
+    obtenerDatos();
+  }, [obtenerDatos]);
 
   const columnas = datos.length > 0 ? Object.keys(datos[0]) : [];
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
@@ -176,6 +188,46 @@ export default function CargosAuto() {
         : [...prev, proc]
     );
   };
+
+  // Componente optimizado para la tabla con Million.js
+  const TablaOptimizada = block(({ datos, columnas }) => (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="bg-gray-700/50 text-left">
+          {columnas.map((col, i) => (
+            <th key={i} className="p-3 font-semibold text-gray-200">
+              {col}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {datos.length > 0 ? (
+          datos.map((row, i) => (
+            <tr
+              key={i}
+              className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
+            >
+              {columnas.map((col, j) => (
+                <td key={j} className="p-3 text-gray-300">
+                  {row[col]?.toString()}
+                </td>
+              ))}
+            </tr>
+          ))
+        ) : (
+          <tr>
+            <td
+              colSpan={columnas.length}
+              className="text-center p-8 text-gray-500"
+            >
+              No hay resultados para mostrar
+            </td>
+          </tr>
+        )}
+      </tbody>
+    </table>
+  ));
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
@@ -317,42 +369,7 @@ export default function CargosAuto() {
               <div className="text-gray-400 text-lg">Cargando...</div>
             </div>
           ) : (
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-700/50 text-left">
-                  {columnas.map((col, i) => (
-                    <th key={i} className="p-3 font-semibold text-gray-200">
-                      {col}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {datos.length > 0 ? (
-                  datos.map((row, i) => (
-                    <tr
-                      key={i}
-                      className="border-b border-gray-700/50 hover:bg-gray-700/30 transition-colors"
-                    >
-                      {columnas.map((col, j) => (
-                        <td key={j} className="p-3 text-gray-300">
-                          {row[col]?.toString()}
-                        </td>
-                      ))}
-                    </tr>
-                  ))
-                ) : (
-                  <tr>
-                    <td
-                      colSpan={columnas.length}
-                      className="text-center p-8 text-gray-500"
-                    >
-                      No hay resultados para mostrar
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+            <TablaOptimizada datos={datos} columnas={columnas} />
           )}
         </div>
       </div>
@@ -376,98 +393,6 @@ export default function CargosAuto() {
         >
           Siguiente →
         </button>
-      </div>
-
-      {/* Contenedor de alertas - bottom-right */}
-      <div className="fixed bottom-4 right-4 z-50 space-y-3 max-w-sm">
-        {/* Alerta sucursales inactivas */}
-        {mostrarAlertaSucursales && alertaSucursales.length > 0 && (
-          <div className="bg-orange-700/95 text-white p-4 rounded-lg shadow-xl font-medium">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex items-center">
-                <span className="mr-2">🏢</span>
-                <span className="font-semibold text-sm">
-                  Sucursales sin cobros:
-                </span>
-              </div>
-              <button
-                className="ml-2 text-white/80 hover:text-white bg-orange-800 rounded-full px-2 py-1 hover:bg-orange-700 transition text-xs"
-                onClick={() => setMostrarAlertaSucursales(false)}
-                title="Cerrar alerta"
-              >
-                ✕
-              </button>
-            </div>
-            <ul className="mt-2 space-y-1 text-sm">
-              {alertaSucursales.slice(0, 5).map((s, i) => (
-                <li key={i} className="flex items-center">
-                  <span className="w-2 h-2 bg-orange-400 rounded-full mr-2 flex-shrink-0"></span>
-                  <span>
-                    <strong>{s.Sucursal}:</strong>{" "}
-                    {s.diasSinActividad} día(s) sin cobros
-                    {s.ultima_fecha && (
-                      <span className="text-orange-200 ml-1">
-                        (último: {formatearFecha(s.ultima_fecha)})
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-              {alertaSucursales.length > 5 && (
-                <li className="text-orange-300 text-xs italic">
-                  ... y {alertaSucursales.length - 5} sucursales más
-                </li>
-              )}
-            </ul>
-            <div className="mt-3 pt-2 border-t border-orange-600">
-              <Link
-                to="/sucursales-alerta"
-                className="inline-flex items-center gap-2 bg-orange-600 hover:bg-orange-500 text-white px-3 py-2 rounded text-sm font-medium transition-colors"
-              >
-                📊 Ver Reporte Completo
-              </Link>
-            </div>
-          </div>
-        )}
-
-        {/* Alerta procesadores inactivos */}
-        {mostrarAlerta && alertaProcesadores.length > 0 && (
-          <div className="bg-red-700/95 text-white p-4 rounded-lg shadow-xl font-medium">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex items-center">
-                <span className="mr-2">⚠️</span>
-                <span className="font-semibold text-sm">
-                  Procesadores con baja actividad (2 días):
-                </span>
-              </div>
-              <button
-                className="ml-2 text-white/80 hover:text-white bg-red-800 rounded-full px-2 py-1 hover:bg-red-700 transition text-xs"
-                onClick={() => setMostrarAlerta(false)}
-                title="Cerrar alerta"
-              >
-                ✕
-              </button>
-            </div>
-            <ul className="mt-2 space-y-1 text-sm">
-              {alertaProcesadores.map((p, i) => (
-                <li key={i} className="flex items-center">
-                  <span className="w-2 h-2 bg-red-400 rounded-full mr-2 flex-shrink-0"></span>
-                  <span>
-                    <strong>{p.Cobrado_Por}:</strong>{" "}
-                    {p.monto_total !== undefined
-                      ? `$${Number(p.monto_total).toLocaleString()}`
-                      : "Sin datos"}
-                    {p.ultima_fecha && (
-                      <span className="text-red-200 ml-1">
-                        (última: {formatearFecha(p.ultima_fecha)})
-                      </span>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
       </div>
     </div>
   );

@@ -9,21 +9,19 @@ if (typeof window !== 'undefined') {
   console.log('📁 Pathname:', window.location.pathname);
 }
 const PanelAdmin = lazy(() => import("./pages/PanelAdmin"));
+const Home = lazy(() => import("./pages/Home"));
 const CargosAuto = lazy(() => import("./pages/CargosAuto"));
 const Caja = lazy(() => import("./pages/Caja"));
 const Ventas = lazy(() => import("./pages/Ventas"));
-// const Home = lazy(() => import("./pages/Home")); // Eliminado - ya no se usa
 const Recuperacion = lazy(() => import("./pages/Recuperacion"));
 const DashboardRecuperacion = lazy(() => import("./pages/DashboardRecuperacion"));
 const VendedorasStatus = lazy(() => import("./pages/VendedorasStatus"));
 const SucursalBloque = lazy(() => import("./pages/SucursalBloque"));
 const SucursalesAlerta = lazy(() => import("./pages/SucursalesAlerta"));
 const Aclaraciones = lazy(() => import("./pages/Aclaraciones"));
-const ValidadorTelefonos = lazy(() => import("./pages/ValidadorTelefonos"));
-const DashboardSucursales = lazy(() => import("./pages/DashboardSucursales"));
+const TelefonosDuplicados = lazy(() => import("./pages/TelefonosDuplicados"));
 const IngresarAclaraciones = lazy(() => import("./pages/IngresarAclaraciones"));
 const DashboardAclaraciones = lazy(() => import("./pages/DashboardAclaraciones"));
-const DiagnosticPage = lazy(() => import("./pages/DiagnosticPage"));
 import DashboardLayout from "./layouts/DashboardLayout";
 
 function App() {
@@ -32,7 +30,7 @@ function App() {
       <Suspense fallback={<div className="w-full h-full flex items-center justify-center text-white text-xl">Cargando...</div>}>
         <Routes>
           <Route element={<DashboardLayout />}>
-            <Route path="/" element={<Navigate to="/recuperacion" replace />} />
+            <Route path="/" element={<Home />} />
             <Route path="/cargos-auto" element={<CargosAuto />} />
             <Route path="/caja" element={<Caja />} />
             <Route path="/ventas" element={<Ventas />} />
@@ -43,14 +41,9 @@ function App() {
             <Route path="/sucursal-bloque" element={<SucursalBloque />} />
             <Route path="/sucursales-alerta" element={<SucursalesAlerta />} />
             <Route path="/aclaraciones" element={<Aclaraciones />} />
-            <Route path="/validador-telefonos" element={<ValidadorTelefonos />} />
-            <Route path="/dashboard-sucursales" element={<DashboardSucursales />} />
+            <Route path="/telefonos-duplicados" element={<TelefonosDuplicados />} />
             <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
             <Route path="/dashboard-aclaraciones" element={<DashboardAclaraciones />} />
-            {/* Ruta de diagnóstico para debugging */}
-            <Route path="/diagnostic" element={<DiagnosticPage />} />
-            {/* Catch-all route para rutas no encontradas */}
-            <Route path="*" element={<DiagnosticPage />} />
           </Route>
         </Routes>
       </Suspense>

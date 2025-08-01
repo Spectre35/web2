@@ -42,13 +42,12 @@ function DashboardLayoutInner() {
 
   return (
     <MainScrollContext.Provider value={mainRef}>
-      <div className="flex min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 transition-all duration-300">
+      <div className="flex min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
         <Sidebar />
         <button
-          className="fixed top-4 left-4 z-50 bg-gray-800 text-white rounded-full p-2 shadow-lg hover:bg-gray-700 focus:outline-none"
+          className="fixed top-4 left-4 z-50 bg-gray-800 text-white rounded-full p-2 shadow-lg hover:bg-gray-700 focus:outline-none transition-all duration-500 ease-in-out"
           onClick={toggleSidebar}
           aria-label={sidebarOpen ? "Ocultar menú" : "Mostrar menú"}
-          style={{ transition: 'left 0.3s' }}
         >
           {sidebarOpen ? (
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -56,8 +55,15 @@ function DashboardLayoutInner() {
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
           )}
         </button>
-        <main ref={mainRef} key={location.pathname} className={`transition-all duration-300 flex-1 p-4 md:p-8 w-full overflow-y-auto`}>
-          <Outlet />
+        <main 
+          ref={mainRef} 
+          key={location.pathname} 
+          className={`flex-1 p-4 md:p-8 w-full overflow-y-auto layout-transition
+            ${sidebarOpen ? 'md:ml-0' : 'md:ml-0'}`}
+        >
+          <div className="layout-transition">
+            <Outlet />
+          </div>
         </main>
       </div>
     </MainScrollContext.Provider>

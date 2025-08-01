@@ -4,7 +4,7 @@ import axios from "axios";
 import * as XLSX from "xlsx";
 import { API_BASE_URL } from "../config.js";
 
-export default function DashboardSucursales() {
+export default function TelefonosDuplicados() {
   const [datos, setDatos] = useState([]);
   const [estadisticasGenerales, setEstadisticasGenerales] = useState(null);
   const [cargando, setCargando] = useState(false);
@@ -126,8 +126,8 @@ export default function DashboardSucursales() {
   };
 
   return (
-    <div className="p-6 min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800">
-      <div className="backdrop-blur-xl bg-white/5 rounded-2xl shadow-2xl p-6 max-w-full mx-2 md:mx-8 border border-white/10">
+    <div className="p-6 min-h-screen bg-gradient-to-br from-slate-900 via-gray-900 to-slate-800 layout-transition">
+      <div className="backdrop-blur-xl bg-white/5 rounded-2xl shadow-2xl p-6 max-w-full mx-2 md:mx-8 border border-white/10 layout-transition">
         
         {/* Header */}
         <div className="flex flex-col md:flex-row justify-between mb-6 gap-4">

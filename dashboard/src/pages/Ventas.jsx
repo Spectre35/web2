@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
 import axios from "axios";
+import { block } from "million/react";
 import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
+import { useMainScroll } from "../layouts/DashboardLayout";
 
 export default function Ventas() {
   const [datos, setDatos] = useState([]);
@@ -19,7 +21,10 @@ export default function Ventas() {
   const [cargando, setCargando] = useState(false);
   const [total, setTotal] = useState(0);
   const [fechaUltima, setFechaUltima] = useState("");
-  const limite = 1000;
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+  const dropdownRef = useRef(null);
+  const limite = 100; // límite optimizado
+  const mainRef = useMainScroll();
 
   // Referencias para optimizar el scroll
   const scrollTopRef = useRef(null);

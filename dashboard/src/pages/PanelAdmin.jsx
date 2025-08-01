@@ -10,8 +10,8 @@ export default function PanelAdmin() {
 
   if (!autorizado) {
     return (
-      <div className="min-h-screen flex flex-col justify-center items-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-        <div className="bg-gray-900/80 p-8 rounded-xl shadow-xl border border-white/20">
+      <div className="min-h-screen flex flex-col justify-center items-center bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 layout-transition">
+        <div className="bg-gray-900/80 p-8 rounded-xl shadow-xl border border-white/20 layout-transition">
           <h2 className="text-xl font-bold text-gray-100 mb-4">Panel Admin</h2>
           <input
             type="password"
@@ -39,8 +39,8 @@ export default function PanelAdmin() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
-      <h1 className="text-2xl font-bold text-center mb-6 text-gray-100 drop-shadow">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6 layout-transition">
+      <h1 className="text-2xl font-bold text-center mb-6 text-gray-100 drop-shadow layout-transition">
         📊 Panel de Actualización de Tablas
       </h1>
       <div className="flex justify-center mb-6">

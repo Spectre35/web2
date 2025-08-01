@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useMemo } from "react";
 import axios from "axios";
 import { Link } from "react-router-dom";
+import { block } from "million/react";
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, PieChart, Pie, Cell

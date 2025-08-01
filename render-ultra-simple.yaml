@@ -1,10 +1,15 @@
+# Configuración ULTRA SIMPLE para Render Static Site
+# Esta debería funcionar 100%
+
 services:
+  # Solo backend
   - type: web
     name: buscadores-backend
     env: node
     buildCommand: npm install
     startCommand: node server.js
 
+  # Frontend ultra simple
   - type: static
     name: buscadores-spa
     buildCommand: |
