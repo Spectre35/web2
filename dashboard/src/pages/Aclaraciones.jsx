@@ -316,10 +316,7 @@ export default function Aclaraciones() {
         
         // Tipos de cambio basados en el backend (sincronizados)
         const tiposCambio = {
-          "CAN": 13.90,
-          "COL": 0.0045,
-          "PER": 4.98,
-          "ARG": 0.018,
+          "COL": 0.004573,
           "HON": 0.71,
           "ESP1": 21.82,
           "ESP2": 21.82,
@@ -351,11 +348,8 @@ export default function Aclaraciones() {
             // Buscar país en otros campos de la fila
             const filaCompleta = JSON.stringify(filaOriginal).toLowerCase();
             if (filaCompleta.includes('colombia') || filaCompleta.includes('col')) {
-              montoMnx = montoOriginal * 0.0045;
+              montoMnx = montoOriginal * 0.004573;
               console.log('- Detectado Colombia por contenido, aplicando 0.0045');
-            } else if (filaCompleta.includes('canada') || filaCompleta.includes('can')) {
-              montoMnx = montoOriginal * 13.90;
-              console.log('- Detectado Canadá por contenido, aplicando 13.90');
             } else {
               // Por defecto, asumir que es peso mexicano
               montoMnx = montoOriginal;
@@ -725,7 +719,7 @@ export default function Aclaraciones() {
                               value={datosEditados[idx]?.[col] || row[col] || ""}
                               onChange={(value) => actualizarCampo(idx, col, value)}
                               options={bloques}
-                              className="text-xs h-6"
+                              className="min-w-[120px] text-xs h-6"
                             />
                           ) : col === 'vendedora' && vendedoras.length > 0 ? (
                             <SelectEditor
@@ -771,12 +765,12 @@ export default function Aclaraciones() {
                               step="0.01"
                               value={datosEditados[idx]?.[col] || row[col]?.toString() || ""}
                               onChange={(e) => actualizarCampo(idx, col, e.target.value)}
-                              className="w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
+                              className="min-w-[140px] bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
                               placeholder="Monto original"
                               title="Al editar este campo, se calculará automáticamente el monto en MXN"
                             />
                           ) : col === 'monto_mnx' ? (
-                            <div className="relative">
+                            <div className="relative min-w-[140px]">
                               <input
                                 type="number"
                                 step="0.01"
@@ -805,6 +799,10 @@ export default function Aclaraciones() {
                         ) : (
                           col === 'cliente' ? (
                             <div className="whitespace-nowrap" title={row[col]?.toString() || ""}> {/* Columna cliente sin truncar */}
+                              {row[col]?.toString() || ""}
+                            </div>
+                          ) : col === 'monto' || col === 'monto_mnx' || col === 'bloque' ? (
+                            <div className="whitespace-nowrap min-w-[120px]" title={row[col]?.toString() || ""}> {/* Columnas de monto y bloque más anchas */}
                               {row[col]?.toString() || ""}
                             </div>
                           ) : (

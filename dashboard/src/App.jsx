@@ -13,13 +13,13 @@ const Home = lazy(() => import("./pages/Home"));
 const CargosAuto = lazy(() => import("./pages/CargosAuto"));
 const Caja = lazy(() => import("./pages/Caja"));
 const Ventas = lazy(() => import("./pages/Ventas"));
-const Recuperacion = lazy(() => import("./pages/Recuperacion"));
 const DashboardRecuperacion = lazy(() => import("./pages/DashboardRecuperacion"));
 const VendedorasStatus = lazy(() => import("./pages/VendedorasStatus"));
 const SucursalBloque = lazy(() => import("./pages/SucursalBloque"));
 const SucursalesAlerta = lazy(() => import("./pages/SucursalesAlerta"));
 const Aclaraciones = lazy(() => import("./pages/Aclaraciones"));
 const TelefonosDuplicados = lazy(() => import("./pages/TelefonosDuplicados"));
+const TarjetasDuplicadas = lazy(() => import("./pages/TarjetasDuplicadas"));
 const IngresarAclaraciones = lazy(() => import("./pages/IngresarAclaraciones"));
 const DashboardAclaraciones = lazy(() => import("./pages/DashboardAclaraciones"));
 import DashboardLayout from "./layouts/DashboardLayout";
@@ -35,13 +35,13 @@ function App() {
             <Route path="/caja" element={<Caja />} />
             <Route path="/ventas" element={<Ventas />} />
             <Route path="/panel" element={<PanelAdmin />} />
-            <Route path="/recuperacion" element={<Recuperacion />} />
             <Route path="/dashboard-recuperacion" element={<DashboardRecuperacion />} />
             <Route path="/vendedoras-status" element={<VendedorasStatus />} />
             <Route path="/sucursal-bloque" element={<SucursalBloque />} />
             <Route path="/sucursales-alerta" element={<SucursalesAlerta />} />
             <Route path="/aclaraciones" element={<Aclaraciones />} />
             <Route path="/telefonos-duplicados" element={<TelefonosDuplicados />} />
+            <Route path="/tarjetas-duplicadas" element={<TarjetasDuplicadas />} />
             <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
             <Route path="/dashboard-aclaraciones" element={<DashboardAclaraciones />} />
           </Route>

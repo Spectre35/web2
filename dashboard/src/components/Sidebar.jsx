@@ -22,9 +22,9 @@ const sidebarLinks = [
   // Análisis y dashboards
   { to: "/sucursales-alerta", label: "🚨 Alertas Sucursales", section: "analisis" },
   { to: "/telefonos-duplicados", label: "📱 Teléfonos Duplicados", section: "analisis" },
-  { to: "/dashboard-recuperacion", label: "📊 Dashboard Recuperación", section: "analisis" },  
+  { to: "/tarjetas-duplicadas", label: "💳 Tarjetas Duplicadas", section: "analisis" },
+  { to: "/dashboard-recuperacion", label: "📊 Recuperación", section: "analisis" },  
   { to: "/dashboard-aclaraciones", label: "📈 Dashboard Aclaraciones", section: "analisis" },
-  { to: "/recuperacion", label: "💰 Recuperación", section: "analisis" },
 ];
 
 export default function Sidebar() {
@@ -35,8 +35,8 @@ export default function Sidebar() {
       className={`bg-gradient-to-b from-slate-900 via-gray-900 to-slate-800 h-screen flex flex-col shadow-2xl z-40 border-r border-gray-700/30
         md:sticky md:top-0 md:self-start
         fixed top-0 left-0
-        transition-all duration-500 ease-in-out
-        ${sidebarOpen ? 'w-72 translate-x-0' : 'w-72 -translate-x-full md:w-0'}
+        transition-all duration-500 ease-in-out overflow-hidden
+        ${sidebarOpen ? 'w-72 translate-x-0' : 'w-0 -translate-x-full md:w-0'}
         ${sidebarOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}
       style={{ height: '100vh' }}
     >
@@ -57,7 +57,7 @@ export default function Sidebar() {
 
       {/* Navegación */}
       <nav className={`flex flex-col py-4 px-3 flex-1 overflow-y-auto custom-scrollbar transition-all duration-500 ease-in-out
-        {sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
+        ${sidebarOpen ? 'opacity-100' : 'opacity-0'}`}>
         
         {/* Sección de Inicio */}
         <div className="mb-6">

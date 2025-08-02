@@ -365,6 +365,14 @@ export default function Home() {
             </Link>
 
             <Link 
+              to="/tarjetas-duplicadas"
+              className="flex flex-col items-center p-4 bg-gradient-to-br from-orange-500/10 to-orange-600/10 rounded-lg border border-orange-500/20 hover:border-orange-400/40 transition-all duration-300 group"
+            >
+              <span className="text-2xl mb-2 group-hover:scale-110 transition-transform">💳</span>
+              <span className="text-sm text-gray-300 text-center">Tarjetas Duplicadas</span>
+            </Link>
+
+            <Link 
               to="/sucursal-bloque"
               className="flex flex-col items-center p-4 bg-gradient-to-br from-indigo-500/10 to-indigo-600/10 rounded-lg border border-indigo-500/20 hover:border-indigo-400/40 transition-all duration-300 group"
             >

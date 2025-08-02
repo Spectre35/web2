@@ -1284,7 +1284,7 @@ const BLOQUE_PAIS_MONEDA = {
 
 const TIPO_CAMBIO = {
   MXN: 1,
-  COP: 0.0047,
+  COP: 0.004573,
   CRC: 0.037,
   CLP: 0.019,
   HNL: 0.71,
@@ -2133,8 +2133,8 @@ app.post("/aclaraciones/insertar-multiple", async (req, res) => {
           const bloque = fila.BLOQUE ? fila.BLOQUE.toUpperCase() : "";
 
           const tiposCambio = {
-            "COL1": 0.0047,
-            "COL2": 0.0047,
+            "COL1": 0.004573,
+            "COL2": 0.004573,
             "CRI1": 0.037,
             "CHI": 0.019,
             "HON": 0.71,
@@ -4002,6 +4002,221 @@ app.get("/cobranza-mensual-2025", async (req, res) => {
   } catch (error) {
     console.error("❌ Error al obtener cobranza mensual 2025:", error);
     res.status(500).json({ error: "Error al obtener cobranza mensual 2025", details: error.message });
+  }
+});
+
+// ================= 💳 DASHBOARD SUCURSALES TARJETAS DUPLICADAS =================
+app.get("/dashboard-tarjetas-duplicadas", async (req, res) => {
+  try {
+    console.log("🔍 Obteniendo estadísticas de sucursales con tarjetas duplicadas...");
+    console.log("📝 Query params recibidos:", req.query);
+    
+    const { fechaInicio, fechaFin } = req.query;
+    
+    // Construir la condición de fecha si se proporcionan los parámetros
+    let fechaCondicion = '';
+    if (fechaInicio && fechaFin) {
+      fechaCondicion = `AND "FechaCompra" BETWEEN '${fechaInicio}' AND '${fechaFin}'`;
+      console.log(`📅 Filtrando por fechas: ${fechaInicio} - ${fechaFin}`);
+    } else if (fechaInicio) {
+      fechaCondicion = `AND "FechaCompra" >= '${fechaInicio}'`;
+      console.log(`📅 Filtrando desde: ${fechaInicio}`);
+    } else if (fechaFin) {
+      fechaCondicion = `AND "FechaCompra" <= '${fechaFin}'`;
+      console.log(`📅 Filtrando hasta: ${fechaFin}`);
+    }
+    
+    console.log('🔍 Condición de fecha construida:', fechaCondicion);
+    
+    const query = `
+      WITH tarjetas_limpias AS (
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          TRIM("Tarjeta") as Tarjeta
+        FROM "ventas"
+        WHERE "Tarjeta" IS NOT NULL 
+          AND "Tarjeta" != '' 
+          AND "Tarjeta" != 'null'
+          AND LENGTH(TRIM("Tarjeta")) >= 12
+          AND TRIM("Tarjeta") ~ '^[0-9]+$'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND "Sucursal" IS NOT NULL 
+          AND "Sucursal" != '' 
+          AND "Sucursal" != 'null'
+          ${fechaCondicion}
+      ),
+      tarjetas_duplicadas_por_sucursal AS (
+        SELECT 
+          sucursal,
+          tarjeta,
+          COUNT(DISTINCT cliente) as clientes_distintos_por_tarjeta,
+          COUNT(*) as registros_tarjeta,
+          STRING_AGG(DISTINCT cliente, ' | ') as clientes_de_tarjeta,
+          MAX("FechaCompra") as ultima_fecha_uso
+        FROM tarjetas_limpias
+        GROUP BY sucursal, tarjeta
+        HAVING COUNT(DISTINCT cliente) > 1
+      ),
+      resumen_sucursales AS (
+        SELECT 
+          sucursal,
+          COUNT(*) as total_tarjetas_duplicadas,
+          SUM(clientes_distintos_por_tarjeta) as total_clientes_afectados,
+          SUM(registros_tarjeta) as total_registros_problema,
+          AVG(clientes_distintos_por_tarjeta) as promedio_clientes_por_tarjeta,
+          MAX(clientes_distintos_por_tarjeta) as max_clientes_en_una_tarjeta,
+          COUNT(CASE WHEN clientes_distintos_por_tarjeta >= 4 THEN 1 END) as tarjetas_alto_riesgo,
+          COUNT(CASE WHEN clientes_distintos_por_tarjeta = 3 THEN 1 END) as tarjetas_medio_riesgo,
+          COUNT(CASE WHEN clientes_distintos_por_tarjeta = 2 THEN 1 END) as tarjetas_bajo_riesgo
+        FROM tarjetas_duplicadas_por_sucursal
+        GROUP BY sucursal
+      )
+      SELECT 
+        sucursal,
+        total_tarjetas_duplicadas as tarjetas_duplicadas,
+        total_clientes_afectados as clientes_afectados,
+        total_registros_problema,
+        ROUND(promedio_clientes_por_tarjeta, 2) as promedio_clientes_por_tarjeta,
+        max_clientes_en_una_tarjeta,
+        tarjetas_alto_riesgo,
+        tarjetas_medio_riesgo,
+        tarjetas_bajo_riesgo,
+        CASE 
+          WHEN tarjetas_alto_riesgo > 0 THEN 'Alto'
+          WHEN tarjetas_medio_riesgo > 0 THEN 'Medio'
+          ELSE 'Bajo'
+        END as nivel_riesgo_sucursal
+      FROM resumen_sucursales
+      ORDER BY total_tarjetas_duplicadas DESC, total_clientes_afectados DESC
+    `;
+
+    const result = await pool.query(query);
+    
+    console.log(`✅ Procesadas ${result.rows.length} sucursales con tarjetas duplicadas`);
+    
+    // Calcular estadísticas generales
+    const totalTarjetasDuplicadas = result.rows.reduce((sum, row) => sum + parseInt(row.tarjetas_duplicadas), 0);
+    const totalClientesAfectados = result.rows.reduce((sum, row) => sum + parseInt(row.clientes_afectados), 0);
+    const sucursalesAltoRiesgo = result.rows.filter(row => row.nivel_riesgo_sucursal === 'Alto').length;
+    const sucursalesMedioRiesgo = result.rows.filter(row => row.nivel_riesgo_sucursal === 'Medio').length;
+    const sucursalesBajoRiesgo = result.rows.filter(row => row.nivel_riesgo_sucursal === 'Bajo').length;
+
+    const estadisticasGenerales = {
+      total_sucursales: result.rows.length,
+      total_tarjetas_duplicadas: totalTarjetasDuplicadas,
+      total_clientes_afectados: totalClientesAfectados,
+      sucursales_alto_riesgo: sucursalesAltoRiesgo,
+      sucursales_medio_riesgo: sucursalesMedioRiesgo,
+      sucursales_bajo_riesgo: sucursalesBajoRiesgo,
+      promedio_tarjetas_por_sucursal: Math.round(totalTarjetasDuplicadas / result.rows.length)
+    };
+
+    res.json({
+      estadisticas_generales: estadisticasGenerales,
+      sucursales: result.rows
+    });
+
+  } catch (error) {
+    console.error("❌ Error al obtener dashboard de tarjetas duplicadas:", error);
+    res.status(500).json({ 
+      error: "Error al obtener estadísticas de tarjetas duplicadas",
+      message: error.message 
+    });
+  }
+});
+
+// 💳 Endpoint para obtener tarjetas duplicadas de una sucursal específica
+app.get("/validar-tarjetas/sucursal/:sucursal", async (req, res) => {
+  try {
+    const { sucursal } = req.params;
+    const { fechaInicio, fechaFin } = req.query;
+    console.log(`🔍 Obteniendo tarjetas duplicadas para la sucursal: ${sucursal}`);
+    
+    // Construir la condición de fecha si se proporcionan los parámetros
+    let fechaCondicion = '';
+    if (fechaInicio && fechaFin) {
+      fechaCondicion = `AND "FechaCompra" BETWEEN '${fechaInicio}' AND '${fechaFin}'`;
+      console.log(`📅 Filtrando por fechas: ${fechaInicio} - ${fechaFin}`);
+    } else if (fechaInicio) {
+      fechaCondicion = `AND "FechaCompra" >= '${fechaInicio}'`;
+      console.log(`📅 Filtrando desde: ${fechaInicio}`);
+    } else if (fechaFin) {
+      fechaCondicion = `AND "FechaCompra" <= '${fechaFin}'`;
+      console.log(`📅 Filtrando hasta: ${fechaFin}`);
+    }
+    
+    const query = `
+      WITH tarjetas_limpias AS (
+        SELECT 
+          "ID",
+          TRIM("Cliente") as cliente,
+          TRIM("Sucursal") as sucursal,
+          "FechaCompra",
+          TRIM("Tarjeta") as tarjeta
+        FROM "ventas"
+        WHERE "Tarjeta" IS NOT NULL 
+          AND "Tarjeta" != '' 
+          AND "Tarjeta" != 'null'
+          AND LENGTH(TRIM("Tarjeta")) >= 12
+          AND TRIM("Tarjeta") ~ '^[0-9]+$'
+          AND "Cliente" IS NOT NULL 
+          AND "Cliente" != '' 
+          AND "Cliente" != 'null'
+          AND TRIM("Sucursal") = $1
+          ${fechaCondicion}
+      ),
+      tarjetas_duplicadas AS (
+        SELECT 
+          tarjeta,
+          COUNT(DISTINCT cliente) as clientesDistintos,
+          COUNT(*) as vecesUsado,
+          MAX("FechaCompra") as ultimaFechaRegistro,
+          STRING_AGG(DISTINCT cliente, ' | ' ORDER BY cliente) as clientes
+        FROM tarjetas_limpias
+        GROUP BY tarjeta
+        HAVING COUNT(DISTINCT cliente) > 1
+      )
+      SELECT 
+        tarjeta,
+        clientesDistintos,
+        vecesUsado,
+        ultimaFechaRegistro,
+        clientes
+      FROM tarjetas_duplicadas
+      ORDER BY clientesDistintos DESC, vecesUsado DESC, tarjeta
+    `;
+
+    const result = await pool.query(query, [sucursal]);
+    
+    console.log(`✅ Encontradas ${result.rows.length} tarjetas duplicadas en ${sucursal}`);
+    
+    // Formatear los datos para mejor legibilidad
+    const datosProcesados = result.rows.map(row => ({
+      ...row,
+      tarjeta: row.tarjeta,
+      clientesDistintos: parseInt(row.clientesdistintos),
+      vecesUsado: parseInt(row.vecesusado),
+      ultimaFechaRegistro: row.ultimafecharegistro,
+      clientes: row.clientes ? row.clientes.split(' | ') : []
+    }));
+
+    res.json({
+      sucursal: sucursal,
+      total_tarjetas_duplicadas: datosProcesados.length,
+      datos: datosProcesados
+    });
+
+  } catch (error) {
+    console.error(`❌ Error al obtener tarjetas duplicadas de ${req.params.sucursal}:`, error);
+    res.status(500).json({ 
+      error: "Error al obtener tarjetas duplicadas de la sucursal",
+      message: error.message 
+    });
   }
 });
 
