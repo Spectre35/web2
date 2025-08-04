@@ -18,6 +18,10 @@ const sidebarLinks = [
   { to: "/aclaraciones", label: "💳 Aclaraciones", section: "buscadores" },
   { to: "/vendedoras-status", label: "👩‍💼 Vendedoras Status", section: "buscadores" },
   { to: "/sucursal-bloque", label: "🏢 Sucursal-Bloque", section: "buscadores" },
+  { to: "/buscador-bin", label: "🔍 Buscador de BINs", section: "buscadores" },
+  // { to: "/procesador-bins-masivo", label: "⚡ Procesador BINs Masivo", section: "buscadores" },
+  // { to: "/procesador-distribuido", label: "🚀 Procesador Distribuido", section: "buscadores" },
+  // { to: "/gestor-apis", label: "🔧 Gestor de APIs", section: "buscadores" },
   
   // Análisis y dashboards
   { to: "/sucursales-alerta", label: "🚨 Alertas Sucursales", section: "analisis" },

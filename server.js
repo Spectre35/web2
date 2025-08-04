@@ -9,6 +9,7 @@ import dotenv from "dotenv";
 import moment from "moment";
 dotenv.config();
 
+import axios from "axios";
 
 const { Pool } = pkg;
 const app = express();
@@ -544,6 +545,100 @@ app.delete("/delete-all/:tabla", protegerDatos, async (req, res) => {
     
   } catch (error) {
     console.error(`❌ ERROR CRÍTICO en borrado de ${tabla}:`, error);
+    res.status(500).json({ 
+      error: `Error al borrar registros: ${error.message}`,
+      tabla: tabla,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// ✅ Endpoint para borrar registros de julio y agosto de cargos_auto
+app.delete("/delete-julio-agosto/:tabla", protegerDatos, async (req, res) => {
+  const tabla = req.params.tabla;
+  
+  // Validar que solo se pueda borrar de cargos_auto
+  if (tabla !== 'cargos_auto') {
+    return res.status(400).json({ 
+      error: "Solo se permite borrar registros de julio y agosto de la tabla 'cargos_auto'" 
+    });
+  }
+  
+  try {
+    console.log(`🗑️ [INICIO] Solicitud de borrado de julio y agosto para tabla: ${tabla} - ${new Date().toISOString()}`);
+    
+    // Para cargos_auto, la columna de fecha es 'FechaCompra'
+    const columnaFecha = 'Fecha';
+    console.log(`📅 Columna de fecha detectada: ${columnaFecha}`);
+    
+    // PROTECCIÓN 1: Verificar distribución por mes ANTES de borrar
+    const monthsResult = await pool.query(`
+      SELECT EXTRACT(MONTH FROM "${columnaFecha}") as mes, COUNT(*) as total
+      FROM "${tabla}"
+      WHERE EXTRACT(YEAR FROM "${columnaFecha}") = 2025
+      GROUP BY EXTRACT(MONTH FROM "${columnaFecha}")
+      ORDER BY mes
+    `);
+    
+    console.log(`📊 Distribución por mes en ${tabla} (año 2025):`);
+    monthsResult.rows.forEach(row => {
+      const nombreMes = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][row.mes];
+      console.log(`   - ${nombreMes}: ${row.total} registros`);
+    });
+    
+    // PROTECCIÓN 2: Contar específicamente registros de julio y agosto 2025
+    const countResult = await pool.query(`
+      SELECT COUNT(*) FROM "${tabla}" 
+      WHERE EXTRACT(YEAR FROM "${columnaFecha}") = 2025 
+      AND EXTRACT(MONTH FROM "${columnaFecha}") IN (7, 8)
+    `);
+    const totalRegistrosJulAgo = parseInt(countResult.rows[0].count);
+    
+    console.log(`🎯 Registros de julio y agosto 2025 encontrados: ${totalRegistrosJulAgo}`);
+    
+    if (totalRegistrosJulAgo === 0) {
+      console.log(`⚠️ No hay registros de julio y agosto 2025 para borrar en ${tabla}`);
+      return res.json({ 
+        message: `⚠️ No se encontraron registros de julio y agosto 2025 en ${tabla}`,
+        registrosBorrados: 0,
+        meses: 'julio y agosto',
+        año: 2025,
+        tabla: tabla
+      });
+    }
+    
+    // PROTECCIÓN 3: Verificar que el query incluya WHERE antes de ejecutar
+    const deleteQuery = `DELETE FROM "${tabla}" WHERE EXTRACT(YEAR FROM "${columnaFecha}") = 2025 AND EXTRACT(MONTH FROM "${columnaFecha}") IN (7, 8)`;
+    console.log(`🔍 Query que se ejecutará: ${deleteQuery}`);
+    
+    // PROTECCIÓN 4: Verificar que el query contenga WHERE, 2025, y los meses
+    if (!deleteQuery.includes('WHERE') || !deleteQuery.includes('2025') || !deleteQuery.includes('IN (7, 8)')) {
+      throw new Error('SEGURIDAD: Query de borrado no contiene protecciones necesarias');
+    }
+    
+    // EJECUTAR BORRADO PROTEGIDO
+    const deleteResult = await pool.query(deleteQuery);
+    
+    console.log(`✅ BORRADO COMPLETADO: ${deleteResult.rowCount} registros de julio y agosto 2025 borrados de ${tabla}`);
+    
+    // PROTECCIÓN 5: Verificar estado después del borrado
+    const afterResult = await pool.query(`
+      SELECT COUNT(*) as total FROM "${tabla}"
+    `);
+    console.log(`📊 Total de registros restantes en ${tabla}: ${afterResult.rows[0].total}`);
+    
+    res.json({ 
+      message: `✅ ${deleteResult.rowCount} registros de julio y agosto 2025 borrados exitosamente de ${tabla}`,
+      registrosBorrados: deleteResult.rowCount,
+      meses: 'julio y agosto',
+      año: 2025,
+      tabla: tabla,
+      registrosRestantes: afterResult.rows[0].total
+    });
+    
+  } catch (error) {
+    console.error(`❌ ERROR CRÍTICO en borrado de julio y agosto de ${tabla}:`, error);
     res.status(500).json({ 
       error: `Error al borrar registros: ${error.message}`,
       tabla: tabla,
@@ -1550,6 +1645,259 @@ app.get("/sucursales-alerta", async (req, res) => {
   } catch (err) {
     console.error("Error en sucursales-alerta:", err);
     res.status(500).json({ error: "Error al obtener sucursales con alerta" });
+  }
+});
+
+// ================= 🏢 DETALLE SUCURSAL - MODAL INFORMACIÓN =================
+app.get("/sucursal-detalle/:sucursal", async (req, res) => {
+  try {
+    const { sucursal } = req.params;
+    const { fecha_inicio, fecha_fin, filtro_estatus } = req.query;
+    
+    console.log(`🔍 Obteniendo detalle para sucursal: ${sucursal}`);
+    
+    // Configurar fechas por defecto (últimos 30 días) o usar las proporcionadas
+    let whereClauseFecha = '';
+    let fechaParams = [];
+    let paramIndex = 2; // Empezamos en 2 porque $1 será la sucursal
+    
+    if (fecha_inicio && fecha_fin) {
+      whereClauseFecha = `AND "FechaCompra" BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
+      fechaParams = [fecha_inicio, fecha_fin];
+      paramIndex += 2;
+      console.log(`📅 Usando rango personalizado: ${fecha_inicio} - ${fecha_fin}`);
+    } else {
+      // Por defecto: últimos 90 días
+      const fechaFin = new Date();
+      const fechaInicio = new Date();
+      fechaInicio.setDate(fechaInicio.getDate() - 90);
+      
+      whereClauseFecha = `AND "FechaCompra" BETWEEN $${paramIndex} AND $${paramIndex + 1}`;
+      fechaParams = [fechaInicio.toISOString().split('T')[0], fechaFin.toISOString().split('T')[0]];
+      paramIndex += 2;
+      console.log(`📅 Usando últimos 90 días: ${fechaParams[0]} - ${fechaParams[1]}`);
+    }
+
+    // Configurar filtro de estatus
+    let whereClauseEstatus = '';
+    let filtroEstatusParams = [];
+    const soloVencidos = filtro_estatus === 'vencidos' || !filtro_estatus; // Por defecto solo vencidos
+
+    if (soloVencidos) {
+      whereClauseEstatus = `AND "EstatusCobranza" = 'VENCIDO'`;
+      console.log(`📊 Filtro: Solo paquetes VENCIDOS`);
+    } else {
+      console.log(`📊 Filtro: TODOS los paquetes`);
+    }
+
+    // Consulta para obtener información de TipoCobranza
+    const queryTipoCobranza = `
+      SELECT 
+        "TipoCobranza",
+        COUNT(*) as cantidad,
+        ROUND((COUNT(*) * 100.0 / SUM(COUNT(*)) OVER()), 2) as porcentaje
+      FROM "ventas"
+      WHERE TRIM("Sucursal") = TRIM($1) 
+        AND "TipoCobranza" IS NOT NULL
+        ${whereClauseFecha}
+        ${whereClauseEstatus}
+      GROUP BY "TipoCobranza"
+      ORDER BY cantidad DESC
+    `;
+
+    // Consulta para obtener comentarios más frecuentes
+    const queryComentarios = `
+      WITH comentarios_expandidos AS (
+        SELECT 
+          TRIM(unnest(string_to_array(
+            REPLACE(
+              REPLACE("Comentarios", '/', ','), 
+              'COMPLEMENTAR PAPELERIA:', ''
+            ), 
+            ','
+          ))) as comentario_individual
+        FROM "ventas"
+        WHERE TRIM("Sucursal") = TRIM($1)
+          AND "Comentarios" IS NOT NULL 
+          AND "Comentarios" != ''
+          ${whereClauseFecha}
+          ${whereClauseEstatus}
+      ),
+      comentarios_limpios AS (
+        SELECT 
+          REPLACE(comentario_individual, 'REVISION:', '') as comentario_final,
+          COUNT(*) as frecuencia
+        FROM comentarios_expandidos
+        WHERE LENGTH(TRIM(comentario_individual)) > 0
+          AND TRIM(comentario_individual) != 'COMPLEMENTAR PAPELERIA'
+          AND TRIM(comentario_individual) != 'REVISION'
+        GROUP BY REPLACE(comentario_individual, 'REVISION:', '')
+      )
+      SELECT 
+        TRIM(comentario_final) as comentario,
+        frecuencia,
+        ROUND((frecuencia * 100.0 / SUM(frecuencia) OVER()), 2) as porcentaje
+      FROM comentarios_limpios
+      WHERE LENGTH(TRIM(comentario_final)) > 0
+      ORDER BY frecuencia DESC
+    `;    // Consulta para totales generales de la sucursal
+    const queryTotales = `
+      SELECT 
+        COUNT(*) as total_paquetes,
+        SUM(CASE WHEN "EstatusCobranza" = 'VENCIDO' THEN 1 ELSE 0 END) as total_vencidos,
+        SUM(CASE WHEN "EstatusCobranza" = 'LIQUIDADO' THEN 1 ELSE 0 END) as total_liquidados,
+        SUM(CASE WHEN "EstatusCobranza" = 'AL CORRIENTE' THEN 1 ELSE 0 END) as total_corriente,
+        ROUND((SUM(CASE WHEN "EstatusCobranza" = 'VENCIDO' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as porcentaje_vencidos,
+        ROUND((SUM(CASE WHEN "EstatusCobranza" = 'LIQUIDADO' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as porcentaje_liquidados,
+        ROUND((SUM(CASE WHEN "EstatusCobranza" = 'AL CORRIENTE' THEN 1 ELSE 0 END) * 100.0 / COUNT(*)), 2) as porcentaje_corriente
+      FROM "ventas"
+      WHERE TRIM("Sucursal") = TRIM($1)
+        ${whereClauseFecha}
+    `;
+
+    // Consulta para obtener las tarjetas más usadas (BINs) - OPTIMIZADA
+    const queryTopTarjetas = `
+      SELECT 
+        SUBSTRING("Tarjeta", 1, 6) as bin,
+        COUNT(*) as cantidad_paquetes,
+        ROUND((COUNT(*) * 100.0 / SUM(COUNT(*)) OVER()), 2) as porcentaje
+      FROM "ventas"
+      WHERE TRIM("Sucursal") = TRIM($1)
+        AND "Tarjeta" IS NOT NULL 
+        AND "Tarjeta" != ''
+        AND LENGTH("Tarjeta") >= 6
+        ${whereClauseFecha}
+        ${whereClauseEstatus}
+      GROUP BY SUBSTRING("Tarjeta", 1, 6)
+      HAVING COUNT(*) >= 1
+      ORDER BY cantidad_paquetes DESC
+    `;
+
+    // Parámetros para todas las consultas
+    const queryParams = [sucursal, ...fechaParams, ...filtroEstatusParams];
+
+    // Debug básico
+    console.log(`🔍 [DEBUG] Procesando detalle para ${sucursal} [${filtroEstatusParams.length > 0 ? 'filtrado' : 'todos'}]`);
+
+    // Ejecutar todas las consultas en paralelo
+    const [resultTipoCobranza, resultComentarios, resultTotales, resultTopTarjetas] = await Promise.all([
+      pool.query(queryTipoCobranza, queryParams),
+      pool.query(queryComentarios, queryParams),
+      pool.query(queryTotales, queryParams),
+      pool.query(queryTopTarjetas, queryParams)
+    ]);
+
+    // Buscar información de banco para cada BIN único - OPTIMIZADO
+    const binsConBanco = [];
+    
+    // Si hay resultados de tarjetas, hacer una sola consulta para obtener todos los bancos
+    if (resultTopTarjetas.rows.length > 0) {
+      const bins = resultTopTarjetas.rows.map(row => row.bin);
+      
+      // Consulta optimizada para obtener info de banco de múltiples BINs
+      const bancosResult = await pool.query(`
+        SELECT DISTINCT ON (bins_to_check.target_bin) 
+          bins_to_check.target_bin,
+          bc.banco,
+          bc.tipo,
+          bc.marca
+        FROM (
+          SELECT unnest($1::text[]) as target_bin
+        ) bins_to_check
+        LEFT JOIN bins_cache bc ON (
+          bc.bin = bins_to_check.target_bin
+          OR bins_to_check.target_bin LIKE bc.bin || '%'
+          OR LEFT(bc.bin, 4) = LEFT(bins_to_check.target_bin, 4)
+        )
+        ORDER BY bins_to_check.target_bin, 
+                 CASE 
+                   WHEN bc.bin = bins_to_check.target_bin THEN 1
+                   WHEN bins_to_check.target_bin LIKE bc.bin || '%' THEN 2
+                   WHEN LEFT(bc.bin, 4) = LEFT(bins_to_check.target_bin, 4) THEN 3
+                   ELSE 4
+                 END
+      `, [bins]);
+
+      // Crear mapa de BINs a info de banco
+      const bancoMap = {};
+      bancosResult.rows.forEach(row => {
+        if (!bancoMap[row.target_bin]) {
+          bancoMap[row.target_bin] = {
+            banco: row.banco || 'Banco no identificado',
+            tipo: row.tipo || 'N/A',
+            marca: row.marca || 'N/A'
+          };
+        }
+      });
+
+      // Construir resultado final
+      resultTopTarjetas.rows.forEach(row => {
+        const bancoInfo = bancoMap[row.bin] || {
+          banco: 'Banco no identificado',
+          tipo: 'N/A',
+          marca: 'N/A'
+        };
+
+        binsConBanco.push({
+          bin: row.bin,
+          cantidadPaquetes: parseInt(row.cantidad_paquetes),
+          porcentaje: parseFloat(row.porcentaje),
+          banco: bancoInfo.banco,
+          tipo: bancoInfo.tipo,
+          marca: bancoInfo.marca
+        });
+      });
+    }
+
+    // Debug optimizado
+    console.log(`🔍 BINs únicos: ${resultTopTarjetas.rows.length}, Con banco: ${binsConBanco.length}`);
+
+    const detalleSucursal = {
+      sucursal: sucursal,
+      periodo: {
+        fechaInicio: fechaParams[0],
+        fechaFin: fechaParams[1],
+        esUltimos90Dias: !fecha_inicio && !fecha_fin
+      },
+      filtros: {
+        soloVencidos: soloVencidos,
+        tipoFiltro: soloVencidos ? 'vencidos' : 'todos'
+      },
+      tipoCobranza: resultTipoCobranza.rows.map(row => ({
+        tipo: row.TipoCobranza,
+        cantidad: parseInt(row.cantidad),
+        porcentaje: parseFloat(row.porcentaje)
+      })),
+      comentariosFrecuentes: resultComentarios.rows.map(row => ({
+        comentario: row.comentario,
+        frecuencia: parseInt(row.frecuencia),
+        porcentaje: parseFloat(row.porcentaje)
+      })),
+      topTarjetas: binsConBanco.map(tarjeta => ({
+        bin: tarjeta.bin,
+        banco: tarjeta.banco,
+        tipo: tarjeta.tipo,
+        marca: tarjeta.marca,
+        cantidadTransacciones: tarjeta.cantidadPaquetes,
+        porcentaje: tarjeta.porcentaje
+      })),
+      totales: {
+        totalPaquetes: parseInt(resultTotales.rows[0]?.total_paquetes || 0),
+        totalVencidos: parseInt(resultTotales.rows[0]?.total_vencidos || 0),
+        totalLiquidados: parseInt(resultTotales.rows[0]?.total_liquidados || 0),
+        totalCorriente: parseInt(resultTotales.rows[0]?.total_corriente || 0),
+        porcentajeVencidos: parseFloat(resultTotales.rows[0]?.porcentaje_vencidos || 0),
+        porcentajeLiquidados: parseFloat(resultTotales.rows[0]?.porcentaje_liquidados || 0),
+        porcentajeCorriente: parseFloat(resultTotales.rows[0]?.porcentaje_corriente || 0)
+      }
+    };
+
+    console.log(`✅ Detalle obtenido para ${sucursal}: ${detalleSucursal.tipoCobranza.length} tipos, ${detalleSucursal.comentariosFrecuentes.length} comentarios, ${binsConBanco.length} tarjetas`);
+    res.json(detalleSucursal);
+
+  } catch (err) {
+    console.error(`❌ Error obteniendo detalle de sucursal ${req.params.sucursal}:`, err);
+    res.status(500).json({ error: "Error al obtener detalle de sucursal" });
   }
 });
 
@@ -3965,46 +4313,6 @@ app.get("/aclaraciones/dashboard", protegerDatos, async (req, res) => {
   }
 });
 
-// ====================  ENDPOINT COBRANZA MENSUAL 2025 ====================
-app.get("/cobranza-mensual-2025", async (req, res) => {
-  try {
-    console.log("🔍 Solicitando cobranza mensual 2025...");
-    
-    const query = `
-      SELECT 
-        EXTRACT(MONTH FROM "fecha_cobro") as mes_numero,
-        CASE EXTRACT(MONTH FROM "fecha_cobro")
-          WHEN 1 THEN 'ENERO'
-          WHEN 2 THEN 'FEBRERO'
-          WHEN 3 THEN 'MARZO'
-          WHEN 4 THEN 'ABRIL'
-          WHEN 5 THEN 'MAYO'
-          WHEN 6 THEN 'JUNIO'
-          WHEN 7 THEN 'JULIO'
-          WHEN 8 THEN 'AGOSTO'
-          WHEN 9 THEN 'SEPTIEMBRE'
-          WHEN 10 THEN 'OCTUBRE'
-          WHEN 11 THEN 'NOVIEMBRE'
-          WHEN 12 THEN 'DICIEMBRE'
-        END as mes,
-        COUNT(*) as cantidad,
-        COALESCE(SUM("monto_cobro"), 0) as monto
-      FROM recuperacion 
-      WHERE EXTRACT(YEAR FROM "fecha_cobro") = 2025
-      GROUP BY EXTRACT(MONTH FROM "fecha_cobro")
-      ORDER BY mes_numero
-    `;
-
-    const result = await pool.query(query);
-    console.log(`✅ Cobranza mensual 2025 obtenida: ${result.rows.length} meses`);
-    
-    res.json(result.rows);
-  } catch (error) {
-    console.error("❌ Error al obtener cobranza mensual 2025:", error);
-    res.status(500).json({ error: "Error al obtener cobranza mensual 2025", details: error.message });
-  }
-});
-
 // ================= 💳 DASHBOARD SUCURSALES TARJETAS DUPLICADAS =================
 app.get("/dashboard-tarjetas-duplicadas", async (req, res) => {
   try {
@@ -4246,7 +4554,1159 @@ app.get('/health-check', (req, res) => {
   res.status(200).json(healthStatus);
 });
 
-// ====================  INICIO DEL SERVIDOR ====================
+// ==================== GESTIÓN DE BINs ====================
+
+// Función para inicializar la tabla de BINs
+async function inicializarTablaBins() {
+  try {
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS bins_cache (
+        id SERIAL PRIMARY KEY,
+        bin VARCHAR(8) UNIQUE NOT NULL,
+        banco VARCHAR(255),
+        tipo VARCHAR(100),
+        marca VARCHAR(100),
+        pais VARCHAR(100),
+        fecha_consulta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        fuente VARCHAR(50) DEFAULT 'binlookup'
+      )
+    `);
+    
+    // Agregar columna fecha_consulta si no existe
+    try {
+      await pool.query(`
+        ALTER TABLE bins_cache 
+        ADD COLUMN IF NOT EXISTS fecha_consulta TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      `);
+    } catch (alterError) {
+      console.log('Columna fecha_consulta ya existe o error:', alterError.message);
+    }
+
+    // Actualizar el tipo de dato de varios campos si es necesario
+    try {
+      await pool.query(`
+        ALTER TABLE bins_cache 
+        ALTER COLUMN banco TYPE VARCHAR(255),
+        ALTER COLUMN tipo TYPE VARCHAR(100),
+        ALTER COLUMN marca TYPE VARCHAR(100),
+        ALTER COLUMN pais TYPE VARCHAR(100)
+      `);
+      console.log('✅ Campos de bins_cache actualizados correctamente');
+    } catch (alterError) {
+      console.log('Campos ya tienen el tipo correcto o error:', alterError.message);
+    }
+
+    // Agregar columna fuente si no existe
+    try {
+      await pool.query(`
+        ALTER TABLE bins_cache 
+        ADD COLUMN IF NOT EXISTS fuente VARCHAR(50) DEFAULT 'binlookup'
+      `);
+    } catch (alterError) {
+      // Ignorar error si la columna ya existe
+      console.log("📝 Columna fecha_consulta ya existe o no se pudo agregar");
+    }
+    
+    console.log("✅ Tabla bins_cache inicializada correctamente");
+  } catch (error) {
+    console.error("❌ Error inicializando tabla bins_cache:", error);
+  }
+}
+
+// Función para buscar BIN en base de datos
+async function buscarBinEnBD(bin) {
+  try {
+    // Primero intentar búsqueda exacta
+    let result = await pool.query(
+      'SELECT * FROM bins_cache WHERE bin = $1',
+      [bin]
+    );
+    
+    if (result.rows[0]) {
+      console.log(`✅ BIN ${bin} encontrado con coincidencia exacta`);
+      return result.rows[0];
+    }
+    
+    // Si no hay coincidencia exacta, buscar por los primeros 6 dígitos
+    const bin6 = bin.substring(0, 6);
+    result = await pool.query(
+      'SELECT * FROM bins_cache WHERE bin LIKE $1',
+      [bin6 + '%']
+    );
+    
+    if (result.rows[0]) {
+      console.log(`✅ BIN ${bin} encontrado con coincidencia parcial (${bin6}...)`);
+      return result.rows[0];
+    }
+    
+    // Si aún no hay coincidencia, buscar BINs que empiecen con este patrón
+    if (bin.length >= 6) {
+      result = await pool.query(
+        'SELECT * FROM bins_cache WHERE $1 LIKE bin || \'%\'',
+        [bin]
+      );
+      
+      if (result.rows[0]) {
+        console.log(`✅ BIN ${bin} encontrado con patrón de inicio`);
+        return result.rows[0];
+      }
+    }
+    
+    console.log(`❌ BIN ${bin} no encontrado en ningún patrón de búsqueda`);
+    return null;
+  } catch (error) {
+    console.error("❌ Error buscando BIN en BD:", error);
+    return null;
+  }
+}
+
+// Endpoint para reinicializar la tabla bins_cache
+app.post('/api/reinicializar-tabla-bins', async (req, res) => {
+  try {
+    // Eliminar la tabla existente
+    await pool.query(`DROP TABLE IF EXISTS bins_cache`);
+    console.log('🗑️ Tabla bins_cache eliminada');
+    
+    // Crear la tabla con la estructura correcta
+    await pool.query(`
+      CREATE TABLE bins_cache (
+        id SERIAL PRIMARY KEY,
+        bin VARCHAR(8) UNIQUE NOT NULL,
+        banco VARCHAR(255),
+        tipo VARCHAR(100),
+        marca VARCHAR(100),
+        pais VARCHAR(100),
+        fecha_consulta TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        fuente VARCHAR(50) DEFAULT 'binlookup'
+      )
+    `);
+    console.log('✅ Tabla bins_cache creada con estructura correcta');
+    
+    res.json({ 
+      success: true, 
+      message: 'Tabla bins_cache reinicializada correctamente' 
+    });
+  } catch (error) {
+    console.error('❌ Error reinicializando tabla:', error.message);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Error reinicializando tabla: ' + error.message 
+    });
+  }
+});
+
+// Configuración de múltiples APIs para BINs
+const APIS_CONFIG = {
+  rapidapi1: {
+    name: 'RapidAPI BIN Checker #1',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': '6ad4c5cf02mshf5745757f190968p162676jsnd766f7b32def'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi2: {
+    name: 'RapidAPI BIN Checker #2',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': '6342e9a39emsh9d543435adb3677p12e586jsndf6fe804ffba'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi3: {
+    name: 'RapidAPI BIN Checker #3',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': '7bdad0b057mshba8dca97f24372fp196d01jsnee1979384c24'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi4: {
+    name: 'RapidAPI BIN Checker #4',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': '6e827ed6b3mshfe180f297e89e62p198964jsn48b4879a920a'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi5: {
+    name: 'RapidAPI BIN Checker #5',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': 'cbff016dd9msh2828672cd97d7b3p1c6bc9jsn9d68f70cdd48'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi6: {
+    name: 'RapidAPI BIN Checker #6',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': '99a9a534a8msh5b7ac5c5521b5abp18822ajsn3821f0b1aabf'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi7: {
+    name: 'RapidAPI BIN Checker #7',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': '1ac7a93f04msh60471f41841327bp11110ajsnaaf26667e628'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi8: {
+    name: 'RapidAPI BIN Checker #8',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': '0b3d4fbdc8mshc4c891c0a55ad25p168f45jsnd8f320f5a2db'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  rapidapi9: {
+    name: 'RapidAPI BIN Checker #9',
+    url: 'https://bin-ip-checker.p.rapidapi.com/',
+    headers: {
+      'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+      'x-rapidapi-key': 'e0e0c84115msha59dbb538655099p1a59dajsn1839c29d1b99'
+    },
+    rateLimitPerHour: 500,
+    enabled: true
+  },
+  binlist: {
+    name: 'BinList.net (Fallback)',
+    url: 'https://lookup.binlist.net/',
+    headers: {
+      'Accept-Version': '3',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    },
+    rateLimitPerHour: 5,
+    enabled: true
+  }
+};
+
+// Sistema de seguimiento de rate limits por API
+const API_RATE_LIMITS = {};
+
+// Función para buscar BIN usando múltiples APIs
+async function buscarBinEnMultiplesAPIs(bin) {
+  const apisDisponibles = Object.entries(APIS_CONFIG)
+    .filter(([key, config]) => config.enabled)
+    .sort((a, b) => (b[1].rateLimitPerHour || 0) - (a[1].rateLimitPerHour || 0)); // Ordenar por rate limit
+
+  console.log(`🔍 Iniciando búsqueda de BIN ${bin} en ${apisDisponibles.length} APIs disponibles`);
+
+  for (const [apiKey, apiConfig] of apisDisponibles) {
+    try {
+      console.log(`🌐 Intentando con ${apiConfig.name}...`);
+      
+      // Verificar rate limit de esta API
+      if (await verificarRateLimit(apiKey)) {
+        console.log(`⏰ Rate limit alcanzado para ${apiConfig.name}, saltando...`);
+        continue;
+      }
+
+      const resultado = await consultarAPI(apiKey, bin);
+      if (resultado) {
+        console.log(`✅ BIN ${bin} encontrado exitosamente en ${apiConfig.name}`);
+        await registrarUsoAPI(apiKey);
+        return resultado;
+      }
+    } catch (error) {
+      console.log(`❌ Error con ${apiConfig.name}: ${error.message}`);
+      continue;
+    }
+  }
+
+  console.log(`❌ BIN ${bin} no encontrado en ninguna API disponible`);
+  return null;
+}
+
+// Función para consultar una API específica
+async function consultarAPI(apiKey, bin) {
+  const config = APIS_CONFIG[apiKey];
+  
+  if (apiKey.startsWith('rapidapi')) {
+    return await consultarRapidAPI(bin, config);
+  } else if (apiKey === 'binlist') {
+    return await consultarBinList(bin);
+  } else {
+    throw new Error(`API ${apiKey} no implementada`);
+  }
+}
+
+// Función específica para RapidAPI (acepta config personalizada)
+async function consultarRapidAPI(bin, config = APIS_CONFIG.rapidapi1) {
+  const response = await axios.get(`https://bin-ip-checker.p.rapidapi.com/?bin=${bin}`, {
+    timeout: 15000,
+    headers: config.headers
+  });
+
+  if (response.data && response.data.BIN) {
+    const apiData = response.data.BIN;
+    
+    let bancoNombre = 'Desconocido';
+    if (apiData.issuer && typeof apiData.issuer === 'object' && apiData.issuer.name) {
+      bancoNombre = apiData.issuer.name;
+    } else if (typeof apiData.issuer === 'string') {
+      bancoNombre = apiData.issuer;
+    } else if (apiData.bank && typeof apiData.bank === 'object' && apiData.bank.name) {
+      bancoNombre = apiData.bank.name;
+    } else if (typeof apiData.bank === 'string') {
+      bancoNombre = apiData.bank;
+    }
+    
+    bancoNombre = String(bancoNombre);
+    
+    return {
+      bin: bin,
+      banco: bancoNombre.substring(0, 255),
+      tipo: apiData.type || 'Desconocido',
+      marca: apiData.brand || apiData.scheme || 'Desconocido',
+      pais: apiData.country?.name || apiData.country_name || 'Desconocido',
+      fuente: `rapidapi_${config.name.split('#')[1] || '1'}`
+    };
+  }
+  return null;
+}
+
+// Función específica para BinList
+async function consultarBinList(bin) {
+  const response = await axios.get(`https://lookup.binlist.net/${bin}`, {
+    timeout: 10000,
+    headers: APIS_CONFIG.binlist.headers
+  });
+
+  if (response.data) {
+    return {
+      bin: bin,
+      banco: response.data.bank?.name || 'Desconocido',
+      tipo: response.data.type || 'Desconocido',
+      marca: response.data.brand || response.data.scheme || 'Desconocido',
+      pais: response.data.country?.name || 'Desconocido',
+      fuente: 'binlist'
+    };
+  }
+  return null;
+}
+
+// Sistema de rate limiting
+async function verificarRateLimit(apiKey) {
+  const now = Date.now();
+  const hora = Math.floor(now / (1000 * 60 * 60)); // Hora actual
+  
+  if (!API_RATE_LIMITS[apiKey]) {
+    API_RATE_LIMITS[apiKey] = {};
+  }
+  
+  const usos = API_RATE_LIMITS[apiKey][hora] || 0;
+  const limite = APIS_CONFIG[apiKey].rateLimitPerHour || 1000;
+  
+  return usos >= limite;
+}
+
+async function registrarUsoAPI(apiKey) {
+  const now = Date.now();
+  const hora = Math.floor(now / (1000 * 60 * 60));
+  
+  if (!API_RATE_LIMITS[apiKey]) {
+    API_RATE_LIMITS[apiKey] = {};
+  }
+  
+  API_RATE_LIMITS[apiKey][hora] = (API_RATE_LIMITS[apiKey][hora] || 0) + 1;
+  
+  // Limpiar datos antiguos (más de 2 horas)
+  Object.keys(API_RATE_LIMITS[apiKey]).forEach(h => {
+    if (parseInt(h) < hora - 2) {
+      delete API_RATE_LIMITS[apiKey][h];
+    }
+  });
+}
+
+// Endpoint para obtener información de APIs disponibles
+app.get('/api/apis-info', async (req, res) => {
+  try {
+    const apisInfo = Object.entries(APIS_CONFIG).map(([key, config]) => ({
+      key,
+      name: config.name,
+      enabled: config.enabled,
+      rateLimitPerHour: config.rateLimitPerHour,
+      usosActuales: obtenerUsosActuales(key)
+    }));
+
+    res.json({
+      success: true,
+      data: apisInfo,
+      totalAPIs: apisInfo.length,
+      apisHabilitadas: apisInfo.filter(api => api.enabled).length
+    });
+  } catch (error) {
+    console.error('❌ Error obteniendo info de APIs:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error obteniendo información de APIs'
+    });
+  }
+});
+
+// Endpoint para configurar APIs
+app.post('/api/configurar-api', async (req, res) => {
+  try {
+    const { apiKey, config } = req.body;
+    
+    if (!APIS_CONFIG[apiKey]) {
+      return res.status(404).json({
+        success: false,
+        message: 'API no encontrada'
+      });
+    }
+
+    // Actualizar configuración
+    APIS_CONFIG[apiKey] = { ...APIS_CONFIG[apiKey], ...config };
+    
+    console.log(`⚙️ API ${apiKey} configurada:`, config);
+    
+    res.json({
+      success: true,
+      message: `API ${apiKey} configurada correctamente`,
+      data: APIS_CONFIG[apiKey]
+    });
+  } catch (error) {
+    console.error('❌ Error configurando API:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error configurando API'
+    });
+  }
+});
+
+function obtenerUsosActuales(apiKey) {
+  const now = Date.now();
+  const hora = Math.floor(now / (1000 * 60 * 60));
+  return API_RATE_LIMITS[apiKey]?.[hora] || 0;
+}
+
+// Endpoint para buscar BIN usando una API específica
+app.post('/api/buscar-bin-api-especifica', async (req, res) => {
+  try {
+    const { bin, apiKey } = req.body;
+
+    if (!bin || bin.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'El BIN debe tener al menos 6 dígitos'
+      });
+    }
+
+    if (!APIS_CONFIG[apiKey] || !APIS_CONFIG[apiKey].enabled) {
+      return res.status(400).json({
+        success: false,
+        message: 'API no disponible o no habilitada'
+      });
+    }
+
+    const binLimpio = bin.toString().substring(0, 8);
+    console.log(`🔍 Buscando BIN ${binLimpio} específicamente en ${APIS_CONFIG[apiKey].name}`);
+
+    const resultado = await consultarAPI(apiKey, binLimpio);
+
+    if (resultado) {
+      // Guardar en base de datos
+      await pool.query(`
+        INSERT INTO bins_cache (bin, banco, tipo, marca, pais, fuente)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (bin) DO UPDATE SET
+          banco = EXCLUDED.banco,
+          tipo = EXCLUDED.tipo,
+          marca = EXCLUDED.marca,
+          pais = EXCLUDED.pais
+      `, [resultado.bin, resultado.banco, resultado.tipo, resultado.marca, resultado.pais, resultado.fuente]);
+
+      await registrarUsoAPI(apiKey);
+
+      res.json({
+        success: true,
+        data: resultado,
+        api_utilizada: APIS_CONFIG[apiKey].name
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: `BIN no encontrado en ${APIS_CONFIG[apiKey].name}`
+      });
+    }
+  } catch (error) {
+    console.error(`❌ Error buscando en API específica:`, error);
+    res.status(500).json({
+      success: false,
+      message: 'Error consultando API específica'
+    });
+  }
+});
+
+// Función para buscar BIN en API externa (RapidAPI)
+async function buscarBinEnAPI(bin) {
+  try {
+    console.log(`🔍 Consultando RapidAPI para BIN: ${bin}`);
+    const response = await axios.get(`https://bin-ip-checker.p.rapidapi.com/?bin=${bin}`, {
+      timeout: 15000,
+      headers: {
+        'x-rapidapi-host': 'bin-ip-checker.p.rapidapi.com',
+        'x-rapidapi-key': '6ad4c5cf02mshf5745757f190968p162676jsnd766f7b32def'
+      }
+    });
+
+    console.log(`📊 Respuesta de RapidAPI:`, JSON.stringify(response.data, null, 2));
+
+    if (response.data && response.data.BIN) {
+      const apiData = response.data.BIN;
+      
+      // Extraer el nombre del banco correctamente
+      let bancoNombre = 'Desconocido';
+      if (apiData.issuer && typeof apiData.issuer === 'object' && apiData.issuer.name) {
+        bancoNombre = apiData.issuer.name;
+      } else if (typeof apiData.issuer === 'string') {
+        bancoNombre = apiData.issuer;
+      } else if (apiData.bank && typeof apiData.bank === 'object' && apiData.bank.name) {
+        bancoNombre = apiData.bank.name;
+      } else if (typeof apiData.bank === 'string') {
+        bancoNombre = apiData.bank;
+      }
+      
+      // Asegurar que bancoNombre sea una cadena antes de usar substring
+      bancoNombre = String(bancoNombre);
+      
+      const binData = {
+        bin: bin,
+        banco: bancoNombre.substring(0, 255), // Truncar a 255 caracteres por seguridad
+        tipo: apiData.type || 'Desconocido',
+        marca: apiData.brand || apiData.scheme || 'Desconocido',
+        pais: apiData.country?.name || apiData.country_name || 'Desconocido',
+        fuente: 'rapidapi'
+      };
+
+      console.log(`📋 Datos procesados:`, JSON.stringify(binData, null, 2));
+
+      // Guardar en base de datos
+      await pool.query(`
+        INSERT INTO bins_cache (bin, banco, tipo, marca, pais, fuente)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (bin) DO UPDATE SET
+          banco = EXCLUDED.banco,
+          tipo = EXCLUDED.tipo,
+          marca = EXCLUDED.marca,
+          pais = EXCLUDED.pais
+      `, [binData.bin, binData.banco, binData.tipo, binData.marca, binData.pais, binData.fuente]);
+
+      console.log(`✅ BIN ${bin} consultado y guardado exitosamente desde RapidAPI`);
+      return binData;
+    }
+  } catch (error) {
+    console.error(`❌ Error consultando RapidAPI para BIN ${bin}:`, error.message);
+    
+    // Si hay error de rate limit (429), devolver información específica
+    if (error.response?.status === 429) {
+      console.log(`🚫 Rate limit alcanzado en RapidAPI para BIN ${bin}`);
+      return {
+        bin: bin,
+        banco: 'Rate limit alcanzado',
+        tipo: 'Consultar más tarde',
+        marca: 'Límite de API',
+        pais: 'Desconocido',
+        fuente: 'rate_limit'
+      };
+    }
+    
+    // Si es error 404, el BIN no existe
+    if (error.response?.status === 404) {
+      console.log(`❓ BIN ${bin} no encontrado en RapidAPI`);
+      return {
+        bin: bin,
+        banco: 'BIN no encontrado',
+        tipo: 'No disponible',
+        marca: 'No disponible',
+        pais: 'No disponible',
+        fuente: 'not_found'
+      };
+    }
+
+    // Si hay otros errores, intentar con binlist.net como fallback
+    try {
+      console.log(`🔄 Intentando API de fallback (binlist.net) para BIN: ${bin}`);
+      const fallbackResponse = await axios.get(`https://lookup.binlist.net/${bin}`, {
+        timeout: 10000,
+        headers: {
+          'Accept-Version': '3',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+
+      console.log(`📊 Respuesta de API fallback:`, JSON.stringify(fallbackResponse.data, null, 2));
+
+      if (fallbackResponse.data) {
+        const binData = {
+          bin: bin,
+          banco: fallbackResponse.data.bank?.name || 'Desconocido',
+          tipo: fallbackResponse.data.type || 'Desconocido',
+          marca: fallbackResponse.data.brand || fallbackResponse.data.scheme || 'Desconocido',
+          pais: fallbackResponse.data.country?.name || 'Desconocido',
+          fuente: 'binlookup_fallback'
+        };
+
+        console.log(`📋 Datos procesados (fallback):`, JSON.stringify(binData, null, 2));
+
+        // Guardar en base de datos
+        await pool.query(`
+          INSERT INTO bins_cache (bin, banco, tipo, marca, pais, fuente)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (bin) DO UPDATE SET
+            banco = EXCLUDED.banco,
+            tipo = EXCLUDED.tipo,
+            marca = EXCLUDED.marca,
+            pais = EXCLUDED.pais
+        `, [binData.bin, binData.banco, binData.tipo, binData.marca, binData.pais, binData.fuente]);
+
+        console.log(`✅ BIN ${bin} consultado con API fallback y guardado`);
+        return binData;
+      }
+    } catch (fallbackError) {
+      console.error(`❌ Error con API fallback para BIN ${bin}:`, fallbackError.message);
+    }
+    
+    return null;
+  }
+}
+
+// Endpoint para buscar un BIN específico
+app.post('/api/buscar-bin', async (req, res) => {
+  try {
+    const { bin } = req.body;
+
+    if (!bin || bin.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: 'El BIN debe tener al menos 6 dígitos'
+      });
+    }
+
+    // Limpiar el BIN (tomar solo los primeros 6-8 dígitos)
+    const binLimpio = bin.toString().substring(0, 8);
+
+    console.log(`🔍 Buscando información para BIN: ${binLimpio} (solo en base de datos)`);
+
+    // Buscar solo en la base de datos local
+    let resultado = await buscarBinEnBD(binLimpio);
+    
+    if (resultado) {
+      console.log(`✅ BIN ${binLimpio} encontrado en base de datos`);
+      return res.json({
+        success: true,
+        data: resultado,
+        fuente: 'base_de_datos'
+      });
+    }
+
+    // Si no está en BD, no buscar en API - solo devolver que no se encontró
+    console.log(`❌ BIN ${binLimpio} no encontrado en base de datos local`);
+    return res.status(404).json({
+      success: false,
+      message: 'BIN no encontrado en base de datos local. Use el procesador masivo para obtener información de nuevos BINs.',
+      bin: binLimpio,
+      sugerencia: 'Utilice el "Procesador BINs Masivo" para consultar este BIN en las APIs externas'
+    });
+
+  } catch (error) {
+    console.error("❌ Error en endpoint buscar-bin:", error);
+    res.status(500).json({
+      success: false,
+      message: 'Error interno del servidor'
+    });
+  }
+});
+
+// Endpoint para obtener estadísticas de BINs
+app.get('/api/bins-stats', async (req, res) => {
+  try {
+    const stats = await pool.query(`
+      SELECT 
+        COUNT(*) as total_bins,
+        COUNT(CASE WHEN banco != 'Desconocido' AND banco != 'Rate limit alcanzado (5/hora)' AND banco != 'BIN no encontrado' THEN 1 END) as bins_identificados,
+        COUNT(DISTINCT banco) as bancos_unicos
+      FROM bins_cache
+    `);
+
+    res.json({
+      success: true,
+      data: stats.rows[0]
+    });
+  } catch (error) {
+    console.error("❌ Error obteniendo estadísticas:", error);
+    res.status(500).json({
+      success: false,
+      message: 'Error obteniendo estadísticas'
+    });
+  }
+});
+
+// Endpoint para obtener los BINs más utilizados desde la tabla ventas
+app.get('/api/bins-mas-utilizados', async (req, res) => {
+  try {
+    const { limit = 500 } = req.query;
+    console.log(`🔍 Extrayendo los ${limit} BINs más utilizados de la base de datos...`);
+
+    const query = `
+      SELECT 
+        LEFT(TRIM("Tarjeta"), 8) as bin,
+        COUNT(*) as frecuencia,
+        COUNT(DISTINCT "Cliente") as clientes_distintos,
+        MAX("FechaCompra") as ultima_fecha,
+        MIN("FechaCompra") as primera_fecha
+      FROM "ventas"
+      WHERE "Tarjeta" IS NOT NULL 
+        AND "Tarjeta" != '' 
+        AND "Tarjeta" != 'null'
+        AND LENGTH(TRIM("Tarjeta")) >= 6
+        AND TRIM("Tarjeta") ~ '^[0-9]+'
+      GROUP BY LEFT(TRIM("Tarjeta"), 8)
+      HAVING COUNT(*) >= 2
+      ORDER BY frecuencia DESC, clientes_distintos DESC
+      LIMIT $1
+    `;
+
+    const result = await pool.query(query, [limit]);
+    
+    console.log(`✅ Encontrados ${result.rows.length} BINs únicos más utilizados`);
+    
+    // Verificar cuáles ya están en cache
+    const binsEncontrados = result.rows.map(row => row.bin);
+    const yaEnCache = await pool.query(`
+      SELECT bin FROM bins_cache WHERE bin = ANY($1::text[])
+    `, [binsEncontrados]);
+    
+    const binsYaEnCache = yaEnCache.rows.map(row => row.bin);
+    const binsPendientes = result.rows.filter(row => !binsYaEnCache.includes(row.bin));
+    
+    console.log(`📊 Estadísticas de BINs:`);
+    console.log(`- Total BINs encontrados: ${result.rows.length}`);
+    console.log(`- Ya en cache: ${binsYaEnCache.length}`);
+    console.log(`- Pendientes por consultar: ${binsPendientes.length}`);
+
+    res.json({
+      success: true,
+      total_bins: result.rows.length,
+      ya_en_cache: binsYaEnCache.length,
+      pendientes_consulta: binsPendientes.length,
+      bins_mas_utilizados: result.rows,
+      bins_pendientes: binsPendientes
+    });
+
+  } catch (error) {
+    console.error("❌ Error obteniendo BINs más utilizados:", error);
+    res.status(500).json({
+      success: false,
+      message: 'Error obteniendo BINs más utilizados',
+      error: error.message
+    });
+  }
+});
+
+// Endpoint para procesar BINs masivamente (con rate limiting inteligente)
+// Endpoint para procesamiento distribuido paralelo entre múltiples APIs
+app.post('/api/procesar-bins-distribuido', async (req, res) => {
+  try {
+    const { limit = 500, delayEntreLotes = 2000, soloFaltantes = true } = req.body;
+
+    console.log(`🚀 Iniciando procesamiento distribuido de hasta ${limit} BINs`);
+
+    // 1. Obtener BINs más utilizados
+    const binsResult = await pool.query(`
+      SELECT SUBSTRING("Tarjeta", 1, 8) as bin, COUNT(*) as frecuencia
+      FROM ventas 
+      WHERE "Tarjeta" IS NOT NULL AND LENGTH("Tarjeta") >= 6
+      GROUP BY SUBSTRING("Tarjeta", 1, 8)
+      ORDER BY frecuencia DESC
+      LIMIT $1
+    `, [limit]);
+
+    const todosLosBins = binsResult.rows;
+
+    let bins = todosLosBins;
+    if (soloFaltantes) {
+      // Filtrar solo los que no están en cache
+      const binsEnCache = await pool.query(`
+        SELECT bin FROM bins_cache 
+        WHERE bin = ANY($1)
+      `, [todosLosBins.map(b => b.bin)]);
+      
+      const binsExistentes = new Set(binsEnCache.rows.map(b => b.bin));
+      bins = todosLosBins.filter(b => !binsExistentes.has(b.bin));
+    }
+
+    if (bins.length === 0) {
+      return res.json({
+        success: true,
+        message: 'Todos los BINs ya están procesados',
+        totalBins: 0
+      });
+    }
+
+    // 2. Obtener APIs habilitadas
+    const apisHabilitadas = Object.entries(APIS_CONFIG)
+      .filter(([key, config]) => config.enabled)
+      .map(([key]) => key);
+
+    console.log(`📊 APIs habilitadas: ${apisHabilitadas.length}`);
+    console.log(`📊 BINs a procesar: ${bins.length}`);
+
+    // 3. Distribuir BINs entre APIs
+    const binsDistribuidos = distribuirBinsEntreAPIs(bins, apisHabilitadas);
+
+    // 4. Iniciar procesamiento en paralelo
+    const resultados = await procesarEnParalelo(binsDistribuidos, delayEntreLotes);
+
+    res.json({
+      success: true,
+      message: 'Procesamiento distribuido completado',
+      resultados: resultados,
+      estadisticas: calcularEstadisticas(resultados)
+    });
+
+  } catch (error) {
+    console.error('❌ Error en procesamiento distribuido:', error.message);
+    res.status(500).json({
+      success: false,
+      message: 'Error en procesamiento distribuido: ' + error.message
+    });
+  }
+});
+
+// Función para distribuir BINs entre APIs de manera equitativa
+function distribuirBinsEntreAPIs(bins, apis) {
+  const distribucion = {};
+  
+  // Inicializar arrays para cada API
+  apis.forEach(api => {
+    distribucion[api] = [];
+  });
+  
+  // Distribuir BINs de manera round-robin
+  bins.forEach((bin, index) => {
+    const apiIndex = index % apis.length;
+    const apiKey = apis[apiIndex];
+    distribucion[apiKey].push(bin);
+  });
+  
+  // Log de la distribución
+  console.log('📊 Distribución de BINs:');
+  Object.entries(distribucion).forEach(([api, binsList]) => {
+    console.log(`  ${APIS_CONFIG[api].name}: ${binsList.length} BINs`);
+  });
+  
+  return distribucion;
+}
+
+// Función para procesar BINs en paralelo
+async function procesarEnParalelo(distribucion, delayEntreLotes) {
+  const promesasAPI = [];
+  
+  // Crear una promesa para cada API
+  Object.entries(distribucion).forEach(([apiKey, bins]) => {
+    if (bins.length > 0) {
+      promesasAPI.push(procesarBinsConAPI(apiKey, bins, delayEntreLotes));
+    }
+  });
+  
+  console.log(`🚀 Iniciando ${promesasAPI.length} procesos en paralelo...`);
+  
+  // Ejecutar todas las APIs en paralelo
+  const resultados = await Promise.all(promesasAPI);
+  
+  return resultados;
+}
+
+// Función para procesar una lista de BINs con una API específica
+async function procesarBinsConAPI(apiKey, bins, delay) {
+  const apiName = APIS_CONFIG[apiKey].name;
+  const resultados = {
+    api: apiName,
+    apiKey: apiKey,
+    totalBins: bins.length,
+    exitosos: 0,
+    errores: 0,
+    rateLimited: 0,
+    detalles: []
+  };
+  
+  console.log(`🔄 [${apiName}] Iniciando procesamiento de ${bins.length} BINs`);
+  
+  for (let i = 0; i < bins.length; i++) {
+    const binData = bins[i];
+    const bin = binData.bin;
+    
+    try {
+      console.log(`📤 [${apiName}] Procesando BIN ${bin} (${i + 1}/${bins.length})...`);
+      
+      // Verificar rate limit antes de procesar
+      if (await verificarRateLimit(apiKey)) {
+        console.log(`⏰ [${apiName}] Rate limit alcanzado, deteniendo procesamiento`);
+        resultados.rateLimited = bins.length - i;
+        break;
+      }
+      
+      // Consultar la API específica
+      const resultado = await consultarAPI(apiKey, bin);
+      
+      if (resultado) {
+        // Guardar en base de datos
+        await pool.query(`
+          INSERT INTO bins_cache (bin, banco, tipo, marca, pais, fuente)
+          VALUES ($1, $2, $3, $4, $5, $6)
+          ON CONFLICT (bin) DO UPDATE SET
+            banco = EXCLUDED.banco,
+            tipo = EXCLUDED.tipo,
+            marca = EXCLUDED.marca,
+            pais = EXCLUDED.pais
+        `, [resultado.bin, resultado.banco, resultado.tipo, resultado.marca, resultado.pais, resultado.fuente]);
+        
+        await registrarUsoAPI(apiKey);
+        resultados.exitosos++;
+        resultados.detalles.push({ bin, status: 'exitoso', banco: resultado.banco });
+        console.log(`✅ [${apiName}] BIN ${bin} procesado exitosamente`);
+      } else {
+        resultados.errores++;
+        resultados.detalles.push({ bin, status: 'no_encontrado' });
+        console.log(`❌ [${apiName}] BIN ${bin} no encontrado`);
+      }
+      
+      // Delay entre requests para evitar rate limiting
+      if (i < bins.length - 1 && delay > 0) {
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+      
+    } catch (error) {
+      console.error(`❌ [${apiName}] Error procesando BIN ${bin}:`, error.message);
+      
+      if (error.response?.status === 429) {
+        console.log(`⏰ [${apiName}] Rate limit alcanzado en BIN ${bin}`);
+        resultados.rateLimited = bins.length - i;
+        break;
+      }
+      
+      resultados.errores++;
+      resultados.detalles.push({ bin, status: 'error', error: error.message });
+    }
+  }
+  
+  console.log(`🏁 [${apiName}] Completado: ${resultados.exitosos} exitosos, ${resultados.errores} errores, ${resultados.rateLimited} rate limited`);
+  return resultados;
+}
+
+// Función para calcular estadísticas del procesamiento
+function calcularEstadisticas(resultados) {
+  const stats = {
+    totalAPIsUsadas: resultados.length,
+    totalBinsIntentados: resultados.reduce((sum, r) => sum + r.totalBins, 0),
+    totalExitosos: resultados.reduce((sum, r) => sum + r.exitosos, 0),
+    totalErrores: resultados.reduce((sum, r) => sum + r.errores, 0),
+    totalRateLimited: resultados.reduce((sum, r) => sum + r.rateLimited, 0),
+    tasaExito: 0,
+    apisDetail: resultados.map(r => ({
+      api: r.api,
+      exitosos: r.exitosos,
+      errores: r.errores,
+      rateLimited: r.rateLimited,
+      tasaExito: r.totalBins > 0 ? (r.exitosos / r.totalBins * 100).toFixed(1) + '%' : '0%'
+    }))
+  };
+  
+  if (stats.totalBinsIntentados > 0) {
+    stats.tasaExito = (stats.totalExitosos / stats.totalBinsIntentados * 100).toFixed(1) + '%';
+  }
+  
+  return stats;
+}
+
+// Endpoint para procesamiento masivo (mantener compatibilidad)
+app.post('/api/procesar-bins-masivo', async (req, res) => {
+  try {
+    const { bins, delay = 3600 } = req.body; // delay por defecto de 1 hora (3600 segundos)
+    
+    if (!bins || !Array.isArray(bins)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Se requiere un array de BINs'
+      });
+    }
+
+    console.log(`🚀 Iniciando procesamiento masivo de ${bins.length} BINs con delay de ${delay} segundos...`);
+    
+    let procesados = 0;
+    let exitosos = 0;
+    let errores = 0;
+    let rateLimited = 0;
+
+    // Función para procesar un BIN individual
+    const procesarBin = async (binData) => {
+      try {
+        const bin = binData.bin;
+        console.log(`📤 Procesando BIN ${bin} (${procesados + 1}/${bins.length})...`);
+        
+        // Verificar si ya está en cache
+        const yaExiste = await buscarBinEnBD(bin);
+        if (yaExiste) {
+          console.log(`⚡ BIN ${bin} ya existe en cache, saltando...`);
+          return { bin, status: 'ya_existe', data: yaExiste };
+        }
+
+        // Consultar múltiples APIs externas
+        const resultado = await buscarBinEnMultiplesAPIs(bin);
+        
+        if (resultado) {
+          if (resultado.fuente === 'rate_limit') {
+            rateLimited++;
+            return { bin, status: 'rate_limit', data: resultado };
+          } else {
+            exitosos++;
+            return { bin, status: 'exitoso', data: resultado };
+          }
+        } else {
+          errores++;
+          return { bin, status: 'error', data: null };
+        }
+      } catch (error) {
+        errores++;
+        console.error(`❌ Error procesando BIN ${binData.bin}:`, error.message);
+        return { bin: binData.bin, status: 'error', error: error.message };
+      } finally {
+        procesados++;
+      }
+    };
+
+    // Procesar BINs uno por uno con delay
+    const resultados = [];
+    
+    for (let i = 0; i < bins.length; i++) {
+      const resultado = await procesarBin(bins[i]);
+      resultados.push(resultado);
+      
+      // Si llegamos al rate limit, detener el procesamiento
+      if (resultado.status === 'rate_limit') {
+        console.log(`🛑 Rate limit alcanzado después de procesar ${i + 1} BINs. Deteniendo procesamiento.`);
+        break;
+      }
+      
+      // Delay entre peticiones (excepto en la última)
+      if (i < bins.length - 1 && resultado.status === 'exitoso') {
+        console.log(`⏳ Esperando ${delay} segundos antes de la siguiente consulta...`);
+        await new Promise(resolve => setTimeout(resolve, delay * 1000));
+      }
+    }
+
+    console.log(`✅ Procesamiento completado:`);
+    console.log(`- Total procesados: ${procesados}`);
+    console.log(`- Exitosos: ${exitosos}`);
+    console.log(`- Rate limited: ${rateLimited}`);
+    console.log(`- Errores: ${errores}`);
+
+    res.json({
+      success: true,
+      resumen: {
+        total_procesados: procesados,
+        exitosos,
+        rate_limited: rateLimited,
+        errores,
+        total_bins: bins.length
+      },
+      resultados
+    });
+
+  } catch (error) {
+    console.error("❌ Error en procesamiento masivo:", error);
+    res.status(500).json({
+      success: false,
+      message: 'Error en procesamiento masivo',
+      error: error.message
+    });
+  }
+});
+
+// Endpoint para obtener lista de BINs en cache
+app.get('/api/bins-cache', async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const binsQuery = await pool.query(`
+      SELECT bin, banco, tipo, marca, pais, fuente, fecha_consulta
+      FROM bins_cache
+      ORDER BY fecha_consulta DESC
+      LIMIT $1 OFFSET $2
+    `, [limit, offset]);
+
+    const countQuery = await pool.query('SELECT COUNT(*) as total FROM bins_cache');
+
+    res.json({
+      success: true,
+      data: binsQuery.rows,
+      pagination: {
+        current_page: parseInt(page),
+        total_pages: Math.ceil(countQuery.rows[0].total / limit),
+        total_records: parseInt(countQuery.rows[0].total),
+        per_page: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    console.error("❌ Error obteniendo BINs en cache:", error);
+    res.status(500).json({
+      success: false,
+      message: 'Error obteniendo BINs en cache'
+    });
+  }
+});
+
+// Inicializar tabla al arrancar el servidor
+inicializarTablaBins();
+
+// Endpoint temporal para verificar columnas de la tabla ventas
+app.get('/api/test-columns-ventas', async (req, res) => {
+  try {
+    // Consulta para obtener las columnas de la tabla ventas
+    const result = await pool.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'ventas' 
+      ORDER BY ordinal_position;
+    `);
+    
+    res.json({
+      success: true,
+      columns: result.rows
+    });
+  } catch (error) {
+    console.error('Error obteniendo columnas:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error obteniendo columnas de la tabla ventas',
+      error: error.message
+    });
+  }
+});
+
+// ==================== INICIO DEL SERVIDOR ====================
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`✅ Servidor ejecutándose en http://localhost:${PORT}`);

@@ -5,6 +5,13 @@ import { formatearFecha } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from 'recharts';
 
+// Función para convertir número de mes a nombre
+const getMonthName = (mes) => {
+  const months = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 
+                  'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE'];
+  return months[mes - 1] || 'DESCONOCIDO';
+};
+
 export default function Home() {
   const [alertaSucursales, setAlertaSucursales] = useState([]);
   const [alertaProcesadores, setAlertaProcesadores] = useState([]);
@@ -27,14 +34,14 @@ export default function Home() {
     setCargando(true);
     try {
       // Cargar alertas y datos de gráficos en paralelo
-      const [sucursalesRes, procesadoresRes, estadisticasRes, aclaracionesRes, cobranzaRes] = await Promise.all([
+      const [sucursalesRes, procesadoresRes, estadisticasRes, aclaracionesRes, ventasRes] = await Promise.all([
         axios.get(`${API_BASE_URL}/sucursales-alerta`).catch(() => ({ data: [] })),
         axios.get(`${API_BASE_URL}/cargos_auto/procesadores-alerta`).catch(() => ({ data: [] })),
         axios.get(`${API_BASE_URL}/estadisticas-generales`).catch(() => ({ 
           data: { totalAclaraciones: 0, totalRecuperacion: 0, totalCargosAuto: 0, totalCaja: 0 }
         })),
         axios.get(`${API_BASE_URL}/aclaraciones/dashboard`).catch(() => ({ data: {} })),
-        axios.get(`${API_BASE_URL}/cobranza-mensual-2025`).catch(() => ({ data: [] }))
+        axios.get(`${API_BASE_URL}/ventas/resumen?anio=2025`).catch(() => ({ data: [] }))
       ]);
 
       setAlertaSucursales(sucursalesRes.data || []);
@@ -46,8 +53,16 @@ export default function Home() {
         setDatosAclaraciones(aclaracionesRes.data.aclaracionesPorMes);
       }
       
-      // Datos reales de cobranza mensual 2025
-      setDatosRecuperacion(cobranzaRes.data || []);
+      // Datos reales de ventas mensuales 2025 para el gráfico de líneas
+      const transformedData = (ventasRes.data || []).map(item => ({
+        mes: getMonthName(item.mes),
+        monto: item.totalpagado,
+        porcentaje_recuperacion: parseFloat(((item.totalpagado / item.ventastotal) * 100).toFixed(2)),
+        monto_total_vendido: item.ventastotal,
+        cantidad: item.ventas,
+        monto_vencido: item.ventasadeudo
+      }));
+      setDatosRecuperacion(transformedData);
       
     } catch (error) {
       console.error("Error al cargar datos iniciales:", error);
@@ -272,8 +287,8 @@ export default function Home() {
                 </svg>
               </div>
               <div>
-                <h3 className="text-lg font-semibold text-gray-100">Cobranza Mensual 2025</h3>
-                <p className="text-sm text-gray-400">Recuperaciones cobradas por mes</p>
+                <h3 className="text-lg font-semibold text-gray-100">Recuperación Mensual 2025</h3>
+                <p className="text-sm text-gray-400">Porcentaje de cobranza efectiva por mes</p>
               </div>
             </div>
             
@@ -289,7 +304,8 @@ export default function Home() {
                     textAnchor="end"
                     height={60}
                   />
-                  <YAxis stroke="#9CA3AF" fontSize={12} />
+                  <YAxis yAxisId="left" stroke="#9CA3AF" fontSize={12} />
+                  <YAxis yAxisId="right" orientation="right" stroke="#F59E0B" fontSize={12} />
                   <Tooltip 
                     contentStyle={{ 
                       backgroundColor: '#1F2937', 
@@ -297,27 +313,52 @@ export default function Home() {
                       borderRadius: '8px',
                       color: '#F3F4F6'
                     }}
-                    formatter={(value, name) => [
-                      name === 'cantidad' ? value : `$${Number(value).toLocaleString()}`,
-                      name === 'cantidad' ? 'Cobranzas' : 'Monto'
-                    ]}
+                    formatter={(value, name) => {
+                      if (name === 'monto') {
+                        return [`$${Number(value).toLocaleString()}`, 'Monto Recuperado'];
+                      } else if (name === 'porcentaje_recuperacion') {
+                        return [`${value}%`, '% Recuperación'];
+                      } else {
+                        return [`$${Number(value).toLocaleString()}`, 'Monto Cobrado'];
+                      }
+                    }}
                   />
                   <Line 
                     type="monotone" 
-                    dataKey="cantidad" 
+                    dataKey="monto" 
                     stroke="#10B981" 
                     strokeWidth={3}
                     dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }}
                     activeDot={{ r: 6, stroke: '#10B981', strokeWidth: 2 }}
+                    yAxisId="left"
+                  />
+                  <Line 
+                    type="monotone" 
+                    dataKey="porcentaje_recuperacion" 
+                    stroke="#F59E0B" 
+                    strokeWidth={2}
+                    dot={{ fill: '#F59E0B', strokeWidth: 2, r: 3 }}
+                    activeDot={{ r: 5, stroke: '#F59E0B', strokeWidth: 2 }}
+                    yAxisId="right"
                   />
                 </LineChart>
               </ResponsiveContainer>
               <div className="mt-4 text-center">
+                <div className="flex justify-center items-center gap-6 mb-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-sm text-gray-300">Cobranzas Efectivas</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <span className="text-sm text-gray-300">% Recuperación</span>
+                  </div>
+                </div>
                 <Link 
                   to="/dashboard-recuperacion"
                   className="text-green-400 hover:text-green-300 text-sm font-medium transition-colors"
                 >
-                  Ver Dashboard Completo →
+                  Ver Dashboard Recuperación →
                 </Link>
               </div>
             </div>

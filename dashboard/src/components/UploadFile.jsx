@@ -56,6 +56,25 @@ export default function UploadFile({ tabla }) {
     }
   };
 
+  // Función para borrar registros de julio y agosto (solo para cargos_auto)
+  const borrarJulioAgosto = async () => {
+    if (!confirm(`¿Estás seguro de que quieres borrar TODOS los registros de JULIO y AGOSTO 2025 de ${nombreAmigable}?`)) {
+      return;
+    }
+    
+    setBorrando(true);
+    setMensaje("");
+    
+    try {
+      const res = await axios.delete(`${API_BASE_URL}/delete-julio-agosto/${tabla}`);
+      setMensaje(`✅ ${res.data.message || 'Registros de julio y agosto borrados exitosamente'}`);
+    } catch (err) {
+      setMensaje(`❌ Error al borrar registros: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setBorrando(false);
+    }
+  };
+
   // Función para manejar múltiples archivos (solo para caja)
   const onDropMultiple = useCallback(
     async (acceptedFiles) => {
@@ -148,6 +167,17 @@ export default function UploadFile({ tabla }) {
           className="mb-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-lg"
         >
           {borrando ? '🗑️ Borrando 2025...' : '🗑️ Borrar Registros 2025'}
+        </button>
+      )}
+      
+      {/* Botón para borrar julio y agosto (solo para cargos_auto) */}
+      {tabla === 'cargos_auto' && (
+        <button
+          onClick={borrarJulioAgosto}
+          disabled={borrando}
+          className="mb-4 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-lg"
+        >
+          {borrando ? '🗑️ Borrando Jul/Ago...' : '🗑️ Borrar Julio y Agosto'}
         </button>
       )}
       
