@@ -18,6 +18,36 @@ export default function TelefonosDuplicados() {
     cargarDatos();
   }, []);
 
+  // Efecto para manejar el scroll del body cuando el modal está abierto
+  useEffect(() => {
+    if (modalSucursal.mostrar) {
+      // Prevenir scroll del body cuando el modal está abierto
+      document.body.style.overflow = 'hidden';
+      // Asegurar que el modal esté en el top
+      window.scrollTo(0, 0);
+      
+      // Agregar listener para la tecla ESC
+      const handleEsc = (event) => {
+        if (event.keyCode === 27) {
+          cerrarModal();
+        }
+      };
+      document.addEventListener('keydown', handleEsc);
+      
+      return () => {
+        document.removeEventListener('keydown', handleEsc);
+      };
+    } else {
+      // Restaurar scroll del body cuando el modal se cierra
+      document.body.style.overflow = 'unset';
+    }
+
+    // Cleanup function para restaurar el scroll si el componente se desmonta
+    return () => {
+      document.body.style.overflow = 'unset';
+    };
+  }, [modalSucursal.mostrar]);
+
   const cargarDatos = async () => {
     try {
       setCargando(true);
@@ -61,6 +91,8 @@ export default function TelefonosDuplicados() {
   // 🆕 Función para cerrar el modal
   const cerrarModal = () => {
     setModalSucursal({ mostrar: false, sucursal: '', datos: [] });
+    // Restaurar scroll del body inmediatamente
+    document.body.style.overflow = 'unset';
   };
 
   // 🆕 Función para descargar datos de una sucursal específica
@@ -305,8 +337,24 @@ export default function TelefonosDuplicados() {
       
       {/* 🆕 Modal para mostrar teléfonos duplicados por sucursal */}
       {modalSucursal.mostrar && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <div className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl shadow-2xl max-w-7xl w-full max-h-[90vh] overflow-hidden border border-gray-700/50">
+        <div 
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm overflow-y-auto"
+          style={{ 
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 9999
+          }}
+          onClick={cerrarModal}
+        >
+          {/* Contenedor del modal */}
+          <div className="min-h-screen flex items-start justify-center p-4 pt-8">
+            <div 
+              className="bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 rounded-2xl shadow-2xl max-w-7xl w-full max-h-[90vh] overflow-hidden border border-gray-700/50"
+              onClick={(e) => e.stopPropagation()}
+            >
             
             {/* Header del Modal */}
             <div className="bg-gradient-to-r from-blue-600/20 to-purple-600/20 p-6 border-b border-gray-700/50">
@@ -421,6 +469,7 @@ export default function TelefonosDuplicados() {
                   🏢 Sucursal: <span className="text-gray-300 font-medium">{modalSucursal.sucursal}</span>
                 </div>
               </div>
+            </div>
             </div>
           </div>
         </div>
