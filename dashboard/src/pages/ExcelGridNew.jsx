@@ -236,7 +236,14 @@ export default function ExcelGridNew() {
       editor: DateEditor,
       renderCell: ({ row }) => (
         <div style={{ padding: '8px' }}>
-          {row.FECHA_VENTA ? new Date(row.FECHA_VENTA).toLocaleDateString('es-ES') : ''}
+          {row.FECHA_VENTA ? (() => {
+            const dateStr = row.FECHA_VENTA;
+            if (dateStr.includes('-')) {
+              const [year, month, day] = dateStr.split('-');
+              return `${day}/${month}/${year}`;
+            }
+            return dateStr;
+          })() : ''}
         </div>
       )
     },
@@ -288,7 +295,14 @@ export default function ExcelGridNew() {
       editor: DateEditor,
       renderCell: ({ row }) => (
         <div style={{ padding: '8px' }}>
-          {row.FECHA_CONTRATO ? new Date(row.FECHA_CONTRATO).toLocaleDateString('es-ES') : ''}
+          {row.FECHA_CONTRATO ? (() => {
+            const dateStr = row.FECHA_CONTRATO;
+            if (dateStr.includes('-')) {
+              const [year, month, day] = dateStr.split('-');
+              return `${day}/${month}/${year}`;
+            }
+            return dateStr;
+          })() : ''}
         </div>
       )
     },
@@ -311,7 +325,14 @@ export default function ExcelGridNew() {
       editor: DateEditor,
       renderCell: ({ row }) => (
         <div style={{ padding: '8px' }}>
-          {row.FECHA_DE_PETICION ? new Date(row.FECHA_DE_PETICION).toLocaleDateString('es-ES') : ''}
+          {row.FECHA_DE_PETICION ? (() => {
+            const dateStr = row.FECHA_DE_PETICION;
+            if (dateStr.includes('-')) {
+              const [year, month, day] = dateStr.split('-');
+              return `${day}/${month}/${year}`;
+            }
+            return dateStr;
+          })() : ''}
         </div>
       )
     },
@@ -322,7 +343,14 @@ export default function ExcelGridNew() {
       editor: DateEditor,
       renderCell: ({ row }) => (
         <div style={{ padding: '8px' }}>
-          {row.FECHA_DE_RESPUESTA ? new Date(row.FECHA_DE_RESPUESTA).toLocaleDateString('es-ES') : ''}
+          {row.FECHA_DE_RESPUESTA ? (() => {
+            const dateStr = row.FECHA_DE_RESPUESTA;
+            if (dateStr.includes('-')) {
+              const [year, month, day] = dateStr.split('-');
+              return `${day}/${month}/${year}`;
+            }
+            return dateStr;
+          })() : ''}
         </div>
       )
     },
@@ -699,8 +727,6 @@ export default function ExcelGridNew() {
     </div>
   );
 }
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 // Componente personalizado para select/dropdown
 const SelectComponent = ({ active, rowData, setRowData, focus, stopEditing, columnData }) => {

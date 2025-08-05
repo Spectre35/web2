@@ -3,12 +3,15 @@ import axios from 'axios';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-// Custom Table Component - más simple y compatible
-function SimpleDataGrid({ columns, rows, onRowsChange }) {
+// Custom Table Component con selección múltiple
+function SimpleDataGrid({ columns, rows, onRowsChange, selectedRows, onRowSelection, onSelectAll, onBulkDelete, onClearSelection }) {
   const [editingCell, setEditingCell] = useState(null);
   const [editValue, setEditValue] = useState('');
 
   const handleCellClick = (rowIndex, columnKey) => {
+    // No entrar en modo edición si se clickea la columna de selección
+    if (columnKey === 'selection') return;
+    
     setEditingCell({ rowIndex, columnKey });
     setEditValue(rows[rowIndex][columnKey] || '');
   };
@@ -48,9 +51,26 @@ function SimpleDataGrid({ columns, rows, onRowsChange }) {
     return editingCell?.rowIndex === rowIndex && editingCell?.columnKey === columnKey;
   };
 
+  const isAllSelected = rows.length > 0 && selectedRows.size === rows.length;
+  const isIndeterminate = selectedRows.size > 0 && selectedRows.size < rows.length;
+
   const renderCell = (row, column, rowIndex) => {
     const isCurrentlyEditing = isEditing(rowIndex, column.key);
     const value = row[column.key] || '';
+    
+    // Columna de selección especial
+    if (column.key === 'selection') {
+      return (
+        <div className="flex items-center justify-center">
+          <input
+            type="checkbox"
+            checked={selectedRows.has(row.id)}
+                        onChange={(e) => onRowSelection(row.id, e.target.checked)}
+            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+          />
+        </div>
+      );
+    }
     
     if (isCurrentlyEditing) {
       if (column.type === 'select') {
@@ -61,7 +81,7 @@ function SimpleDataGrid({ columns, rows, onRowsChange }) {
             onBlur={handleCellBlur}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1"
+            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 focus:ring-2 focus:ring-blue-500"
           >
             <option value="">Seleccionar...</option>
             {column.options?.map((option) => (
@@ -80,7 +100,7 @@ function SimpleDataGrid({ columns, rows, onRowsChange }) {
             onBlur={handleCellBlur}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1"
+            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 focus:ring-2 focus:ring-blue-500"
           />
         );
       } else if (column.type === 'number') {
@@ -92,7 +112,8 @@ function SimpleDataGrid({ columns, rows, onRowsChange }) {
             onBlur={handleCellBlur}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 text-right"
+            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 text-right focus:ring-2 focus:ring-blue-500"
+            step="0.01"
           />
         );
       } else {
@@ -104,7 +125,7 @@ function SimpleDataGrid({ columns, rows, onRowsChange }) {
             onBlur={handleCellBlur}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1"
+            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 focus:ring-2 focus:ring-blue-500"
           />
         );
       }
@@ -119,16 +140,34 @@ function SimpleDataGrid({ columns, rows, onRowsChange }) {
         maximumFractionDigits: 2
       }).format(value);
     } else if (column.type === 'date' && value) {
-      displayValue = new Date(value).toLocaleDateString('es-ES');
+      // Fix para evitar el desfase de un día por zona horaria
+      if (value.includes('T')) {
+        // Si viene con hora, solo tomar la fecha
+        displayValue = value.split('T')[0];
+      } else {
+        // Si ya es formato YYYY-MM-DD, usarlo directamente
+        displayValue = value;
+      }
+      
+      // Convertir YYYY-MM-DD a DD/MM/YYYY para mejor visualización
+      if (displayValue && displayValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
+        const [año, mes, dia] = displayValue.split('-');
+        displayValue = `${dia}/${mes}/${año}`;
+      }
     }
+
+    // Resaltar filas seleccionadas
+    const isRowSelected = selectedRows.has(row.id);
 
     return (
       <div
         onClick={() => handleCellClick(rowIndex, column.key)}
-        className="w-full h-full px-2 py-1 cursor-pointer hover:bg-gray-600 flex items-center justify-between"
+        className={`w-full h-full px-2 py-1 cursor-pointer hover:bg-gray-600 flex items-center justify-between transition-colors ${
+          isRowSelected ? 'bg-blue-600/20' : ''
+        }`}
         style={{ 
           textAlign: column.type === 'number' ? 'right' : 'left',
-          backgroundColor: column.key === 'id' ? '#374151' : 'transparent' 
+          backgroundColor: column.key === 'id' ? '#374151' : isRowSelected ? '#1e40af20' : 'transparent' 
         }}
       >
         <span className="truncate">{displayValue}</span>
@@ -140,40 +179,89 @@ function SimpleDataGrid({ columns, rows, onRowsChange }) {
   };
 
   return (
-    <div className="w-full h-full overflow-auto bg-gray-700 rounded-lg">
-      <table className="w-full border-collapse">
-        <thead className="sticky top-0 bg-gray-800 z-10">
-          <tr>
-            {columns.map((column) => (
-              <th
-                key={column.key}
-                className="border border-gray-600 px-2 py-2 text-left text-gray-200 font-medium text-sm bg-gray-800"
-                style={{ width: column.width || 120, minWidth: column.width || 120 }}
-              >
-                {column.name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIndex) => (
-            <tr
-              key={row.id}
-              className="hover:bg-gray-600 transition-colors"
+    <div className="flex flex-col space-y-4">
+      {/* Controles de selección múltiple */}
+      {selectedRows.size > 0 && (
+        <div className="bg-blue-600 text-white p-3 rounded-lg flex items-center justify-between">
+          <span className="font-medium">
+            {selectedRows.size} filas seleccionadas
+          </span>
+          <div className="flex space-x-2">
+            <button
+              onClick={onClearSelection}
+              className="px-3 py-1 bg-blue-700 hover:bg-blue-800 rounded text-sm font-medium transition-colors"
             >
+              Limpiar selección
+            </button>
+            <button
+              onClick={onBulkDelete}
+              className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors"
+            >
+              Eliminar seleccionadas
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="w-full h-full overflow-auto bg-gray-700 rounded-lg">
+        <table className="w-full border-collapse">
+          <thead className="sticky top-0 bg-gray-800 z-10">
+            <tr>
+              {/* Columna de selección con checkbox maestro */}
+              <th className="border border-gray-600 px-2 py-2 text-center text-gray-200 font-medium text-sm bg-gray-800 w-12">
+                <input
+                  type="checkbox"
+                  checked={selectedRows.size === rows.length && rows.length > 0}
+                  onChange={onSelectAll}
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                />
+              </th>
               {columns.map((column) => (
-                <td
-                  key={`${row.id}-${column.key}`}
-                  className="border border-gray-600 p-0 text-gray-200 text-sm h-9"
+                <th
+                  key={column.key}
+                  className="border border-gray-600 px-2 py-2 text-left text-gray-200 font-medium text-sm bg-gray-800"
                   style={{ width: column.width || 120, minWidth: column.width || 120 }}
                 >
-                  {renderCell(row, column, rowIndex)}
-                </td>
+                  <div className="flex items-center justify-between">
+                    <span>{column.name}</span>
+                    {column.type && (
+                      <span className="text-xs text-gray-400 ml-1">
+                        {column.type === 'select' ? 'SELECT' : 
+                         column.type === 'date' ? 'DATE' : 
+                         column.type === 'number' ? 'NUM' : 'TEXT'}
+                      </span>
+                    )}
+                  </div>
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIndex) => (
+              <tr
+                key={row.id}
+                className={`hover:bg-gray-600 transition-colors ${
+                  selectedRows.has(row.id) ? 'bg-blue-600/20' : ''
+                }`}
+              >
+                {/* Celda de selección */}
+                <td className="border border-gray-600 p-0 text-gray-200 text-sm h-9 text-center">
+                  {renderCell(row, { key: 'selection', type: 'checkbox' }, rowIndex)}
+                </td>
+                {columns.map((column) => (
+                  <td
+                    key={`${row.id}-${column.key}`}
+                    className="border border-gray-600 p-0 text-gray-200 text-sm h-9"
+                    style={{ width: column.width || 120, minWidth: column.width || 120 }}
+                  >
+                    {renderCell(row, column, rowIndex)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -184,6 +272,8 @@ export default function ExcelGridReactDataGrid() {
   const [mensaje, setMensaje] = useState("");
   const [mostrarAreaPegado, setMostrarAreaPegado] = useState(false);
   const [datosParaPegar, setDatosParaPegar] = useState("");
+  const [selectedRows, setSelectedRows] = useState(new Set());
+  const [selectAll, setSelectAll] = useState(false);
 
   // Función para crear una fila por defecto
   const crearFilaPorDefecto = () => ({
@@ -426,14 +516,148 @@ export default function ExcelGridReactDataGrid() {
     return fecha;
   };
 
-  // Función para procesar diferentes formatos de pegado
+  // Función para obtener el nombre del mes en español en mayúsculas
+  function obtenerNombreMes(fechaStr) {
+    if (!fechaStr) return { anio: "", mesNombre: "" };
+    let partes = null;
+    let mes = null;
+    let anio = null;
+    // YYYY-MM-DD
+    if (/^\d{4}-\d{2}-\d{2}/.test(fechaStr)) {
+      partes = fechaStr.split("-");
+      anio = partes[0];
+      mes = partes[1];
+    } else if (/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/.test(fechaStr)) {
+      // DD/MM/YYYY o DD-MM-YYYY
+      partes = fechaStr.split(/[\/\-]/);
+      anio = partes[2];
+      mes = partes[1].padStart(2, '0');
+    } else {
+      return { anio: "", mesNombre: "" };
+    }
+    const meses = [
+      "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
+    ];
+    const mesIdx = parseInt(mes, 10) - 1;
+    const mesNombre = meses[mesIdx] || "";
+    return { anio, mesNombre };
+  }
+
+  // Funciones de selección múltiple estilo AG Grid
+  const handleRowSelection = (rowId, isSelected) => {
+    const newSelectedRows = new Set(selectedRows);
+    if (isSelected) {
+      newSelectedRows.add(rowId);
+    } else {
+      newSelectedRows.delete(rowId);
+    }
+    setSelectedRows(newSelectedRows);
+  };
+
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      // Seleccionar todas las filas
+      const allIds = new Set(rows.map(row => row.id));
+      setSelectedRows(allIds);
+    } else {
+      // Deseleccionar todas las filas
+      setSelectedRows(new Set());
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedRows.size === 0) return;
+    
+    if (confirm(`¿Estás seguro de que quieres eliminar ${selectedRows.size} filas seleccionadas?`)) {
+      const newRows = rows.filter(row => !selectedRows.has(row.id));
+      setRows(newRows);
+      setSelectedRows(new Set());
+      setMensaje(`${selectedRows.size} filas eliminadas exitosamente`);
+      setTimeout(() => setMensaje(""), 3000);
+    }
+  };
+
+  const handleClearSelection = () => {
+    setSelectedRows(new Set());
+  };
+
+  // Función para procesar diferentes formatos de pegado (mejorada con lógica de IngresarAclaraciones)
   const procesarDatosPegados = (texto) => {
     const rows = texto.split(/\r?\n/).filter(row => row.trim());
     if (rows.length === 0) return [];
 
     const nuevosRegistros = [];
-    const mesActual = 'AGOSTO'; // Mes actual para agosto 2025
     const fechaActual = new Date().toISOString().split('T')[0];
+
+    // Encabezados y mapeos para diferentes formatos
+    const efevooHeaders = [
+      "ID", "FOLIO", "CLIENTE", "SUCURSAL", "NÚMERO DE TARJETA", "MARCA DE TARJETA", "TIPO DE TARJETA", "MÉTODO DE PAGO", "FECHA Y HORA", "MONTO", "NÚMERO DE AUTORIZACIÓN", "AFILIACIÓN"
+    ];
+
+    const efevooToCol = {
+      "ID": "ID_DE_TRANSACCION",
+      "FOLIO": "ID_DE_TRANSACCION",
+      "CLIENTE": "NOMBRE_DEL_COMERCIO",
+      "SUCURSAL": "SUCURSAL",
+      "NÚMERO DE TARJETA": "NUM_DE_TARJETA",
+      "MÉTODO DE PAGO": "PROCESADOR",
+      "FECHA Y HORA": "FECHA_VENTA",
+      "MONTO": "MONTO",
+      "NÚMERO DE AUTORIZACIÓN": "AUTORIZACION",
+      "AFILIACIÓN": "ID_DEL_COMERCIO_AFILIACION",
+      "AFILIACION": "ID_DEL_COMERCIO_AFILIACION"
+    };
+
+    const bsdHeaders = [
+      "AFILIACION",
+      "NOMBRE DEL COMERCIO",
+      "TARJETA",
+      "FECHA VENTA",
+      "HORA",
+      "IMPORTE",
+      "AUTORIZACION",
+      "FECHA CONTRACARGO",
+      "REFERENCIA"
+    ];
+
+    const bsdToCol = {
+      "AFILIACION": "ID_DEL_COMERCIO_AFILIACION",
+      "NOMBRE DEL COMERCIO": "NOMBRE_DEL_COMERCIO",
+      "TARJETA": "NUM_DE_TARJETA",
+      "FECHA VENTA": "FECHA_VENTA",
+      "HORA": "HORA",
+      "IMPORTE": "MONTO",
+      "AUTORIZACION": "AUTORIZACION",
+      "REFERENCIA": "ID_DE_TRANSACCION"
+    };
+
+    const mapHeaders = {
+      ...efevooToCol,
+      "AÑO": "AÑO",
+      "MES PETICIÓN": "MES_PETICION",
+      "MES_PETICION": "MES_PETICION",
+      "EUROSKIN": "EUROSKIN",
+      "ID DEL COMERCIO / AFILIACIÓN": "ID_DEL_COMERCIO_AFILIACION",
+      "ID DEL COMERCIO": "ID_DEL_COMERCIO_AFILIACION",
+      "ID_DE_TRANSACCION": "ID_DE_TRANSACCION",
+      "NOMBRE DEL COMERCIO": "NOMBRE_DEL_COMERCIO",
+      "FECHA VENTA": "FECHA_VENTA",
+      "MONTO": "MONTO",
+      "NUM. DE TARJETA": "NUM_DE_TARJETA",
+      "NUM_DE_TARJETA": "NUM_DE_TARJETA",
+      "AUTORIZACION": "AUTORIZACION",
+      "CLIENTE": "CLIENTE",
+      "VENDEDORA": "VENDEDORA",
+      "SUCURSAL": "SUCURSAL",
+      "FECHA CONTRATO": "FECHA_CONTRATO",
+      "PAQUETE": "PAQUETE",
+      "BLOQUE": "BLOQUE",
+      "FECHA DE PETICION": "FECHA_DE_PETICION",
+      "FECHA DE RESPUESTA": "FECHA_DE_RESPUESTA",
+      "COMENTARIOS": "COMENTARIOS",
+      "CAPTURA CC": "CAPTURA_CC",
+      "CAPTURA_CC": "CAPTURA_CC"
+    };
 
     // Detectar formato CREDOMATIC
     if (texto.includes("DATOS DE LA TRANSACCIÓN") || texto.includes("No. caso:") || texto.includes("Afiliado Pagador:")) {
@@ -458,8 +682,6 @@ export default function ExcelGridReactDataGrid() {
       const newRow = {
         id: Date.now(),
         PROCESADOR: "CREDOMATIC",
-        AÑO: new Date().getFullYear().toString(),
-        MES_PETICION: mesActual,
         EUROSKIN: "false",
         ID_DEL_COMERCIO_AFILIACION: obj["ID_DEL_COMERCIO_AFILIACION"] || "",
         NOMBRE_DEL_COMERCIO: obj["NOMBRE_DEL_COMERCIO"] || "",
@@ -479,12 +701,207 @@ export default function ExcelGridReactDataGrid() {
         COMENTARIOS: "",
         CAPTURA_CC: "EN PROCESO"
       };
+
+      // Detectar año y mes
+      if (newRow["FECHA_VENTA"]) {
+        const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+        newRow["AÑO"] = anio || new Date().getFullYear().toString();
+        const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+        newRow["MES_PETICION"] = meses[new Date().getMonth()];
+      } else {
+        const fechaActual = new Date();
+        const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+        newRow["AÑO"] = fechaActual.getFullYear().toString();
+        newRow["MES_PETICION"] = meses[fechaActual.getMonth()];
+      }
       
       nuevosRegistros.push(newRow);
       return nuevosRegistros;
     }
 
-    // Procesar otros formatos (EFEVOO, BSD, genérico)
+    // Detectar formato BSD vertical
+    if (rows.length > 10 && bsdHeaders.every((h, i) => rows[i]?.trim().toUpperCase() === h)) {
+      const numHeaders = bsdHeaders.length;
+      const numRecords = Math.floor((rows.length - numHeaders) / numHeaders);
+      
+      for (let i = 0; i < numRecords; i++) {
+        const start = numHeaders + i * numHeaders;
+        const end = start + numHeaders;
+        const values = rows.slice(start, end);
+        const reg = {};
+        
+        bsdHeaders.forEach((h, idx) => {
+          let value = values[idx] ? values[idx].trim() : "";
+          const col = bsdToCol[h];
+          if (col === "MONTO") value = normalizarMonto(value);
+          if (col && col.includes("FECHA") && value) value = normalizarFecha(value);
+          reg[col] = value;
+        });
+        
+        const newRow = {
+          id: Date.now() + Math.random(),
+          PROCESADOR: "BSD",
+          EUROSKIN: "false",
+          ID_DEL_COMERCIO_AFILIACION: reg["ID_DEL_COMERCIO_AFILIACION"] || "",
+          NOMBRE_DEL_COMERCIO: reg["NOMBRE_DEL_COMERCIO"] || "",
+          ID_DE_TRANSACCION: reg["ID_DE_TRANSACCION"] || "",
+          FECHA_VENTA: reg["FECHA_VENTA"] || "",
+          MONTO: reg["MONTO"] || 0,
+          NUM_DE_TARJETA: reg["NUM_DE_TARJETA"] || "",
+          AUTORIZACION: reg["AUTORIZACION"] || "",
+          CLIENTE: "",
+          VENDEDORA: "",
+          SUCURSAL: "",
+          FECHA_CONTRATO: "",
+          PAQUETE: "",
+          BLOQUE: "",
+          FECHA_DE_PETICION: fechaActual,
+          FECHA_DE_RESPUESTA: "",
+          COMENTARIOS: "",
+          CAPTURA_CC: "EN PROCESO"
+        };
+
+        // Detectar año y mes
+        if (newRow["FECHA_VENTA"]) {
+          const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+          newRow["AÑO"] = anio || new Date().getFullYear().toString();
+          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+          newRow["MES_PETICION"] = meses[new Date().getMonth()];
+        } else {
+          const fechaActual = new Date();
+          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+          newRow["AÑO"] = fechaActual.getFullYear().toString();
+          newRow["MES_PETICION"] = meses[fechaActual.getMonth()];
+        }
+        
+        nuevosRegistros.push(newRow);
+      }
+      return nuevosRegistros;
+    }
+
+    // Detectar formato EFEVOO horizontal
+    if (rows.length > 0 && efevooHeaders.some(h => rows[0].toUpperCase().includes(h))) {
+      const headerRow = rows[0];
+      const headers = headerRow.split(/\t|\s{2,}/).map(h => h.trim().toUpperCase());
+      const mapeoDetectado = headers.map(h => efevooToCol[h] || null).filter(Boolean);
+      
+      if (mapeoDetectado.length > 0) {
+        const dataRows = rows.slice(1);
+        dataRows.forEach(row => {
+          const cells = row.split(/\t|\s{2,}/);
+          const newRow = {
+            id: Date.now() + Math.random(),
+            PROCESADOR: "EFEVOO",
+            EUROSKIN: "false",
+            ID_DEL_COMERCIO_AFILIACION: "",
+            NOMBRE_DEL_COMERCIO: "",
+            ID_DE_TRANSACCION: "",
+            FECHA_VENTA: "",
+            MONTO: 0,
+            NUM_DE_TARJETA: "",
+            AUTORIZACION: "",
+            CLIENTE: "",
+            VENDEDORA: "",
+            SUCURSAL: "",
+            FECHA_CONTRATO: "",
+            PAQUETE: "",
+            BLOQUE: "",
+            FECHA_DE_PETICION: fechaActual,
+            FECHA_DE_RESPUESTA: "",
+            COMENTARIOS: "",
+            CAPTURA_CC: "EN PROCESO"
+          };
+          
+          mapeoDetectado.forEach((colInterno, i) => {
+            if (colInterno) {
+              let value = cells[i] ? cells[i].trim() : "";
+              if (colInterno === "MONTO") value = normalizarMonto(value);
+              if (colInterno.includes("FECHA") && value) value = normalizarFecha(value);
+              newRow[colInterno] = value;
+            }
+          });
+
+          // Detectar año y mes
+          if (newRow["FECHA_VENTA"]) {
+            const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+            newRow["AÑO"] = anio || new Date().getFullYear().toString();
+            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+            newRow["MES_PETICION"] = meses[new Date().getMonth()];
+          } else {
+            const fechaActual = new Date();
+            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+            newRow["AÑO"] = fechaActual.getFullYear().toString();
+            newRow["MES_PETICION"] = meses[fechaActual.getMonth()];
+          }
+          
+          nuevosRegistros.push(newRow);
+        });
+        return nuevosRegistros;
+      }
+    }
+
+    // Mapeo genérico con detección automática de encabezados
+    if (rows.length > 1) {
+      const headerRow = rows[0];
+      const headers = headerRow.split(/\t|\s{2,}/).map(h => h.trim().toUpperCase());
+      const mapeoDetectado = headers.map(h => mapHeaders[h] || null);
+      
+      if (mapeoDetectado.some(Boolean)) {
+        const dataRows = rows.slice(1);
+        dataRows.forEach(row => {
+          const cells = row.split(/\t|\s{2,}/);
+          const newRow = {
+            id: Date.now() + Math.random(),
+            PROCESADOR: "",
+            EUROSKIN: "false",
+            ID_DEL_COMERCIO_AFILIACION: "",
+            NOMBRE_DEL_COMERCIO: "",
+            ID_DE_TRANSACCION: "",
+            FECHA_VENTA: "",
+            MONTO: 0,
+            NUM_DE_TARJETA: "",
+            AUTORIZACION: "",
+            CLIENTE: "",
+            VENDEDORA: "",
+            SUCURSAL: "",
+            FECHA_CONTRATO: "",
+            PAQUETE: "",
+            BLOQUE: "",
+            FECHA_DE_PETICION: fechaActual,
+            FECHA_DE_RESPUESTA: "",
+            COMENTARIOS: "",
+            CAPTURA_CC: "EN PROCESO"
+          };
+          
+          mapeoDetectado.forEach((colInterno, i) => {
+            if (colInterno) {
+              let value = cells[i] ? cells[i].trim() : "";
+              if (colInterno === "MONTO") value = normalizarMonto(value);
+              if (colInterno.includes("FECHA") && value) value = normalizarFecha(value);
+              newRow[colInterno] = value;
+            }
+          });
+
+          // Detectar año y mes
+          if (newRow["FECHA_VENTA"]) {
+            const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+            newRow["AÑO"] = anio || new Date().getFullYear().toString();
+            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+            newRow["MES_PETICION"] = meses[new Date().getMonth()];
+          } else {
+            const fechaActual = new Date();
+            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+            newRow["AÑO"] = fechaActual.getFullYear().toString();
+            newRow["MES_PETICION"] = meses[fechaActual.getMonth()];
+          }
+          
+          nuevosRegistros.push(newRow);
+        });
+        return nuevosRegistros;
+      }
+    }
+
+    // Formato genérico simple (datos separados por tabulaciones sin encabezados)
     rows.forEach((linea) => {
       const datos = linea.split('\t').map(item => item.trim());
       
@@ -492,8 +909,6 @@ export default function ExcelGridReactDataGrid() {
         const newRow = {
           id: Date.now() + Math.random(),
           PROCESADOR: "",
-          AÑO: new Date().getFullYear().toString(),
-          MES_PETICION: mesActual,
           EUROSKIN: "false",
           ID_DEL_COMERCIO_AFILIACION: datos[0] || "",
           NOMBRE_DEL_COMERCIO: datos[1] || "",
@@ -513,6 +928,19 @@ export default function ExcelGridReactDataGrid() {
           COMENTARIOS: "",
           CAPTURA_CC: "EN PROCESO"
         };
+
+        // Detectar año y mes
+        if (newRow["FECHA_VENTA"]) {
+          const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+          newRow["AÑO"] = anio || new Date().getFullYear().toString();
+          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+          newRow["MES_PETICION"] = meses[new Date().getMonth()];
+        } else {
+          const fechaActual = new Date();
+          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+          newRow["AÑO"] = fechaActual.getFullYear().toString();
+          newRow["MES_PETICION"] = meses[fechaActual.getMonth()];
+        }
         
         nuevosRegistros.push(newRow);
       }
@@ -521,7 +949,32 @@ export default function ExcelGridReactDataGrid() {
     return nuevosRegistros;
   };
 
-  // Función para pegar datos masivos
+  // Función para manejar pegado directo
+  const manejarPegado = (e) => {
+    e.preventDefault();
+    const paste = (e.clipboardData || window.clipboardData).getData('text');
+    if (!paste) return;
+
+    try {
+      const nuevosRegistros = procesarDatosPegados(paste);
+      
+      if (nuevosRegistros.length === 0) {
+        setMensaje('⚠️ No se pudieron procesar los datos pegados');
+        setTimeout(() => setMensaje(""), 2000);
+        return;
+      }
+
+      setRows(prev => [...prev, ...nuevosRegistros]);
+      setMensaje(`✅ Se agregaron ${nuevosRegistros.length} registros desde pegado directo`);
+      setTimeout(() => setMensaje(""), 3000);
+    } catch (error) {
+      console.error('Error al procesar datos:', error);
+      setMensaje('❌ Error al procesar los datos pegados');
+      setTimeout(() => setMensaje(""), 3000);
+    }
+  };
+
+  // Función para pegar datos masivos desde el textarea
   const pegarDatos = () => {
     if (!datosParaPegar.trim()) {
       setMensaje('⚠️ No hay datos para pegar');
@@ -636,7 +1089,8 @@ export default function ExcelGridReactDataGrid() {
             <textarea
               value={datosParaPegar}
               onChange={(e) => setDatosParaPegar(e.target.value)}
-              placeholder="Pega aquí el contenido completo del correo de aclaración..."
+              onPaste={manejarPegado}
+              placeholder="Pega aquí el contenido completo del correo de aclaración (o presiona Ctrl+V para pegado automático)..."
               className="w-full h-32 p-3 bg-gray-700 text-gray-200 rounded border border-gray-600 focus:border-purple-500 focus:ring-1 focus:ring-purple-500 font-mono text-sm"
               style={{ resize: 'vertical' }}
             />
@@ -665,6 +1119,11 @@ export default function ExcelGridReactDataGrid() {
             columns={columns}
             rows={rows}
             onRowsChange={setRows}
+            selectedRows={selectedRows}
+            onRowSelection={handleRowSelection}
+            onSelectAll={handleSelectAll}
+            onBulkDelete={handleBulkDelete}
+            onClearSelection={handleClearSelection}
           />
         </div>
 

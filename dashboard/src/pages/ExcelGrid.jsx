@@ -261,8 +261,12 @@ export default function ExcelGrid() {
       filter: 'agDateColumnFilter',
       valueFormatter: (params) => {
         if (params.value) {
-          const date = new Date(params.value);
-          return date.toLocaleDateString('es-ES');
+          const dateStr = params.value;
+          if (dateStr.includes('-')) {
+            const [year, month, day] = dateStr.split('-');
+            return `${day}/${month}/${year}`;
+          }
+          return dateStr;
         }
         return '';
       }
@@ -339,8 +343,12 @@ export default function ExcelGrid() {
       filter: 'agDateColumnFilter',
       valueFormatter: (params) => {
         if (params.value) {
-          const date = new Date(params.value);
-          return date.toLocaleDateString('es-ES');
+          const dateStr = params.value;
+          if (dateStr.includes('-')) {
+            const [year, month, day] = dateStr.split('-');
+            return `${day}/${month}/${year}`;
+          }
+          return dateStr;
         }
         return '';
       }
@@ -371,8 +379,12 @@ export default function ExcelGrid() {
       filter: 'agDateColumnFilter',
       valueFormatter: (params) => {
         if (params.value) {
-          const date = new Date(params.value);
-          return date.toLocaleDateString('es-ES');
+          const dateStr = params.value;
+          if (dateStr.includes('-')) {
+            const [year, month, day] = dateStr.split('-');
+            return `${day}/${month}/${year}`;
+          }
+          return dateStr;
         }
         return '';
       }
@@ -387,8 +399,12 @@ export default function ExcelGrid() {
       filter: 'agDateColumnFilter',
       valueFormatter: (params) => {
         if (params.value) {
-          const date = new Date(params.value);
-          return date.toLocaleDateString('es-ES');
+          const dateStr = params.value;
+          if (dateStr.includes('-')) {
+            const [year, month, day] = dateStr.split('-');
+            return `${day}/${month}/${year}`;
+          }
+          return dateStr;
         }
         return '';
       }

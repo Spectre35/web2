@@ -326,13 +326,28 @@ export default function SucursalesAlerta() {
                           <div>
                             <span className="text-gray-400">Último cobro:</span>
                             <span className="text-white ml-2">
-                              {new Date(alerta.ultima_fecha).toLocaleDateString()}
+                              {(() => {
+                                const dateStr = alerta.ultima_fecha;
+                                if (dateStr.includes('-')) {
+                                  const [year, month, day] = dateStr.split('T')[0].split('-');
+                                  return `${day}/${month}/${year}`;
+                                }
+                                return dateStr;
+                              })()}
                             </span>
                           </div>
                           <div>
                             <span className="text-gray-400">Última venta:</span>
                             <span className="text-white ml-2">
-                              {alerta.ultima_venta ? new Date(alerta.ultima_venta).toLocaleDateString() : 'Sin registro'}
+                              {alerta.ultima_venta ? 
+                                (() => {
+                                  const dateStr = alerta.ultima_venta;
+                                  if (dateStr.includes('-')) {
+                                    const [year, month, day] = dateStr.split('T')[0].split('-');
+                                    return `${day}/${month}/${year}`;
+                                  }
+                                  return dateStr;
+                                })() : 'Sin registro'}
                             </span>
                           </div>
                           <div>

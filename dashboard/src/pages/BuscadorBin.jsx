@@ -291,7 +291,16 @@ const BuscadorBin = () => {
             {resultado.fecha_consulta && (
               <div className="mt-4 pt-4 border-t border-gray-700">
                 <p className="text-sm text-gray-400">
-                  Última consulta: {new Date(resultado.fecha_consulta).toLocaleString('es-ES')}
+                  Última consulta: {(() => {
+                    const dateStr = resultado.fecha_consulta;
+                    if (dateStr.includes('T')) {
+                      const [datePart, timePart] = dateStr.split('T');
+                      const [year, month, day] = datePart.split('-');
+                      const time = timePart.split('.')[0]; // Quitar microsegundos si existen
+                      return `${day}/${month}/${year} ${time}`;
+                    }
+                    return new Date(dateStr).toLocaleString('es-ES');
+                  })()}
                 </p>
               </div>
             )}

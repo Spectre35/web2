@@ -131,7 +131,14 @@ export default function TarjetasDuplicadas() {
         "Clientes Distintos": item.clientesDistintos || 0,
         "Veces Usado": item.vecesUsado || 0,
         "Última Fecha": item.ultimaFechaRegistro ? 
-          new Date(item.ultimaFechaRegistro).toLocaleDateString('es-ES') : 
+          (() => {
+            const dateStr = item.ultimaFechaRegistro;
+            if (dateStr.includes('-')) {
+              const [year, month, day] = dateStr.split('T')[0].split('-');
+              return `${day}/${month}/${year}`;
+            }
+            return dateStr;
+          })() : 
           "Sin fecha",
         "Lista de Clientes": item.clientes ? item.clientes.join(' | ') : "",
         "Fecha de Descarga": new Date().toLocaleDateString('es-ES', {
@@ -411,7 +418,14 @@ export default function TarjetasDuplicadas() {
                             </td>
                             <td className="px-4 py-3 text-gray-300 text-sm">
                               {item.ultimaFechaRegistro ? 
-                                new Date(item.ultimaFechaRegistro).toLocaleDateString('es-ES') : 
+                                (() => {
+                                  const dateStr = item.ultimaFechaRegistro;
+                                  if (dateStr.includes('-')) {
+                                    const [year, month, day] = dateStr.split('T')[0].split('-');
+                                    return `${day}/${month}/${year}`;
+                                  }
+                                  return dateStr;
+                                })() : 
                                 'Sin fecha'
                               }
                             </td>

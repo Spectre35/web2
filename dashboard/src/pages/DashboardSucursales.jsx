@@ -82,7 +82,14 @@ export default function DashboardSucursales() {
         "Clientes Distintos": item.clientesDistintos || 0,
         "Veces Usado": item.vecesUsado || 0,
         "Última Fecha": item.ultimaFechaRegistro ? 
-          new Date(item.ultimaFechaRegistro).toLocaleDateString('es-ES') : 
+          (() => {
+            const dateStr = item.ultimaFechaRegistro;
+            if (dateStr.includes('-')) {
+              const [year, month, day] = dateStr.split('T')[0].split('-');
+              return `${day}/${month}/${year}`;
+            }
+            return dateStr;
+          })() : 
           "Sin fecha",
         "Lista de Clientes": item.clientes ? item.clientes.join(' | ') : "",
         "Fecha de Descarga": new Date().toLocaleDateString('es-ES', {
@@ -373,11 +380,14 @@ export default function DashboardSucursales() {
                             <td className="p-3 text-center">
                               <span className="bg-indigo-500/20 text-indigo-300 px-3 py-1 rounded-lg text-sm font-medium border border-indigo-500/30">
                                 {item.ultimaFechaRegistro ? 
-                                  new Date(item.ultimaFechaRegistro).toLocaleDateString('es-ES', {
-                                    year: 'numeric',
-                                    month: '2-digit',
-                                    day: '2-digit'
-                                  }) : 
+                                  (() => {
+                                    const dateStr = item.ultimaFechaRegistro;
+                                    if (dateStr.includes('-')) {
+                                      const [year, month, day] = dateStr.split('T')[0].split('-');
+                                      return `${day}/${month}/${year}`;
+                                    }
+                                    return dateStr;
+                                  })() : 
                                   'Sin fecha'
                                 }
                               </span>
