@@ -16,7 +16,8 @@ const app = express();
 const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3000 por defecto
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
 // 🔒 RESTRICCIÓN POR IP PARA DATOS CONFIDENCIALES
 const IPS_AUTORIZADAS_DATOS = [
@@ -69,11 +70,15 @@ const protegerDatos = (req, res, next) => {
 // Configurar Express para confiar en proxies (necesario para Render)
 app.set('trust proxy', true);
 
-// ✅ Conexión a la base de datos - automática para Railway
+// ✅ Conexión a la base de datos - optimizada para archivos grandes
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgresql://neondb_owner:npg_OnhVP53dwERt@ep-sweet-bird-aeqhnyu4-pooler.c-2.us-east-2.aws.neon.tech:5432/buscadores?sslmode=require",
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   max: 50, // ✅ hasta 50 conexiones simultáneas
+  idleTimeoutMillis: 60000, // 60 segundos para archivos grandes
+  connectionTimeoutMillis: 10000, // 10 segundos timeout de conexión
+  statement_timeout: 300000, // 5 minutos para queries largas
+  query_timeout: 300000, // 5 minutos para queries
 });
 
 // ✅ Configuración de almacenamiento temporal para archivos (optimizado para archivos 50k+ filas)
@@ -458,9 +463,22 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
 
     fs.unlinkSync(filePath);
     console.log(`🎉 Carga finalizada en ${progresoGlobal.tiempoTotal}s`);
+    
+    // 🧹 Liberar memoria después de procesar archivo grande
+    if (global.gc) {
+      global.gc();
+      console.log(`🧹 Memoria liberada después de procesar archivo`);
+    }
+    
     res.send(`✅ ${progresoGlobal.procesadas} registros insertados en ${tabla}`);
   } catch (error) {
     console.error(`❌ Error al actualizar ${tabla}:`, error);
+    
+    // 🧹 Liberar memoria incluso en caso de error
+    if (global.gc) {
+      global.gc();
+    }
+    
     res.status(500).send("Error al insertar datos");
   }
 });
@@ -1690,18 +1708,26 @@ app.get("/sucursal-detalle/:sucursal", async (req, res) => {
       console.log(`📊 Filtro: TODOS los paquetes`);
     }
 
-    // Consulta para obtener información de TipoCobranza
+    // Consulta para obtener información de TipoCobranza - CORREGIDA DINÁMICAMENTE
     const queryTipoCobranza = `
+      WITH total_filtrado AS (
+        SELECT COUNT(*) as total_paquetes_filtrados
+        FROM "ventas"
+        WHERE TRIM("Sucursal") = TRIM($1) 
+          AND "TipoCobranza" IS NOT NULL
+          ${whereClauseFecha}
+          ${whereClauseEstatus}
+      )
       SELECT 
         "TipoCobranza",
         COUNT(*) as cantidad,
-        ROUND((COUNT(*) * 100.0 / SUM(COUNT(*)) OVER()), 2) as porcentaje
-      FROM "ventas"
+        ROUND((COUNT(*) * 100.0 / NULLIF(tf.total_paquetes_filtrados, 0)), 2) as porcentaje
+      FROM "ventas", total_filtrado tf
       WHERE TRIM("Sucursal") = TRIM($1) 
         AND "TipoCobranza" IS NOT NULL
         ${whereClauseFecha}
         ${whereClauseEstatus}
-      GROUP BY "TipoCobranza"
+      GROUP BY "TipoCobranza", tf.total_paquetes_filtrados
       ORDER BY cantidad DESC
     `;
 
@@ -1755,20 +1781,30 @@ app.get("/sucursal-detalle/:sucursal", async (req, res) => {
         ${whereClauseFecha}
     `;
 
-    // Consulta para obtener las tarjetas más usadas (BINs) - OPTIMIZADA
+    // Consulta para obtener las tarjetas más usadas (BINs) - CORREGIDA DINÁMICAMENTE
     const queryTopTarjetas = `
+      WITH total_filtrado AS (
+        SELECT COUNT(*) as total_paquetes_filtrados
+        FROM "ventas"
+        WHERE TRIM("Sucursal") = TRIM($1)
+          AND "Tarjeta" IS NOT NULL 
+          AND "Tarjeta" != ''
+          AND LENGTH("Tarjeta") >= 6
+          ${whereClauseFecha}
+          ${whereClauseEstatus}
+      )
       SELECT 
         SUBSTRING("Tarjeta", 1, 6) as bin,
         COUNT(*) as cantidad_paquetes,
-        ROUND((COUNT(*) * 100.0 / SUM(COUNT(*)) OVER()), 2) as porcentaje
-      FROM "ventas"
+        ROUND((COUNT(*) * 100.0 / NULLIF(tf.total_paquetes_filtrados, 0)), 2) as porcentaje
+      FROM "ventas", total_filtrado tf
       WHERE TRIM("Sucursal") = TRIM($1)
         AND "Tarjeta" IS NOT NULL 
         AND "Tarjeta" != ''
         AND LENGTH("Tarjeta") >= 6
         ${whereClauseFecha}
         ${whereClauseEstatus}
-      GROUP BY SUBSTRING("Tarjeta", 1, 6)
+      GROUP BY SUBSTRING("Tarjeta", 1, 6), tf.total_paquetes_filtrados
       HAVING COUNT(*) >= 1
       ORDER BY cantidad_paquetes DESC
     `;
@@ -1851,6 +1887,31 @@ app.get("/sucursal-detalle/:sucursal", async (req, res) => {
 
     // Debug optimizado
     console.log(`🔍 BINs únicos: ${resultTopTarjetas.rows.length}, Con banco: ${binsConBanco.length}`);
+
+    // Debug para verificar cálculos con consultas de verificación
+    const debugQueryTotal = `
+      SELECT 
+        COUNT(*) as total_general,
+        COUNT(CASE WHEN "EstatusCobranza" = 'VENCIDO' THEN 1 END) as total_vencidos_general,
+        COUNT(CASE WHEN "Tarjeta" IS NOT NULL AND "Tarjeta" != '' AND LENGTH("Tarjeta") >= 6 THEN 1 END) as total_con_tarjeta,
+        COUNT(CASE WHEN "EstatusCobranza" = 'VENCIDO' AND "Tarjeta" IS NOT NULL AND "Tarjeta" != '' AND LENGTH("Tarjeta") >= 6 THEN 1 END) as total_vencidos_con_tarjeta
+      FROM "ventas"
+      WHERE TRIM("Sucursal") = TRIM($1)
+        ${whereClauseFecha}
+    `;
+    
+    const debugResult = await pool.query(debugQueryTotal, queryParams);
+    const debug = debugResult.rows[0];
+    
+    console.log(`📊 [DEBUG DETALLADO] Sucursal: ${sucursal}`);
+    console.log(`📊 [DEBUG DETALLADO] Filtro aplicado: ${soloVencidos ? 'Solo VENCIDOS' : 'TODOS los paquetes'}`);
+    console.log(`📊 [DEBUG DETALLADO] Total general: ${debug.total_general}`);
+    console.log(`📊 [DEBUG DETALLADO] Total vencidos: ${debug.total_vencidos_general}`);
+    console.log(`📊 [DEBUG DETALLADO] Total con tarjeta: ${debug.total_con_tarjeta}`);
+    console.log(`📊 [DEBUG DETALLADO] Total vencidos con tarjeta: ${debug.total_vencidos_con_tarjeta}`);
+    
+    const totalEsperadoParaCalculo = soloVencidos ? debug.total_vencidos_con_tarjeta : debug.total_con_tarjeta;
+    console.log(`📊 [DEBUG DETALLADO] Total esperado para % de BINs: ${totalEsperadoParaCalculo}`);
 
     const detalleSucursal = {
       sucursal: sucursal,
@@ -1937,16 +1998,32 @@ app.get("/aclaraciones/sucursales", protegerDatos, async (req, res) => {
 // Endpoint para obtener vendedoras desde la tabla ventas
 app.get("/aclaraciones/vendedoras", protegerDatos, async (req, res) => {
   try {
+    console.log('🔍 Iniciando consulta de vendedoras...');
+    
     const result = await pool.query(
-      `SELECT DISTINCT "Vendedor" FROM "ventas" 
+      `SELECT DISTINCT UPPER(TRIM("Vendedor")) as vendedor FROM "ventas" 
        WHERE "Vendedor" IS NOT NULL 
-       AND "Vendedor" != ''
-       ORDER BY "Vendedor"
-       LIMIT 200`
+       AND TRIM("Vendedor") != ''
+       AND LENGTH(TRIM("Vendedor")) > 1
+       ORDER BY UPPER(TRIM("Vendedor"))`
     );
-    res.json(result.rows.map(r => r.Vendedor).filter(Boolean));
+    
+    console.log(`📊 Registros brutos desde DB: ${result.rows.length}`);
+    
+    // Filtrar y limpiar los resultados, eliminando duplicados
+    const vendedoras = Array.from(new Set(
+      result.rows
+        .map(r => r.vendedor ? r.vendedor.trim().toUpperCase() : '')
+        .filter(v => v && v.length > 1)
+    )).sort(); // Ordenar alfabéticamente A-Z
+    
+    console.log(`✅ Vendedoras únicas procesadas: ${vendedoras.length}`);
+    console.log(`📋 Primeras 5: ${JSON.stringify(vendedoras.slice(0, 5))}`);
+    console.log(`📋 Últimas 5: ${JSON.stringify(vendedoras.slice(-5))}`);
+    
+    res.json(vendedoras);
   } catch (err) {
-    console.error("Error al obtener vendedoras:", err);
+    console.error("❌ Error al obtener vendedoras:", err);
     res.status(500).json({ error: "Error al obtener vendedoras" });
   }
 });
@@ -2002,6 +2079,35 @@ app.get("/aclaraciones/captura-cc", protegerDatos, async (req, res) => {
   } catch (err) {
     console.error("Error al obtener opciones de captura CC:", err);
     res.status(500).json({ error: "Error al obtener opciones de captura CC" });
+  }
+});
+
+// Endpoint para estadísticas generales del dashboard
+app.get("/estadisticas-generales", protegerDatos, async (req, res) => {
+  try {
+    const [aclaracionesResult, cargosResult, cajaResult] = await Promise.all([
+      pool.query('SELECT COUNT(*) as total FROM "aclaraciones"'),
+      pool.query('SELECT COUNT(*) as total FROM "cargos_auto"'),
+      pool.query('SELECT COUNT(*) as total FROM "caja"')
+    ]);
+
+    const estadisticas = {
+      totalAclaraciones: parseInt(aclaracionesResult.rows[0]?.total || 0),
+      totalRecuperacion: 0, // Este valor puede calcularse según tus necesidades
+      totalCargosAuto: parseInt(cargosResult.rows[0]?.total || 0),
+      totalCaja: parseInt(cajaResult.rows[0]?.total || 0)
+    };
+
+    res.json(estadisticas);
+  } catch (err) {
+    console.error("Error al obtener estadísticas generales:", err);
+    res.status(500).json({ 
+      error: "Error al obtener estadísticas",
+      totalAclaraciones: 0, 
+      totalRecuperacion: 0, 
+      totalCargosAuto: 0, 
+      totalCaja: 0 
+    });
   }
 });
 

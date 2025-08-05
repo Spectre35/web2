@@ -399,12 +399,14 @@ export default function IngresarAclaraciones() {
       newRow["EUROSKIN"] = "false";
       newRow["CAPTURA_CC"] = "EN PROCESO";
       
-      // Detectar año y mes - usar mes actual del sistema siempre
+      // Detectar año y mes - usar mes actual si no hay fecha o usar fecha actual
       if (newRow["FECHA_VENTA"]) {
-        const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+        const { anio, mesNombre } = obtenerNombreMes(newRow["FECHA_VENTA"]);
         newRow["AÑO"] = anio || new Date().getFullYear().toString();
-        const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-        newRow["MES_PETICION"] = meses[new Date().getMonth()];
+        newRow["MES_PETICION"] = mesNombre || (() => {
+          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+          return meses[new Date().getMonth()];
+        })();
       } else {
         // Si no hay fecha, usar año y mes actual
         const fechaActual = new Date();
@@ -474,12 +476,14 @@ export default function IngresarAclaraciones() {
         newRow["EUROSKIN"] = "false";
         newRow["CAPTURA_CC"] = "EN PROCESO";
         
-        // Detectar año y mes - usar mes actual del sistema siempre
+        // Detectar año y mes - usar mes actual si no hay fecha o usar fecha actual
         if (newRow["FECHA_VENTA"]) {
-          const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+          const { anio, mesNombre } = obtenerNombreMes(newRow["FECHA_VENTA"]);
           newRow["AÑO"] = anio || new Date().getFullYear().toString();
-          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-          newRow["MES_PETICION"] = meses[new Date().getMonth()];
+          newRow["MES_PETICION"] = mesNombre || (() => {
+            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+            return meses[new Date().getMonth()];
+          })();
         } else {
           // Si no hay fecha, usar año y mes actual
           const fechaActual = new Date();
@@ -601,12 +605,14 @@ export default function IngresarAclaraciones() {
         row["EUROSKIN"] = "false";
         row["CAPTURA_CC"] = "EN PROCESO";
         
-        // Detectar año y mes - usar mes actual del sistema siempre
+        // Detectar año y mes - usar mes actual si no hay fecha o usar fecha actual
         if (row["FECHA_VENTA"]) {
-          const { anio } = obtenerNombreMes(row["FECHA_VENTA"]);
+          const { anio, mesNombre } = obtenerNombreMes(row["FECHA_VENTA"]);
           row["AÑO"] = anio || new Date().getFullYear().toString();
-          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-          row["MES_PETICION"] = meses[new Date().getMonth()];
+          row["MES_PETICION"] = mesNombre || (() => {
+            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+            return meses[new Date().getMonth()];
+          })();
         } else {
           // Si no hay fecha, usar año y mes actual
           const fechaActual = new Date();
@@ -713,12 +719,14 @@ export default function IngresarAclaraciones() {
           row["EUROSKIN"] = row["EUROSKIN"] || "false";
           row["CAPTURA_CC"] = row["CAPTURA_CC"] || "EN PROCESO";
           
-          // Detectar año y mes - usar mes actual del sistema siempre
+          // Detectar año y mes - usar mes actual si no hay fecha o usar fecha actual
           if (row["FECHA_VENTA"]) {
-            const { anio } = obtenerNombreMes(row["FECHA_VENTA"]);
+            const { anio, mesNombre } = obtenerNombreMes(row["FECHA_VENTA"]);
             row["AÑO"] = anio || new Date().getFullYear().toString();
-            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-            row["MES_PETICION"] = meses[new Date().getMonth()];
+            row["MES_PETICION"] = mesNombre || (() => {
+              const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+              return meses[new Date().getMonth()];
+            })();
           } else {
             // Si no hay fecha, usar año y mes actual
             const fechaActual = new Date();
@@ -789,12 +797,14 @@ export default function IngresarAclaraciones() {
       newRow["EUROSKIN"] = newRow["EUROSKIN"] || "false";
       newRow["CAPTURA_CC"] = newRow["CAPTURA_CC"] || "EN PROCESO";
       
-      // Detectar año y mes - usar mes actual del sistema siempre
+      // Detectar año y mes - usar mes actual si no hay fecha o usar fecha actual
       if (newRow["FECHA_VENTA"]) {
-        const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+        const { anio, mesNombre } = obtenerNombreMes(newRow["FECHA_VENTA"]);
         newRow["AÑO"] = anio || new Date().getFullYear().toString();
-        const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-        newRow["MES_PETICION"] = meses[new Date().getMonth()];
+        newRow["MES_PETICION"] = mesNombre || (() => {
+          const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+          return meses[new Date().getMonth()];
+        })();
       } else {
         // Si no hay fecha, usar año y mes actual
         const fechaActual = new Date();
@@ -863,12 +873,14 @@ export default function IngresarAclaraciones() {
           newRow["EUROSKIN"] = newRow["EUROSKIN"] || "false";
           newRow["CAPTURA_CC"] = newRow["CAPTURA_CC"] || "EN PROCESO";
           
-          // Detectar año y mes - usar mes actual del sistema siempre
+          // Detectar año y mes - usar mes actual si no hay fecha o usar fecha actual
           if (newRow["FECHA_VENTA"]) {
-            const { anio } = obtenerNombreMes(newRow["FECHA_VENTA"]);
+            const { anio, mesNombre } = obtenerNombreMes(newRow["FECHA_VENTA"]);
             newRow["AÑO"] = anio || new Date().getFullYear().toString();
-            const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
-            newRow["MES_PETICION"] = meses[new Date().getMonth()];
+            newRow["MES_PETICION"] = mesNombre || (() => {
+              const meses = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
+              return meses[new Date().getMonth()];
+            })();
           } else {
             // Si no hay fecha, usar año y mes actual
             const fechaActual = new Date();

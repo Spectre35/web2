@@ -1,0 +1,230 @@
+/* Estilos personalizados para AG-Grid en tema oscuro */
+
+/* Override de colores para mejor integración con el tema */
+.ag-theme-alpine-dark {
+  --ag-background-color: #1f2937;
+  --ag-header-background-color: #374151;
+  --ag-odd-row-background-color: #1f2937;
+  --ag-even-row-background-color: #111827;
+  --ag-row-hover-color: #374151;
+  --ag-selected-row-background-color: #1e40af;
+  --ag-range-selection-background-color: rgba(59, 130, 246, 0.3);
+  --ag-border-color: #4b5563;
+  --ag-header-foreground-color: #e5e7eb;
+  --ag-foreground-color: #d1d5db;
+  --ag-cell-horizontal-border: solid #4b5563;
+  --ag-cell-vertical-border: solid #4b5563;
+  --ag-header-cell-hover-background-color: #4b5563;
+  --ag-header-cell-moving-background-color: #6b7280;
+}
+
+/* Mejorar la apariencia de los filtros */
+.ag-theme-alpine-dark .ag-filter-toolpanel-header,
+.ag-theme-alpine-dark .ag-filter-toolpanel-search,
+.ag-theme-alpine-dark .ag-filter-apply-panel {
+  background-color: #374151;
+  color: #e5e7eb;
+}
+
+/* Mejorar la apariencia de los editores de celda */
+.ag-theme-alpine-dark .ag-cell-edit-input {
+  background-color: #374151;
+  color: #e5e7eb;
+  border: 1px solid #6b7280;
+}
+
+.ag-theme-alpine-dark .ag-cell-edit-input:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.2);
+}
+
+/* Estilos para el menú contextual */
+.ag-theme-alpine-dark .ag-menu {
+  background-color: #374151;
+  border: 1px solid #6b7280;
+}
+
+.ag-theme-alpine-dark .ag-menu-option-active {
+  background-color: #4b5563;
+}
+
+/* Estilos para las columnas pinned */
+.ag-theme-alpine-dark .ag-cell.ag-cell-last-left-pinned {
+  border-right: 2px solid #6b7280;
+}
+
+/* Mejorar la apariencia de los selectores */
+.ag-theme-alpine-dark .ag-select-list {
+  background-color: #374151;
+  border: 1px solid #6b7280;
+}
+
+.ag-theme-alpine-dark .ag-list-item {
+  color: #e5e7eb;
+}
+
+.ag-theme-alpine-dark .ag-list-item:hover {
+  background-color: #4b5563;
+}
+
+/* Estilos para la selección de rango */
+.ag-theme-alpine-dark .ag-cell-range-selected {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+
+.ag-theme-alpine-dark .ag-cell-range-selected-1 {
+  background-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Estilos para el handle de fill */
+.ag-theme-alpine-dark .ag-fill-handle {
+  background-color: #3b82f6;
+}
+
+/* Mejorar la apariencia de los headers */
+.ag-theme-alpine-dark .ag-header-cell {
+  border-right: 1px solid #6b7280;
+}
+
+.ag-theme-alpine-dark .ag-header-cell-label {
+  justify-content: center;
+  font-weight: 600;
+}
+
+/* Estilos para las celdas editables */
+.ag-theme-alpine-dark .ag-cell-focus {
+  border: 2px solid #3b82f6 !important;
+}
+
+/* Animaciones suaves */
+.ag-theme-alpine-dark .ag-row {
+  transition: background-color 0.1s ease;
+}
+
+/* Personalización para campos obligatorios */
+.ag-theme-alpine-dark .ag-cell.campo-obligatorio {
+  border-left: 3px solid #fbbf24;
+}
+
+/* Personalización para campos con errores */
+.ag-theme-alpine-dark .ag-cell.campo-error {
+  border-left: 3px solid #ef4444;
+  background-color: rgba(239, 68, 68, 0.1);
+}
+
+/* Estilos para loading overlay */
+.ag-theme-alpine-dark .ag-overlay-loading-wrapper {
+  background-color: rgba(31, 41, 55, 0.8);
+}
+
+.ag-theme-alpine-dark .ag-overlay-loading-center {
+  background-color: #374151;
+  border: 1px solid #6b7280;
+  border-radius: 8px;
+  color: #e5e7eb;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .ag-theme-alpine-dark .ag-header-cell-label {
+    font-size: 12px;
+  }
+  
+  .ag-theme-alpine-dark .ag-cell {
+    font-size: 12px;
+    padding: 4px;
+  }
+}
+
+/* Custom scrollbar for AG-Grid */
+.ag-theme-alpine-dark .ag-body-horizontal-scroll,
+.ag-theme-alpine-dark .ag-body-vertical-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #6b7280 #374151;
+}
+
+.ag-theme-alpine-dark .ag-body-horizontal-scroll::-webkit-scrollbar,
+.ag-theme-alpine-dark .ag-body-vertical-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ag-theme-alpine-dark .ag-body-horizontal-scroll::-webkit-scrollbar-track,
+.ag-theme-alpine-dark .ag-body-vertical-scroll::-webkit-scrollbar-track {
+  background: #374151;
+}
+
+.ag-theme-alpine-dark .ag-body-horizontal-scroll::-webkit-scrollbar-thumb,
+.ag-theme-alpine-dark .ag-body-vertical-scroll::-webkit-scrollbar-thumb {
+  background-color: #6b7280;
+  border-radius: 4px;
+}
+
+.ag-theme-alpine-dark .ag-body-horizontal-scroll::-webkit-scrollbar-thumb:hover,
+.ag-theme-alpine-dark .ag-body-vertical-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #9ca3af;
+}
+
+/* ESTILOS PARA DROPDOWNS - ESTILO GOOGLE SHEETS */
+.ag-theme-alpine-dark .ag-cell.dropdown-cell {
+  cursor: pointer !important;
+  border: 1px solid #4b5563 !important;
+  position: relative !important;
+}
+
+/* Hover effect para dropdowns */
+.ag-theme-alpine-dark .ag-cell.dropdown-cell:hover {
+  background-color: rgba(96, 165, 250, 0.1) !important;
+  border-color: #60a5fa !important;
+}
+
+/* Celda seleccionada estilo Google Sheets */
+.ag-theme-alpine-dark .ag-cell-focus.dropdown-cell {
+  border: 2px solid #60a5fa !important;
+  box-shadow: 0 0 0 1px #60a5fa !important;
+}
+
+/* Estilo para todas las celdas cuando están seleccionadas */
+.ag-theme-alpine-dark .ag-cell-focus {
+  border: 2px solid #60a5fa !important;
+  background-color: rgba(96, 165, 250, 0.05) !important;
+}
+
+/* Estilo para rango de selección */
+.ag-theme-alpine-dark .ag-cell-range-selected {
+  background-color: rgba(96, 165, 250, 0.2) !important;
+}
+
+/* Navegación tipo Google Sheets - celdas en modo selección */
+.ag-theme-alpine-dark .ag-cell:not(.ag-cell-editing) {
+  cursor: cell !important;
+}
+
+/* Celdas en modo edición */
+.ag-theme-alpine-dark .ag-cell-editing {
+  border: 2px solid #10b981 !important;
+  box-shadow: 0 0 0 1px #10b981 !important;
+  background-color: #1f2937 !important;
+}
+
+/* Mejorar el estilo del editor de dropdown */
+.ag-theme-alpine-dark .ag-cell-editor select {
+  background-color: #374151 !important;
+  color: #e5e7eb !important;
+  border: 1px solid #60a5fa !important;
+  border-radius: 4px !important;
+  padding: 4px 8px !important;
+  font-size: inherit !important;
+}
+
+/* Resaltar celda activa con outline tipo Google Sheets */
+.ag-theme-alpine-dark .ag-cell-focus:not(.ag-cell-editing) {
+  outline: 2px solid #60a5fa !important;
+  outline-offset: -2px !important;
+}
+
+/* Estilo para navegación con teclado */
+.ag-theme-alpine-dark .ag-cell-range-selected:not(.ag-cell-range-selected-1):not(.ag-cell-range-selected-2) {
+  background-color: rgba(96, 165, 250, 0.15) !important;
+  border-color: #60a5fa !important;
+}
