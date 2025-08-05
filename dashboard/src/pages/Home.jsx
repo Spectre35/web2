@@ -185,7 +185,6 @@ export default function Home() {
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-gray-100">Procesadores con Baja Actividad</h3>
-                  <p className="text-sm text-gray-400">Últimos 2 días sin transacciones</p>
                 </div>
               </div>
             </div>
