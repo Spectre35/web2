@@ -11,6 +11,50 @@ dotenv.config();
 
 import axios from "axios";
 
+// 🗓️ FUNCIÓN PARA FORMATEAR FECHAS SIN CONVERSIÓN DE ZONA HORARIA
+const formatearFechaSinZona = (fecha) => {
+  if (!fecha) return fecha;
+  
+  try {
+    // Si ya es una fecha de JavaScript
+    if (fecha instanceof Date) {
+      // Usar UTC para evitar conversión de zona horaria
+      const dia = fecha.getUTCDate().toString().padStart(2, '0');
+      const mes = (fecha.getUTCMonth() + 1).toString().padStart(2, '0');
+      const anio = fecha.getUTCFullYear();
+      return `${dia}/${mes}/${anio}`;
+    }
+    
+    // Si es una string en formato YYYY-MM-DD
+    if (typeof fecha === 'string' && fecha.match(/^\d{4}-\d{2}-\d{2}/)) {
+      const [anio, mes, dia] = fecha.split('T')[0].split('-');
+      return `${dia}/${mes}/${anio}`;
+    }
+    
+    return fecha;
+  } catch (error) {
+    console.error('Error formateando fecha en servidor:', error);
+    return fecha;
+  }
+};
+
+// 🗓️ FUNCIÓN PARA FORMATEAR TODAS LAS FECHAS EN UN OBJETO
+const formatearFechasEnObjeto = (obj) => {
+  if (!obj || typeof obj !== 'object') return obj;
+  
+  const objFormateado = { ...obj };
+  const camposFecha = ['fecha_venta', 'fecha_contrato', 'fecha_de_peticion', 'fecha_de_respuesta', 'fechacompra', 'fecha'];
+  
+  Object.keys(objFormateado).forEach(key => {
+    const esCampoFecha = camposFecha.some(campo => key.toLowerCase().includes(campo.toLowerCase()));
+    if (esCampoFecha) {
+      objFormateado[key] = formatearFechaSinZona(objFormateado[key]);
+    }
+  });
+  
+  return objFormateado;
+};
+
 const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3000 por defecto
@@ -894,7 +938,11 @@ if (tabla === "aclaraciones") {
       const total = Number(countResult.rows[0].total);
 
       const result = await pool.query(query, values);
-      res.json({ datos: result.rows, total });
+      
+      // 🗓️ Formatear fechas antes de enviar al frontend
+      const datosFormateados = result.rows.map(row => formatearFechasEnObjeto(row));
+      
+      res.json({ datos: datosFormateados, total });
     } catch (error) {
       console.error(`❌ Error en ${tabla}:`, error);
       res.status(500).send(`Error en ${tabla}`);
@@ -1443,6 +1491,36 @@ app.get("/vendedoras-status", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error al obtener vendedoras" });
+  }
+});
+
+// ✅ Endpoint para obtener detalles de sucursales por vendedora
+app.get("/vendedoras-detalle-sucursales", async (req, res) => {
+  const { nombre } = req.query;
+  
+  if (!nombre) {
+    return res.status(400).json({ error: "Nombre de vendedora requerido" });
+  }
+
+  try {
+    const query = `
+      SELECT 
+        "Sucursal" as sucursal,
+        "Bloque" as bloque,
+        COUNT(*)::integer as "totalRegistros",
+        MAX("FechaCompra") as "ultimaFecha"
+      FROM "ventas" 
+      WHERE "Vendedor" ILIKE $1
+      GROUP BY "Sucursal", "Bloque"
+      ORDER BY "totalRegistros" DESC, "ultimaFecha" DESC
+    `;
+    
+    const result = await pool.query(query, [`%${nombre}%`]);
+    console.log(`Detalles para vendedora "${nombre}":`, result.rows);
+    res.json(result.rows);
+  } catch (err) {
+    console.error('Error al obtener detalle de sucursales:', err);
+    res.status(500).json({ error: "Error al obtener detalle de sucursales" });
   }
 });
 
@@ -2210,13 +2288,21 @@ app.put("/aclaraciones/actualizar", protegerDatos, async (req, res) => {
               if (valor === '' || valor === null || valor === undefined) {
                 valorFormateado = null;
               } else {
-                // Validar formato de fecha
-                const fechaValida = new Date(valor);
-                if (isNaN(fechaValida.getTime())) {
-                  console.warn(`Fecha inválida para campo ${campo}: ${valor}`);
-                  continue; // Saltar este campo si la fecha no es válida
+                // 🗓️ Manejo especial para fechas formato DD/MM/YYYY
+                if (typeof valor === 'string' && valor.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+                  // Convertir DD/MM/YYYY a YYYY-MM-DD para PostgreSQL
+                  const [dia, mes, anio] = valor.split('/');
+                  valorFormateado = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+                  console.log(`📅 Fecha convertida: ${valor} -> ${valorFormateado}`);
+                } else {
+                  // Validar formato de fecha
+                  const fechaValida = new Date(valor);
+                  if (isNaN(fechaValida.getTime())) {
+                    console.warn(`Fecha inválida para campo ${campo}: ${valor}`);
+                    continue; // Saltar este campo si la fecha no es válida
+                  }
+                  valorFormateado = valor;
                 }
-                valorFormateado = valor;
               }
             }
             
@@ -2802,7 +2888,11 @@ app.get("/cargos_auto", async (req, res) => {
 
   try {
     const result = await pool.query(query, values);
-    res.json({ datos: result.rows, total });
+    
+    // 🗓️ Formatear fechas antes de enviar al frontend
+    const datosFormateados = result.rows.map(row => formatearFechasEnObjeto(row));
+    
+    res.json({ datos: datosFormateados, total });
   } catch (error) {
     console.error(`❌ Error en cargos_auto:`, error); // <-- Mantén solo logs de error
     res.status(500).send(`Error en cargos_auto`);

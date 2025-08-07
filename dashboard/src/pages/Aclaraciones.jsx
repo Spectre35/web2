@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
-import { formatearFechasEnObjeto, formatearFecha } from "../utils/dateUtils";
+import { formatearFechasEnObjeto, formatearFecha, convertirFechaParaInput, convertirFechaDesdeInput } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
 
 // Componente para desplegables en modo edición
@@ -755,9 +755,14 @@ export default function Aclaraciones() {
                           ) : (col.includes('fecha') || col.includes('fecha_')) ? (
                             <input
                               type="date"
-                              value={datosEditados[idx]?.[col] || row[col]?.toString() || ""}
-                              onChange={(e) => actualizarCampo(idx, col, e.target.value)}
+                              value={convertirFechaParaInput(datosEditados[idx]?.[col] || row[col]?.toString() || "")}
+                              onChange={(e) => {
+                                // Convertir de YYYY-MM-DD a DD/MM/YYYY al guardar
+                                const fechaFormateada = convertirFechaDesdeInput(e.target.value);
+                                actualizarCampo(idx, col, fechaFormateada);
+                              }}
                               className="w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
+                              title="Formato: DD/MM/YYYY"
                             />
                           ) : col === 'monto' ? (
                             <input
