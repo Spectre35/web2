@@ -80,4 +80,9 @@ class ConfigManager {
   }
 }
 
+// Función de conveniencia para obtener la URL de la API
+export function getApiUrl() {
+  return ConfigManager.getEndpoint();
+}
+
 export { ConfigManager };

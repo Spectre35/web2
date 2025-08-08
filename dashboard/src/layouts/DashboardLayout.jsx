@@ -1,5 +1,6 @@
 import React, { createContext, useContext } from "react";
 import Sidebar from "../components/Sidebar.jsx";
+import ChatBot from "../components/ChatBot.jsx";
 import { Outlet, useLocation } from "react-router-dom";
 import { SidebarProvider, useSidebar } from "../context/SidebarContext.jsx";
 
@@ -65,6 +66,9 @@ function DashboardLayoutInner() {
             <Outlet />
           </div>
         </main>
+        
+        {/* Chatbot flotante */}
+        <ChatBot />
       </div>
     </MainScrollContext.Provider>
   );

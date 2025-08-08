@@ -11,6 +11,9 @@ dotenv.config();
 
 import axios from "axios";
 
+// 🧠 RAG Engine Import
+import RAGEngine from "./rag-engine/index.js";
+
 // 🗓️ FUNCIÓN PARA FORMATEAR FECHAS SIN CONVERSIÓN DE ZONA HORARIA
 const formatearFechaSinZona = (fecha) => {
   if (!fecha) return fecha;
@@ -113,6 +116,37 @@ const protegerDatos = (req, res, next) => {
 
 // Configurar Express para confiar en proxies (necesario para Render)
 app.set('trust proxy', true);
+
+// 🧠 Inicializar RAG Engine
+let ragEngine = null;
+
+async function initializeRAG() {
+  try {
+    console.log('🧠 Inicializando RAG Engine...');
+    
+    ragEngine = new RAGEngine({
+      knowledgeBasePath: './knowledge-base',
+      vectorStorePath: './knowledge-base/vector-store.json',
+      ollamaEndpoint: 'http://localhost:11434',
+      embeddingModel: 'nomic-embed-text:latest',
+      generationModel: 'llama3.2:1b',
+      autoIngest: true,
+      enableCache: true,
+      defaultK: 4,
+      temperature: 0.7
+    });
+    
+    await ragEngine.initialize();
+    console.log('✅ RAG Engine inicializado correctamente');
+    
+  } catch (error) {
+    console.error('❌ Error inicializando RAG Engine:', error);
+    console.log('⚠️ El chatbot funcionará sin RAG hasta que se resuelva el problema');
+  }
+}
+
+// Inicializar RAG al arrancar el servidor
+initializeRAG();
 
 // ✅ Conexión a la base de datos - optimizada para archivos grandes
 const pool = new Pool({
@@ -5899,6 +5933,241 @@ app.get('/api/test-columns-ventas', async (req, res) => {
       message: 'Error obteniendo columnas de la tabla ventas',
       error: error.message
     });
+  }
+});
+
+// ==================== ENDPOINTS DEL CHATBOT RAG ====================
+
+// 💬 Endpoint principal del chatbot
+app.post('/api/chat', async (req, res) => {
+  try {
+    const { message, options = {} } = req.body;
+    
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Mensaje requerido'
+      });
+    }
+    
+    console.log(`💬 Consulta del chatbot: "${message.slice(0, 100)}${message.length > 100 ? '...' : ''}"`);
+    
+    // Si RAG no está disponible, usar respuesta básica
+    if (!ragEngine || !ragEngine.isInitialized) {
+      return res.json({
+        success: true,
+        response: 'Lo siento, el sistema de asistencia inteligente no está disponible en este momento. Por favor, consulta los manuales o contacta al administrador.',
+        metadata: {
+          type: 'fallback',
+          ragAvailable: false,
+          timestamp: new Date().toISOString()
+        }
+      });
+    }
+    
+    // Procesar consulta con RAG
+    const result = await ragEngine.processQuery(message, options);
+    
+    res.json({
+      success: true,
+      response: result.response,
+      metadata: {
+        ...result.metadata,
+        ragAvailable: true,
+        timestamp: new Date().toISOString()
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en chatbot:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error procesando consulta',
+      message: error.message
+    });
+  }
+});
+
+// 🔍 Endpoint de búsqueda en la base de conocimientos
+app.post('/api/search-knowledge', async (req, res) => {
+  try {
+    const { query, options = {} } = req.body;
+    
+    if (!ragEngine || !ragEngine.isInitialized) {
+      return res.status(503).json({
+        success: false,
+        error: 'Sistema RAG no disponible'
+      });
+    }
+    
+    const searchResult = await ragEngine.search(query, options);
+    
+    res.json({
+      success: true,
+      results: searchResult.results.map(result => ({
+        content: result.content.slice(0, 500) + (result.content.length > 500 ? '...' : ''),
+        similarity: result.similarity,
+        source: result.metadata?.fileName || 'unknown',
+        contentType: result.metadata?.contentType || 'unknown'
+      })),
+      metadata: searchResult.metadata
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en búsqueda:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error buscando en base de conocimientos',
+      message: error.message
+    });
+  }
+});
+
+// 📊 Endpoint de diagnóstico del RAG
+app.get('/api/rag-status', async (req, res) => {
+  try {
+    if (!ragEngine) {
+      return res.json({
+        success: false,
+        ragAvailable: false,
+        error: 'RAG Engine no inicializado'
+      });
+    }
+    
+    const stats = ragEngine.getStats();
+    
+    // Ejecutar diagnósticos si se solicita
+    let diagnostics = null;
+    if (req.query.diagnostics === 'true') {
+      diagnostics = await ragEngine.runDiagnostics();
+    }
+    
+    res.json({
+      success: true,
+      ragAvailable: ragEngine.isInitialized,
+      stats,
+      diagnostics
+    });
+    
+  } catch (error) {
+    console.error('❌ Error obteniendo estado RAG:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error obteniendo estado del sistema',
+      message: error.message
+    });
+  }
+});
+
+// 📚 Endpoint para reindexar documentos
+app.post('/api/rag-reindex', async (req, res) => {
+  try {
+    if (!ragEngine) {
+      return res.status(503).json({
+        success: false,
+        error: 'RAG Engine no disponible'
+      });
+    }
+    
+    console.log('🔄 Iniciando reindexación solicitada por usuario...');
+    
+    const result = await ragEngine.reindex();
+    
+    res.json({
+      success: true,
+      message: 'Reindexación completada',
+      ...result
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en reindexación:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error reindexando documentos',
+      message: error.message
+    });
+  }
+});
+
+// 🧪 Endpoint de test del chatbot
+app.get('/api/chat-test', async (req, res) => {
+  try {
+    const testQuery = req.query.q || '¿Cómo funciona el sistema de ventas?';
+    
+    if (!ragEngine || !ragEngine.isInitialized) {
+      return res.json({
+        success: false,
+        error: 'RAG Engine no disponible para testing',
+        testQuery
+      });
+    }
+    
+    const result = await ragEngine.processQuery(testQuery, { k: 3 });
+    
+    res.json({
+      success: true,
+      testQuery,
+      response: result.response,
+      responseLength: result.response.length,
+      contextUsed: result.metadata.contextMetadata?.performance?.finalResults || 0,
+      processingTime: result.metadata.totalProcessingTime
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en test:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error ejecutando test',
+      message: error.message
+    });
+  }
+});
+
+// ⚡ Endpoint de streaming para respuestas en tiempo real
+app.post('/api/chat-stream', async (req, res) => {
+  try {
+    const { message, options = {} } = req.body;
+    
+    if (!ragEngine || !ragEngine.isInitialized) {
+      return res.status(503).json({
+        success: false,
+        error: 'Sistema RAG no disponible'
+      });
+    }
+    
+    // Configurar headers para streaming
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Transfer-Encoding', 'chunked');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    
+    const stream = await ragEngine.processQueryStream(message, options);
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        
+        if (done) break;
+        
+        const chunk = decoder.decode(value);
+        res.write(chunk);
+      }
+    } finally {
+      reader.releaseLock();
+      res.end();
+    }
+    
+  } catch (error) {
+    console.error('❌ Error en streaming:', error);
+    if (!res.headersSent) {
+      res.status(500).json({
+        success: false,
+        error: 'Error en streaming',
+        message: error.message
+      });
+    }
   }
 });
 
