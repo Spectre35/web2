@@ -11,6 +11,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@jspreadsheet/react": "^10.9.4",
     "@nivo/bar": "^0.99.0",
     "@nivo/core": "^0.99.0",
     "@nivo/line": "^0.99.0",
@@ -20,6 +21,7 @@
     "ag-grid-react": "^34.1.1",
     "axios": "^1.10.0",
     "lucide-react": "^0.537.0",
+    "luckysheet": "^2.1.13",
     "million": "^3.1.11",
     "pg-query-stream": "^4.10.3",
     "react": "^19.1.0",

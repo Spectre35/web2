@@ -1,269 +1,76 @@
+
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
+import DataGrid from 'react-data-grid';
+import 'react-data-grid/lib/styles.css';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
-// Custom Table Component con selección múltiple
-function SimpleDataGrid({ columns, rows, onRowsChange, selectedRows, onRowSelection, onSelectAll, onBulkDelete, onClearSelection }) {
-  const [editingCell, setEditingCell] = useState(null);
-  const [editValue, setEditValue] = useState('');
+// Función para crear una fila por defecto
+const crearFilaPorDefecto = () => ({
+  id: Date.now(),
+  PROCESADOR: '',
+  AÑO: '2025',
+  MES_PETICION: 'AGOSTO',
+  EUROSKIN: 'false',
+  ID_DEL_COMERCIO_AFILIACION: '',
+  NOMBRE_DEL_COMERCIO: '',
+  ID_DE_TRANSACCION: '',
+  FECHA_VENTA: new Date().toISOString().split('T')[0],
+  MONTO: 0,
+  NUM_DE_TARJETA: '',
+  AUTORIZACION: '',
+  CLIENTE: '',
+  VENDEDORA: '',
+  SUCURSAL: '',
+  FECHA_CONTRATO: '',
+  PAQUETE: '',
+  BLOQUE: '',
+  FECHA_DE_PETICION: new Date().toISOString().split('T')[0],
+  FECHA_DE_RESPUESTA: '',
+  COMENTARIOS: '',
+  CAPTURA_CC: 'EN PROCESO'
+});
 
-  const handleCellClick = (rowIndex, columnKey) => {
-    // No entrar en modo edición si se clickea la columna de selección
-    if (columnKey === 'selection') return;
-    
-    setEditingCell({ rowIndex, columnKey });
-    setEditValue(rows[rowIndex][columnKey] || '');
-  };
-
-  const handleCellChange = (value) => {
-    setEditValue(value);
-  };
-
-  const handleCellBlur = () => {
-    if (editingCell) {
-      const newRows = [...rows];
-      const { rowIndex, columnKey } = editingCell;
-      const column = columns.find(col => col.key === columnKey);
-      
-      let finalValue = editValue;
-      
-      // Apply type conversion based on column type
-      if (column?.type === 'number') {
-        finalValue = parseFloat(editValue) || 0;
-      }
-      
-      newRows[rowIndex] = { ...newRows[rowIndex], [columnKey]: finalValue };
-      onRowsChange(newRows);
-      setEditingCell(null);
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter') {
-      handleCellBlur();
-    } else if (e.key === 'Escape') {
-      setEditingCell(null);
-    }
-  };
-
-  const isEditing = (rowIndex, columnKey) => {
-    return editingCell?.rowIndex === rowIndex && editingCell?.columnKey === columnKey;
-  };
-
-  const isAllSelected = rows.length > 0 && selectedRows.size === rows.length;
-  const isIndeterminate = selectedRows.size > 0 && selectedRows.size < rows.length;
-
-  const renderCell = (row, column, rowIndex) => {
-    const isCurrentlyEditing = isEditing(rowIndex, column.key);
-    const value = row[column.key] || '';
-    
-    // Columna de selección especial
-    if (column.key === 'selection') {
-      return (
-        <div className="flex items-center justify-center">
-          <input
-            type="checkbox"
-            checked={selectedRows.has(row.id)}
-                        onChange={(e) => onRowSelection(row.id, e.target.checked)}
-            className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-          />
-        </div>
-      );
-    }
-    
-    if (isCurrentlyEditing) {
-      if (column.type === 'select') {
-        return (
-          <select
-            value={editValue}
-            onChange={(e) => handleCellChange(e.target.value)}
-            onBlur={handleCellBlur}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="">Seleccionar...</option>
-            {column.options?.map((option) => (
-              <option key={option} value={option}>
-                {option}
-              </option>
-            ))}
-          </select>
-        );
-      } else if (column.type === 'date') {
-        return (
-          <input
-            type="date"
-            value={editValue}
-            onChange={(e) => handleCellChange(e.target.value)}
-            onBlur={handleCellBlur}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 focus:ring-2 focus:ring-blue-500"
-          />
-        );
-      } else if (column.type === 'number') {
-        return (
-          <input
-            type="number"
-            value={editValue}
-            onChange={(e) => handleCellChange(e.target.value)}
-            onBlur={handleCellBlur}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 text-right focus:ring-2 focus:ring-blue-500"
-            step="0.01"
-          />
-        );
-      } else {
-        return (
-          <input
-            type="text"
-            value={editValue}
-            onChange={(e) => handleCellChange(e.target.value)}
-            onBlur={handleCellBlur}
-            onKeyDown={handleKeyDown}
-            autoFocus
-            className="w-full h-full bg-gray-600 text-white border-none outline-none px-2 py-1 focus:ring-2 focus:ring-blue-500"
-          />
-        );
-      }
-    }
-
-    // Display mode
-    let displayValue = value;
-    
-    if (column.type === 'number' && value) {
-      displayValue = new Intl.NumberFormat('en-US', {
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }).format(value);
-    } else if (column.type === 'date' && value) {
-      // Fix para evitar el desfase de un día por zona horaria
-      if (value.includes('T')) {
-        // Si viene con hora, solo tomar la fecha
-        displayValue = value.split('T')[0];
-      } else {
-        // Si ya es formato YYYY-MM-DD, usarlo directamente
-        displayValue = value;
-      }
-      
-      // Convertir YYYY-MM-DD a DD/MM/YYYY para mejor visualización
-      if (displayValue && displayValue.match(/^\d{4}-\d{2}-\d{2}$/)) {
-        const [año, mes, dia] = displayValue.split('-');
-        displayValue = `${dia}/${mes}/${año}`;
-      }
-    }
-
-    // Resaltar filas seleccionadas
-    const isRowSelected = selectedRows.has(row.id);
-
-    return (
-      <div
-        onClick={() => handleCellClick(rowIndex, column.key)}
-        className={`w-full h-full px-2 py-1 cursor-pointer hover:bg-gray-600 flex items-center justify-between transition-colors ${
-          isRowSelected ? 'bg-blue-600/20' : ''
-        }`}
-        style={{ 
-          textAlign: column.type === 'number' ? 'right' : 'left',
-          backgroundColor: column.key === 'id' ? '#374151' : isRowSelected ? '#1e40af20' : 'transparent' 
-        }}
-      >
-        <span className="truncate">{displayValue}</span>
-        {column.type === 'select' && (
-          <span className="text-blue-400 text-xs ml-1">▼</span>
-        )}
-      </div>
-    );
-  };
-
+// Componente para dropdown personalizado
+function SelectEditor({ value, onChange, options }) {
   return (
-    <div className="flex flex-col space-y-4">
-      {/* Controles de selección múltiple */}
-      {selectedRows.size > 0 && (
-        <div className="bg-blue-600 text-white p-3 rounded-lg flex items-center justify-between">
-          <span className="font-medium">
-            {selectedRows.size} filas seleccionadas
-          </span>
-          <div className="flex space-x-2">
-            <button
-              onClick={onClearSelection}
-              className="px-3 py-1 bg-blue-700 hover:bg-blue-800 rounded text-sm font-medium transition-colors"
-            >
-              Limpiar selección
-            </button>
-            <button
-              onClick={onBulkDelete}
-              className="px-3 py-1 bg-red-600 hover:bg-red-700 rounded text-sm font-medium transition-colors"
-            >
-              Eliminar seleccionadas
-            </button>
-          </div>
-        </div>
-      )}
-
-      <div className="w-full h-full overflow-auto bg-gray-700 rounded-lg">
-        <table className="w-full border-collapse">
-          <thead className="sticky top-0 bg-gray-800 z-10">
-            <tr>
-              {/* Columna de selección con checkbox maestro */}
-              <th className="border border-gray-600 px-2 py-2 text-center text-gray-200 font-medium text-sm bg-gray-800 w-12">
-                <input
-                  type="checkbox"
-                  checked={selectedRows.size === rows.length && rows.length > 0}
-                  onChange={onSelectAll}
-                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
-                />
-              </th>
-              {columns.map((column) => (
-                <th
-                  key={column.key}
-                  className="border border-gray-600 px-2 py-2 text-left text-gray-200 font-medium text-sm bg-gray-800"
-                  style={{ width: column.width || 120, minWidth: column.width || 120 }}
-                >
-                  <div className="flex items-center justify-between">
-                    <span>{column.name}</span>
-                    {column.type && (
-                      <span className="text-xs text-gray-400 ml-1">
-                        {column.type === 'select' ? 'SELECT' : 
-                         column.type === 'date' ? 'DATE' : 
-                         column.type === 'number' ? 'NUM' : 'TEXT'}
-                      </span>
-                    )}
-                  </div>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, rowIndex) => (
-              <tr
-                key={row.id}
-                className={`hover:bg-gray-600 transition-colors ${
-                  selectedRows.has(row.id) ? 'bg-blue-600/20' : ''
-                }`}
-              >
-                {/* Celda de selección */}
-                <td className="border border-gray-600 p-0 text-gray-200 text-sm h-9 text-center">
-                  {renderCell(row, { key: 'selection', type: 'checkbox' }, rowIndex)}
-                </td>
-                {columns.map((column) => (
-                  <td
-                    key={`${row.id}-${column.key}`}
-                    className="border border-gray-600 p-0 text-gray-200 text-sm h-9"
-                    style={{ width: column.width || 120, minWidth: column.width || 120 }}
-                  >
-                    {renderCell(row, column, rowIndex)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <select
+      value={value || ''}
+      onChange={(e) => onChange(e.target.value)}
+      autoFocus
+      className="w-full h-full bg-white border-none outline-none px-2 text-sm"
+    >
+      <option value="">Seleccionar...</option>
+      {options.map((option) => (
+        <option key={option} value={option}>
+          {option}
+        </option>
+      ))}
+    </select>
   );
+}
+
+// Formateador personalizado para fechas
+function formatDate(value) {
+  if (!value) return '';
+  if (value.includes('T')) {
+    value = value.split('T')[0];
+  }
+  if (value.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    const [año, mes, dia] = value.split('-');
+    return `${dia}/${mes}/${año}`;
+  }
+  return value;
+}
+
+// Formateador personalizado para números
+function formatNumber(value) {
+  if (!value || value === 0) return '0.00';
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  }).format(value);
 }
 
 export default function ExcelGridReactDataGrid() {
@@ -273,171 +80,209 @@ export default function ExcelGridReactDataGrid() {
   const [mostrarAreaPegado, setMostrarAreaPegado] = useState(false);
   const [datosParaPegar, setDatosParaPegar] = useState("");
   const [selectedRows, setSelectedRows] = useState(new Set());
-  const [selectAll, setSelectAll] = useState(false);
 
-  // Función para crear una fila por defecto
-  const crearFilaPorDefecto = () => ({
-    id: Date.now(),
-    PROCESADOR: '',
-    AÑO: '2025',
-    MES_PETICION: 'AGOSTO',
-    EUROSKIN: 'false',
-    ID_DEL_COMERCIO_AFILIACION: '',
-    NOMBRE_DEL_COMERCIO: '',
-    ID_DE_TRANSACCION: '',
-    FECHA_VENTA: new Date().toISOString().split('T')[0],
-    MONTO: 0,
-    NUM_DE_TARJETA: '',
-    AUTORIZACION: '',
-    CLIENTE: '',
-    VENDEDORA: '',
-    SUCURSAL: '',
-    FECHA_CONTRATO: '',
-    PAQUETE: '',
-    BLOQUE: '',
-    FECHA_DE_PETICION: new Date().toISOString().split('T')[0],
-    FECHA_DE_RESPUESTA: '',
-    COMENTARIOS: '',
-    CAPTURA_CC: 'EN PROCESO'
-  });
-
-  // Definición de columnas simplificada
+  // Definición de columnas para React Data Grid
   const columns = useMemo(() => [
     {
       key: 'id',
       name: 'ID',
       width: 80,
-      type: 'readonly'
+      frozen: true,
+      resizable: true,
+      sortable: true
     },
     {
       key: 'PROCESADOR',
       name: 'Procesador',
       width: 120,
-      type: 'select',
-      options: ['EFEVOO', 'BSD', 'CREDOMATIC']
+      resizable: true,
+      sortable: true,
+      editor: (props) => (
+        <SelectEditor 
+          {...props} 
+          options={['EFEVOO', 'BSD', 'CREDOMATIC']}
+        />
+      )
     },
     {
       key: 'AÑO',
       name: 'Año',
       width: 80,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'MES_PETICION',
       name: 'Mes Petición',
       width: 120,
-      type: 'select',
-      options: ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']
+      resizable: true,
+      sortable: true,
+      editor: (props) => (
+        <SelectEditor 
+          {...props} 
+          options={['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SEPTIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE']}
+        />
+      )
     },
     {
       key: 'EUROSKIN',
       name: 'EuroSkin',
       width: 100,
-      type: 'select',
-      options: ['true', 'false']
+      resizable: true,
+      sortable: true,
+      editor: (props) => (
+        <SelectEditor 
+          {...props} 
+          options={['true', 'false']}
+        />
+      )
     },
     {
       key: 'ID_DEL_COMERCIO_AFILIACION',
       name: 'ID Comercio/Afiliación',
       width: 180,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'NOMBRE_DEL_COMERCIO',
       name: 'Nombre del Comercio',
       width: 200,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'ID_DE_TRANSACCION',
       name: 'ID Transacción',
       width: 150,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'FECHA_VENTA',
       name: 'Fecha Venta',
       width: 120,
-      type: 'date'
+      resizable: true,
+      sortable: true,
+      formatter: ({ row }) => formatDate(row.FECHA_VENTA),
+      editor: 'textEditor'
     },
     {
       key: 'MONTO',
       name: 'Monto',
       width: 120,
-      type: 'number'
+      resizable: true,
+      sortable: true,
+      formatter: ({ row }) => formatNumber(row.MONTO),
+      editor: 'textEditor'
     },
     {
       key: 'NUM_DE_TARJETA',
       name: 'Número de Tarjeta',
       width: 150,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'AUTORIZACION',
       name: 'Autorización',
       width: 120,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'CLIENTE',
       name: 'Cliente',
       width: 150,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'VENDEDORA',
       name: 'Vendedora',
       width: 150,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'SUCURSAL',
       name: 'Sucursal',
       width: 150,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'FECHA_CONTRATO',
       name: 'Fecha Contrato',
       width: 130,
-      type: 'date'
+      resizable: true,
+      sortable: true,
+      formatter: ({ row }) => formatDate(row.FECHA_CONTRATO),
+      editor: 'textEditor'
     },
     {
       key: 'PAQUETE',
       name: 'Paquete',
       width: 120,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'BLOQUE',
       name: 'Bloque',
       width: 100,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'FECHA_DE_PETICION',
       name: 'Fecha Petición',
       width: 130,
-      type: 'date'
+      resizable: true,
+      sortable: true,
+      formatter: ({ row }) => formatDate(row.FECHA_DE_PETICION),
+      editor: 'textEditor'
     },
     {
       key: 'FECHA_DE_RESPUESTA',
       name: 'Fecha Respuesta',
       width: 130,
-      type: 'date'
+      resizable: true,
+      sortable: true,
+      formatter: ({ row }) => formatDate(row.FECHA_DE_RESPUESTA),
+      editor: 'textEditor'
     },
     {
       key: 'COMENTARIOS',
       name: 'Comentarios',
       width: 200,
-      type: 'text'
+      resizable: true,
+      sortable: true,
+      editor: 'textEditor'
     },
     {
       key: 'CAPTURA_CC',
       name: 'Captura CC',
       width: 120,
-      type: 'select',
-      options: ['EN PROCESO', 'GANADA', 'PERDIDA']
+      resizable: true,
+      sortable: true,
+      editor: (props) => (
+        <SelectEditor 
+          {...props} 
+          options={['EN PROCESO', 'GANADA', 'PERDIDA']}
+        />
+      )
     }
   ], []);
 
@@ -472,6 +317,39 @@ export default function ExcelGridReactDataGrid() {
     setMensaje('✅ Nueva fila agregada');
     setTimeout(() => setMensaje(""), 2000);
   }, []);
+
+  // Manejar cambios en las filas
+  const handleRowsChange = (newRows, { indexes, column }) => {
+    // Procesar cambios especiales para ciertos tipos de datos
+    const processedRows = newRows.map(row => {
+      // Procesar fechas
+      if (column?.key && column.key.includes('FECHA')) {
+        const value = row[column.key];
+        if (value && typeof value === 'string') {
+          row[column.key] = normalizarFecha(value);
+        }
+      }
+      
+      // Procesar montos
+      if (column?.key === 'MONTO') {
+        const value = row[column.key];
+        if (value && typeof value === 'string') {
+          row[column.key] = normalizarMonto(value);
+        }
+      }
+
+      // Auto-detectar año y mes basado en fecha de venta
+      if (column?.key === 'FECHA_VENTA' && row.FECHA_VENTA) {
+        const { anio, mesNombre } = obtenerNombreMes(row.FECHA_VENTA);
+        if (anio) row.AÑO = anio;
+        if (mesNombre) row.MES_PETICION = mesNombre;
+      }
+
+      return row;
+    });
+
+    setRows(processedRows);
+  };
 
   // Funciones de normalización (copiadas del componente original)
   const normalizarMonto = (montoStr) => {
@@ -543,26 +421,9 @@ export default function ExcelGridReactDataGrid() {
     return { anio, mesNombre };
   }
 
-  // Funciones de selección múltiple estilo AG Grid
-  const handleRowSelection = (rowId, isSelected) => {
-    const newSelectedRows = new Set(selectedRows);
-    if (isSelected) {
-      newSelectedRows.add(rowId);
-    } else {
-      newSelectedRows.delete(rowId);
-    }
-    setSelectedRows(newSelectedRows);
-  };
-
-  const handleSelectAll = (e) => {
-    if (e.target.checked) {
-      // Seleccionar todas las filas
-      const allIds = new Set(rows.map(row => row.id));
-      setSelectedRows(allIds);
-    } else {
-      // Deseleccionar todas las filas
-      setSelectedRows(new Set());
-    }
+  // Funciones de selección múltiple
+  const handleRowSelection = (selectedRowsSet) => {
+    setSelectedRows(selectedRowsSet);
   };
 
   const handleBulkDelete = () => {
