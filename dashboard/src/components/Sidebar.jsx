@@ -16,8 +16,6 @@ const sidebarLinks = [
   { to: "/caja", label: "💵 Caja", section: "buscadores" },
   { to: "/ventas", label: "🔍 Reporte de Prevención", section: "buscadores" },
   { to: "/aclaraciones", label: "💳 Aclaraciones", section: "buscadores" },
-  { to: "/ingresar-aclaraciones", label: "📝 Ingresar Aclaraciones", section: "buscadores" },
-  { to: "/excel-grid-react19", label: "🚀 Excel Grid (React 19)", section: "buscadores" },
   { to: "/vendedoras-status", label: "👩‍💼 Vendedoras Status", section: "buscadores" },
   { to: "/sucursal-bloque", label: "🏢 Sucursal-Bloque", section: "buscadores" },
   { to: "/buscador-bin", label: "🔍 Buscador de BINs", section: "buscadores" },

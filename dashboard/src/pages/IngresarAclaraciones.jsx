@@ -1,22 +1,239 @@
-import React, { useState, useEffect, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../config";
 import "../scrollbar-styles.css";
 
-const SelectEditor = React.memo(({ value, onChange, options, className = "" }) => {
+// Componente CeldaGrid - Excel-style Grid v4.0 - Selección primero, edición después
+const CeldaGrid = React.memo(({ 
+  filaIdx, 
+  columna, 
+  valor, 
+  onChange, 
+  onCellClick, 
+  onCellMouseEnter,
+  esSeleccionada, 
+  esRangoSeleccionado,
+  obtenerBordesRango, // Nueva prop para bordes de rango
+  esObligatorio,
+  tieneError,
+  tipo = 'text',
+  opciones = null,
+  placeholder = ""
+}) => {
+  const [editando, setEditando] = useState(false);
+  const inputRef = useRef(null);
+  const selectRef = useRef(null);
+  const celdaRef = useRef(null);
+
+  const manejarClick = useCallback((e) => {
+    e.stopPropagation();
+    onCellClick(filaIdx, columna, e);
+    // NO activar edición inmediatamente, solo seleccionar
+  }, [filaIdx, columna, onCellClick]);
+
+  const manejarMouseDown = useCallback((e) => {
+    // Solo procesar botón izquierdo y NO en elementos de formulario
+    if (e.button === 0 && e.target.tagName !== 'SELECT' && e.target.tagName !== 'INPUT') {
+      e.preventDefault(); // Prevenir selección de texto
+      
+      // Seleccionar celda E iniciar arrastre inmediatamente
+      onCellClick(filaIdx, columna, { 
+        ...e, 
+        type: 'mousedown' // Marcar como mousedown para iniciar arrastre
+      });
+    }
+  }, [filaIdx, columna, onCellClick]);
+
+  const manejarDobleClick = useCallback((e) => {
+    e.stopPropagation();
+    if (!opciones) { // Solo para campos de texto, no para dropdowns
+      setEditando(true);
+    }
+  }, [opciones]);
+
+  const manejarMouseEnter = useCallback((e) => {
+    // Manejar tanto Shift+hover como arrastre
+    onCellMouseEnter(filaIdx, columna, e);
+  }, [filaIdx, columna, onCellMouseEnter]);
+
+  const finalizarEdicion = useCallback(() => {
+    setEditando(false);
+  }, []);
+
+  const manejarKeyDown = useCallback((e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') {
+      e.preventDefault();
+      finalizarEdicion();
+    } else if (e.key === 'Escape') {
+      if (inputRef.current) {
+        inputRef.current.value = valor || '';
+      }
+      finalizarEdicion();
+    }
+  }, [valor, finalizarEdicion]);
+
+  const manejarChange = useCallback((nuevoValor) => {
+    onChange(nuevoValor);
+  }, [onChange]);
+
+  // Activar edición cuando se selecciona y se empieza a escribir
+  useEffect(() => {
+    if (esSeleccionada && !editando) {
+      const manejarTeclaParaEditar = (e) => {
+        // Solo si el evento viene de esta celda específica
+        if (document.activeElement === celdaRef.current || !document.activeElement || document.activeElement === document.body) {
+          const char = e.key;
+          if (char.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && !opciones) {
+            e.preventDefault();
+            setEditando(true);
+            // Establecer el valor inicial al carácter presionado
+            setTimeout(() => {
+              if (inputRef.current) {
+                inputRef.current.value = char;
+                inputRef.current.focus();
+                onChange(char);
+              }
+            }, 0);
+          } else if ((e.key === 'F2' || e.key === 'Enter') && !opciones) {
+            e.preventDefault();
+            setEditando(true);
+          }
+        }
+      };
+
+      document.addEventListener('keydown', manejarTeclaParaEditar);
+      return () => document.removeEventListener('keydown', manejarTeclaParaEditar);
+    }
+  }, [esSeleccionada, editando, onChange, opciones]);
+
+  // Auto-focus cuando entra en modo edición
+  useEffect(() => {
+    if (editando && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [editando]);
+
+  const estiloError = tieneError ? "border-red-500 bg-red-900/20" : "border-gray-600";
+  const estiloObligatorio = esObligatorio ? "border-yellow-500/50" : "";
+  const estiloSeleccion = esSeleccionada ? "ring-2 ring-blue-400 bg-blue-900/30 border-blue-400" : "";
+  
+  // Nuevo sistema: fondo sutil para rango + bordes específicos estilo Excel
+  const estiloRangoFondo = esRangoSeleccionado && !esSeleccionada ? "bg-blue-500/15" : "";
+  const bordesRango = obtenerBordesRango ? obtenerBordesRango(filaIdx, columna) : "";
+  
+  // Cursor para selección como Excel
+  const cursorStyle = editando ? 'text' : 'cell';
+
+  const manejarClickDropdown = useCallback((e) => {
+    // Para dropdowns, solo seleccionar la celda sin interferir con el dropdown
+    onCellClick(filaIdx, columna, e);
+  }, [filaIdx, columna, onCellClick]);
+
+  // Para campos con opciones (dropdowns) - manejo especial para no interferir
+  if (opciones) {
+    return (
+      <div 
+        ref={celdaRef}
+        tabIndex={0}
+        className={`relative w-full h-full ${estiloSeleccion} ${estiloRangoFondo} ${bordesRango}`}
+        onMouseEnter={manejarMouseEnter}
+        onClick={manejarClickDropdown}
+        style={{ 
+          height: '28px',
+          outline: 'none',
+          cursor: 'default'
+        }}
+      >
+        <select
+          ref={selectRef}
+          className={`w-full h-full bg-gray-800 border-0 text-gray-200 px-1 py-0 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${estiloError} ${estiloObligatorio}`}
+          value={valor || ""}
+          onChange={(e) => manejarChange(e.target.value)}
+          style={{ height: '28px', fontSize: '11px' }}
+        >
+          <option value="">Selecciona...</option>
+          {opciones.map((opt, index) => (
+            <option key={`${opt}-${index}`} value={opt}>{opt}</option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+
+  // Para campos de fecha - mostrar calendar picker inmediatamente al hacer clic
+  if (tipo === 'date') {
+    return (
+      <div 
+        ref={celdaRef}
+        tabIndex={0}
+        className={`relative w-full h-full ${estiloSeleccion} ${estiloRangoFondo} ${bordesRango}`}
+        onMouseEnter={manejarMouseEnter}
+        onClick={manejarClickDropdown}
+        style={{ 
+          height: '28px',
+          outline: 'none',
+          cursor: 'default'
+        }}
+      >
+        <input
+          ref={inputRef}
+          type="date"
+          className={`w-full h-full bg-gray-800 border-0 text-gray-200 px-1 py-0 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer ${estiloError} ${estiloObligatorio}`}
+          value={valor || ""}
+          onChange={(e) => manejarChange(e.target.value)}
+          style={{ height: '28px', fontSize: '11px' }}
+        />
+      </div>
+    );
+  }
+
+  // Para campos de texto - mostrar valor o input según estado
   return (
-    <select
-      className={`w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${className}`}
-      value={value || ""}
-      onChange={e => onChange(e.target.value)}
-      style={{ maxHeight: '200px' }} // Altura máxima para evitar dropdowns muy largos
+    <div 
+      ref={celdaRef}
+      tabIndex={0}
+      className={`relative w-full h-full cursor-pointer ${estiloSeleccion} ${estiloRangoFondo} ${bordesRango} ${editando ? 'z-50' : bordesRango ? 'z-10' : ''}`}
+      onClick={manejarClick}
+      onMouseDown={manejarMouseDown}
+      onDoubleClick={manejarDobleClick}
+      onMouseEnter={manejarMouseEnter}
+      style={{ 
+        outline: 'none',
+        cursor: cursorStyle
+      }}
     >
-      <option value="">Selecciona...</option>
-      {options.map((opt, index) => (
-        <option key={`${opt}-${index}`} value={opt}>{opt}</option>
-      ))}
-    </select>
+      {editando ? (
+        <input
+          ref={inputRef}
+          type={tipo}
+          step={tipo === 'number' ? '0.01' : undefined}
+          className={`w-full h-full bg-gray-800 border-0 text-gray-200 px-1 py-0 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 ${estiloError} ${estiloObligatorio}`}
+          defaultValue={valor || ''}
+          onChange={(e) => manejarChange(e.target.value)}
+          onBlur={finalizarEdicion}
+          onKeyDown={manejarKeyDown}
+          onMouseDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
+          placeholder={placeholder}
+          style={{ 
+            minHeight: '28px',
+            fontSize: '11px',
+            textOverflow: 'clip' // No truncar en modo edición
+          }}
+        />
+      ) : (
+        <div 
+          className={`w-full h-full px-1 py-0 bg-gray-800 border-0 text-gray-200 flex items-center ${estiloError} ${estiloObligatorio}`}
+          title={valor || placeholder} // Tooltip para ver el contenido completo
+        >
+          <span className="truncate text-xs" style={{ fontSize: '11px' }}>
+            {valor || <span className="text-gray-500">{placeholder}</span>}
+          </span>
+        </div>
+      )}
+    </div>
   );
 });
 
@@ -123,6 +340,8 @@ export default function IngresarAclaraciones() {
   // Estados para búsqueda automática de clientes
   const [busquedaAutomaticaHabilitada, setBusquedaAutomaticaHabilitada] = useState(true);
   const [filasYaProcesadas, setFilasYaProcesadas] = useState(new Set());
+  const [debeOrdenar, setDebeOrdenar] = useState(false);
+  const [busquedaEnProgreso, setBusquedaEnProgreso] = useState(false);
 
   // Estados para modal de selección de clientes
   const [modalSeleccionCliente, setModalSeleccionCliente] = useState({
@@ -194,6 +413,79 @@ export default function IngresarAclaraciones() {
     };
   }, [limpiarSeleccion]);
 
+  // Función para ordenar filas por BLOQUE y CLIENTE
+  const ordenarFilasPorBloqueYCliente = useCallback(() => {
+    console.log('🚀 Iniciando función ordenarFilasPorBloqueYCliente...');
+    setFilas(prev => {
+      console.log(`📝 Filas antes del ordenamiento: ${prev.length}`);
+      
+      const filasOrdenadas = [...prev].sort((a, b) => {
+        // Primero ordenar por BLOQUE
+        const bloqueA = a.BLOQUE || '';
+        const bloqueB = b.BLOQUE || '';
+        
+        if (bloqueA !== bloqueB) {
+          // Orden específico para bloques: SIN2, SIN3, SIN4, etc.
+          const ordenBloque = ['SIN2', 'SIN3', 'SIN4', 'SIN5', 'SIN6'];
+          const indexA = ordenBloque.indexOf(bloqueA);
+          const indexB = ordenBloque.indexOf(bloqueB);
+          
+          // Si ambos están en la lista de orden específico
+          if (indexA !== -1 && indexB !== -1) {
+            return indexA - indexB;
+          }
+          // Si solo uno está en la lista, ese va primero
+          if (indexA !== -1) return -1;
+          if (indexB !== -1) return 1;
+          // Si ninguno está en la lista, orden alfabético
+          return bloqueA.localeCompare(bloqueB);
+        }
+        
+        // Si tienen el mismo bloque, ordenar por CLIENTE alfabéticamente
+        const clienteA = (a.CLIENTE || a.NOMBRE_DEL_COMERCIO || '').toLowerCase();
+        const clienteB = (b.CLIENTE || b.NOMBRE_DEL_COMERCIO || '').toLowerCase();
+        return clienteA.localeCompare(clienteB);
+      });
+      
+      console.log('📋 Filas reordenadas por bloque y cliente después de búsqueda automática');
+      console.log(`📊 Resultado: ${filasOrdenadas.length} filas ordenadas`);
+      
+      // Mostrar primeras 3 filas para verificar el orden
+      if (filasOrdenadas.length > 0) {
+        console.log('🔍 Primeras filas después del ordenamiento:');
+        filasOrdenadas.slice(0, 3).forEach((fila, idx) => {
+          console.log(`  ${idx + 1}. BLOQUE: ${fila.BLOQUE || 'N/A'}, CLIENTE: ${fila.CLIENTE || fila.NOMBRE_DEL_COMERCIO || 'N/A'}`);
+        });
+      }
+      
+      return filasOrdenadas;
+    });
+  }, []);
+
+  // UseEffect para detectar cuando se completan las búsquedas automáticas y activar ordenamiento
+  useEffect(() => {
+    // Solo ejecutar cuando hay filas con BLOQUE (que significa que se hizo la búsqueda automática)
+    const filasConBloque = filas.filter(fila => fila.BLOQUE && fila.BLOQUE.trim() !== '');
+    
+    if (filasConBloque.length > 0 && !busquedaEnProgreso) {
+      console.log(`🎯 Detectadas ${filasConBloque.length} filas con BLOQUE, activando ordenamiento automático...`);
+      setTimeout(() => {
+        setDebeOrdenar(true);
+      }, 1000);
+    }
+  }, [filas, busquedaEnProgreso]);
+
+  // UseEffect separado para manejar el ordenamiento cuando se indica
+  useEffect(() => {
+    console.log(`🎯 UseEffect ordenamiento - debeOrdenar: ${debeOrdenar}`);
+    if (debeOrdenar) {
+      console.log('🔄 Ejecutando ordenamiento por bloque y cliente...');
+      ordenarFilasPorBloqueYCliente();
+      setDebeOrdenar(false); // Reset del flag
+      console.log('✅ Flag debeOrdenar reseteado');
+    }
+  }, [debeOrdenar, ordenarFilasPorBloqueYCliente]);
+
   // 🔍 BÚSQUEDA AUTOMÁTICA DE CLIENTE POR CAMBIOS EN FILAS
   useEffect(() => {
     if (!busquedaAutomaticaHabilitada) return;
@@ -263,6 +555,9 @@ export default function IngresarAclaraciones() {
             setFilasYaProcesadas(prev => new Set([...prev, claveUnica]));
           }
         }
+        
+        console.log(`✅ Búsqueda automática completada para ${filasParaProcesar.length} filas`);
+        
       } catch (error) {
         console.error('❌ Error en búsqueda automática general:', error);
       }
@@ -272,7 +567,7 @@ export default function IngresarAclaraciones() {
     const timeoutId = setTimeout(buscarClientesAutomaticamente, 1000);
     
     return () => clearTimeout(timeoutId);
-  }, [filas, busquedaAutomaticaHabilitada, filasYaProcesadas]); // Se ejecuta cuando cambian las filas o la configuración
+  }, [filas, busquedaAutomaticaHabilitada, ordenarFilasPorBloqueYCliente]); // Se ejecuta cuando cambian las filas o la configuración - removí filasYaProcesadas para evitar bucles
 
   // Función para validar campo según tipo de tabla
   function validarCampo(campo, valor, tipoTabla) {
@@ -409,63 +704,342 @@ export default function IngresarAclaraciones() {
 
   const seleccionarCelda = useCallback((fila, columna, event) => {
     if (event.shiftKey && celdaSeleccionada) {
-      // Selección de rango con Shift
-      setRangoSeleccionado({
-        inicio: celdaSeleccionada,
-        fin: { fila, columna }
-      });
+      // Selección de rango con Shift - expandir desde la celda original
+      if (!rangoSeleccionado) {
+        // Crear nuevo rango desde la celda seleccionada actual
+        setRangoSeleccionado({
+          inicio: celdaSeleccionada,
+          fin: { fila, columna }
+        });
+      } else {
+        // Expandir rango existente manteniendo el punto de inicio original
+        setRangoSeleccionado({
+          inicio: rangoSeleccionado.inicio,
+          fin: { fila, columna }
+        });
+      }
+      // Actualizar la celda seleccionada actual
+      setCeldaSeleccionada({ fila, columna });
     } else {
-      // Selección individual
+      // Selección individual - limpiar rango y preparar para arrastre
       setCeldaSeleccionada({ fila, columna });
       setRangoSeleccionado(null);
+      
+      // Solo iniciar arrastre en mousedown, pero NO si es desde un elemento de formulario
+      if (event.type === 'mousedown' && event.target && 
+          event.target.tagName !== 'SELECT' && 
+          event.target.tagName !== 'INPUT') {
+        setInicioArrastre({ fila, columna });
+        setArrastrando(true);
+      }
     }
     setEscritura('');
-  }, [celdaSeleccionada]);
+  }, [celdaSeleccionada, rangoSeleccionado]);
 
   const expandirSeleccion = useCallback((fila, columna, event) => {
-    if (event.shiftKey && celdaSeleccionada) {
-      setRangoSeleccionado({
-        inicio: celdaSeleccionada,
+    if (arrastrando && inicioArrastre) {
+      // Arrastre con mouse - crear/actualizar rango
+      const nuevoRango = {
+        inicio: inicioArrastre,
         fin: { fila, columna }
-      });
+      };
+      setRangoSeleccionado(nuevoRango);
+      setCeldaSeleccionada({ fila, columna });
+    } else if (event && event.shiftKey && celdaSeleccionada) {
+      // Expandir selección mientras se mantiene Shift presionado
+      if (!rangoSeleccionado) {
+        setRangoSeleccionado({
+          inicio: celdaSeleccionada,
+          fin: { fila, columna }
+        });
+      } else {
+        setRangoSeleccionado({
+          inicio: rangoSeleccionado.inicio,
+          fin: { fila, columna }
+        });
+      }
     }
+  }, [celdaSeleccionada, rangoSeleccionado, arrastrando, inicioArrastre]);
+
+  // Función para verificar si una celda está seleccionada
+  const esCeldaSeleccionada = useCallback((fila, columna) => {
+    return celdaSeleccionada && 
+           celdaSeleccionada.fila === fila && 
+           celdaSeleccionada.columna === columna;
   }, [celdaSeleccionada]);
+
+  // Función para verificar si una celda está en el rango seleccionado
+  const esCeldaEnRango = useCallback((fila, columna) => {
+    if (!rangoSeleccionado) {
+      return false;
+    }
+    
+    const { inicio, fin } = rangoSeleccionado;
+    const filaInicio = Math.min(inicio.fila, fin.fila);
+    const filaFin = Math.max(inicio.fila, fin.fila);
+    
+    const colIndiceInicio = Math.min(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
+    const colIndiceFin = Math.max(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
+    const colIndiceActual = columnas.indexOf(columna);
+    
+    const enRango = fila >= filaInicio && 
+           fila <= filaFin && 
+           colIndiceActual >= colIndiceInicio && 
+           colIndiceActual <= colIndiceFin;
+    
+    return enRango;
+  }, [rangoSeleccionado, columnas]);
+
+  // Función para obtener los bordes del rango (estilo Excel) - usando outline para mejor visibilidad
+  const obtenerBordesRango = useCallback((fila, columna) => {
+    if (!rangoSeleccionado) return '';
+    
+    const { inicio, fin } = rangoSeleccionado;
+    const filaInicio = Math.min(inicio.fila, fin.fila);
+    const filaFin = Math.max(inicio.fila, fin.fila);
+    
+    const colIndiceInicio = Math.min(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
+    const colIndiceFin = Math.max(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
+    const colIndiceActual = columnas.indexOf(columna);
+    
+    const enRango = fila >= filaInicio && 
+           fila <= filaFin && 
+           colIndiceActual >= colIndiceInicio && 
+           colIndiceActual <= colIndiceFin;
+    
+    if (!enRango) return '';
+    
+    // Para celdas individuales (selección de una sola celda), usar outline para contorno completo
+    if (filaInicio === filaFin && colIndiceInicio === colIndiceFin) {
+      return 'outline outline-4 outline-blue-400 outline-offset-[-4px]';
+    }
+    
+    // Para rangos múltiples, determinar qué bordes necesita esta celda
+    let bordes = [];
+    
+    if (fila === filaInicio) bordes.push('border-t-4 border-t-blue-400');
+    if (fila === filaFin) bordes.push('border-b-4 border-b-blue-400');
+    if (colIndiceActual === colIndiceInicio) bordes.push('border-l-4 border-l-blue-400');
+    if (colIndiceActual === colIndiceFin) bordes.push('border-r-4 border-r-blue-400');
+    
+    return bordes.join(' ');
+  }, [rangoSeleccionado, columnas]);
+
+  // Función mejorada para copy/paste
+  const manejarCopyPaste = useCallback((event) => {
+    if (event.ctrlKey || event.metaKey) {
+      if (event.key === 'c' || event.key === 'C') {
+        // Copiar
+        event.preventDefault();
+        if (celdaSeleccionada || rangoSeleccionado) {
+          let datosCopia = [];
+          
+          if (rangoSeleccionado) {
+            const { inicio, fin } = rangoSeleccionado;
+            const filaInicio = Math.min(inicio.fila, fin.fila);
+            const filaFin = Math.max(inicio.fila, fin.fila);
+            const colInicio = Math.min(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
+            const colFin = Math.max(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
+            
+            for (let f = filaInicio; f <= filaFin; f++) {
+              const filaCopia = [];
+              for (let c = colInicio; c <= colFin; c++) {
+                filaCopia.push(filas[f]?.[columnas[c]] || '');
+              }
+              datosCopia.push(filaCopia);
+            }
+          } else if (celdaSeleccionada) {
+            datosCopia = [[filas[celdaSeleccionada.fila]?.[celdaSeleccionada.columna] || '']];
+          }
+          
+          setDatosPortapapeles(datosCopia);
+          
+          // También copiar al portapapeles del sistema
+          const textoParaPortapapeles = datosCopia.map(fila => fila.join('\t')).join('\n');
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(textoParaPortapapeles);
+          }
+        }
+      } else if (event.key === 'v' || event.key === 'V') {
+        // Pegar
+        event.preventDefault();
+        if (datosPortapapeles && celdaSeleccionada) {
+          const filaInicio = celdaSeleccionada.fila;
+          const colInicio = columnas.indexOf(celdaSeleccionada.columna);
+          
+          setFilas(prev => {
+            const nuevasFilas = [...prev];
+            
+            datosPortapapeles.forEach((filaCopia, offsetFila) => {
+              const filaDestino = filaInicio + offsetFila;
+              if (filaDestino < nuevasFilas.length) {
+                filaCopia.forEach((valor, offsetCol) => {
+                  const colDestino = colInicio + offsetCol;
+                  if (colDestino < columnas.length) {
+                    const columnaDestino = columnas[colDestino];
+                    nuevasFilas[filaDestino] = {
+                      ...nuevasFilas[filaDestino],
+                      [columnaDestino]: valor
+                    };
+                  }
+                });
+              }
+            });
+            
+            return nuevasFilas;
+          });
+        }
+      }
+    }
+  }, [celdaSeleccionada, rangoSeleccionado, datosPortapapeles, filas, columnas]);
+
+  // Navegación por teclado como Excel con Ctrl+Flechas y Shift
+  const navegarPorTeclado = useCallback((event) => {
+    if (!celdaSeleccionada) return;
+    
+    // No navegar si estamos editando una celda de texto
+    const elementoActivo = document.activeElement;
+    const esInputEditando = elementoActivo && elementoActivo.tagName === 'INPUT';
+    
+    if (esInputEditando) return;
+    
+    let nuevaCelda = null;
+    const filaActual = celdaSeleccionada.fila;
+    const columnaActual = celdaSeleccionada.columna;
+    const indiceColumnaActual = columnas.indexOf(columnaActual);
+    
+    const esCtrl = event.ctrlKey;
+    const esShift = event.shiftKey;
+    
+    switch (event.key) {
+      case 'ArrowUp':
+        event.preventDefault();
+        if (esCtrl) {
+          // Ctrl+Arriba: ir a la primera fila
+          nuevaCelda = { fila: 0, columna: columnaActual };
+        } else if (filaActual > 0) {
+          nuevaCelda = { fila: filaActual - 1, columna: columnaActual };
+        }
+        break;
+        
+      case 'ArrowDown':
+        event.preventDefault();
+        if (esCtrl) {
+          // Ctrl+Abajo: ir a la última fila con datos
+          nuevaCelda = { fila: filas.length - 1, columna: columnaActual };
+        } else if (filaActual < filas.length - 1) {
+          nuevaCelda = { fila: filaActual + 1, columna: columnaActual };
+        }
+        break;
+        
+      case 'ArrowLeft':
+        event.preventDefault();
+        if (esCtrl) {
+          // Ctrl+Izquierda: ir a la primera columna
+          nuevaCelda = { fila: filaActual, columna: columnas[0] };
+        } else if (indiceColumnaActual > 0) {
+          nuevaCelda = { fila: filaActual, columna: columnas[indiceColumnaActual - 1] };
+        }
+        break;
+        
+      case 'ArrowRight':
+        event.preventDefault();
+        if (esCtrl) {
+          // Ctrl+Derecha: ir a la última columna
+          nuevaCelda = { fila: filaActual, columna: columnas[columnas.length - 1] };
+        } else if (indiceColumnaActual < columnas.length - 1) {
+          nuevaCelda = { fila: filaActual, columna: columnas[indiceColumnaActual + 1] };
+        }
+        break;
+        
+      case 'Tab':
+        event.preventDefault();
+        if (indiceColumnaActual < columnas.length - 1) {
+          nuevaCelda = { fila: filaActual, columna: columnas[indiceColumnaActual + 1] };
+        } else if (filaActual < filas.length - 1) {
+          // Si estamos en la última columna, ir a la primera columna de la siguiente fila
+          nuevaCelda = { fila: filaActual + 1, columna: columnas[0] };
+        }
+        break;
+        
+      case 'Enter':
+        event.preventDefault();
+        if (filaActual < filas.length - 1) {
+          nuevaCelda = { fila: filaActual + 1, columna: columnaActual };
+        }
+        break;
+        
+      case 'Home':
+        event.preventDefault();
+        if (esCtrl) {
+          // Ctrl+Home: ir a la primera celda (0,0)
+          nuevaCelda = { fila: 0, columna: columnas[0] };
+        } else {
+          // Home: ir al inicio de la fila actual
+          nuevaCelda = { fila: filaActual, columna: columnas[0] };
+        }
+        break;
+        
+      case 'End':
+        event.preventDefault();
+        if (esCtrl) {
+          // Ctrl+End: ir a la última celda con datos
+          nuevaCelda = { fila: filas.length - 1, columna: columnas[columnas.length - 1] };
+        } else {
+          // End: ir al final de la fila actual
+          nuevaCelda = { fila: filaActual, columna: columnas[columnas.length - 1] };
+        }
+        break;
+    }
+    
+    if (nuevaCelda) {
+      if (esShift && celdaSeleccionada) {
+        // Shift: Expandir o crear selección de rango
+        if (!rangoSeleccionado) {
+          // Crear nuevo rango desde la celda actual
+          setRangoSeleccionado({
+            inicio: celdaSeleccionada,
+            fin: nuevaCelda
+          });
+        } else {
+          // Expandir rango existente
+          setRangoSeleccionado({
+            inicio: rangoSeleccionado.inicio, // Mantener el punto de inicio original
+            fin: nuevaCelda
+          });
+        }
+        // También actualizar la celda seleccionada
+        setCeldaSeleccionada(nuevaCelda);
+      } else {
+        // Sin Shift: Mover selección simple
+        setCeldaSeleccionada(nuevaCelda);
+        setRangoSeleccionado(null);
+      }
+      setEscritura('');
+    }
+  }, [celdaSeleccionada, rangoSeleccionado, columnas, filas.length]);
 
   const manejarEscritura = useCallback((event) => {
     if (!celdaSeleccionada) return;
+    
+    // No manejar escritura si estamos en un input activo o dropdown
+    const elementoActivo = document.activeElement;
+    const esInputActivo = elementoActivo && (
+      elementoActivo.tagName === 'INPUT' || 
+      elementoActivo.tagName === 'SELECT' || 
+      elementoActivo.tagName === 'TEXTAREA'
+    );
+    
+    if (esInputActivo) return;
     
     const char = event.key;
     
     // Permitir solo caracteres imprimibles y algunos especiales
     if (char.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
-      event.preventDefault();
-      
-      if (rangoSeleccionado) {
-        // Escribir en todas las celdas del rango
-        const { inicio, fin } = rangoSeleccionado;
-        const colIndiceInicio = columnas.indexOf(inicio.columna);
-        const colIndiceFin = columnas.indexOf(fin.columna);
-        
-        setFilas(prev => prev.map((fila, filaIdx) => {
-          if (filaIdx >= inicio.fila && filaIdx <= fin.fila) {
-            const nuevaFila = { ...fila };
-            for (let c = colIndiceInicio; c <= colIndiceFin; c++) {
-              nuevaFila[columnas[c]] = char;
-            }
-            return nuevaFila;
-          }
-          return fila;
-        }));
-        setEscritura(char);
-      } else {
-        // Escribir en celda individual - concatenar
-        setEscritura(prev => prev + char);
-        const valorActual = filas[celdaSeleccionada.fila]?.[celdaSeleccionada.columna] || '';
-        const nuevoValor = escritura + char;
-        handleCellChange(celdaSeleccionada.fila, celdaSeleccionada.columna, nuevoValor);
-      }
+      // La escritura se maneja dentro del componente CeldaGrid ahora
+      return;
     }
-  }, [celdaSeleccionada, rangoSeleccionado, escritura, filas, handleCellChange, columnas]);
+  }, [celdaSeleccionada]);
 
   const finalizarSeleccion = useCallback((event) => {
     if (!celdaSeleccionada) return;
@@ -476,11 +1050,13 @@ export default function IngresarAclaraciones() {
       if (rangoSeleccionado) {
         // Limpiar rango múltiple
         const { inicio, fin } = rangoSeleccionado;
-        const colIndiceInicio = columnas.indexOf(inicio.columna);
-        const colIndiceFin = columnas.indexOf(fin.columna);
+        const filaInicio = Math.min(inicio.fila, fin.fila);
+        const filaFin = Math.max(inicio.fila, fin.fila);
+        const colIndiceInicio = Math.min(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
+        const colIndiceFin = Math.max(columnas.indexOf(inicio.columna), columnas.indexOf(fin.columna));
         
         setFilas(prev => prev.map((fila, filaIdx) => {
-          if (filaIdx >= inicio.fila && filaIdx <= fin.fila) {
+          if (filaIdx >= filaInicio && filaIdx <= filaFin) {
             const nuevaFila = { ...fila };
             for (let c = colIndiceInicio; c <= colIndiceFin; c++) {
               nuevaFila[columnas[c]] = '';
@@ -489,17 +1065,21 @@ export default function IngresarAclaraciones() {
           }
           return fila;
         }));
+        
+        console.log(`🗑️ Limpiando rango: filas ${filaInicio}-${filaFin}, columnas ${colIndiceInicio}-${colIndiceFin}`);
       } else {
         // Limpiar celda individual
         handleCellChange(celdaSeleccionada.fila, celdaSeleccionada.columna, '');
+        console.log(`🗑️ Limpiando celda: ${celdaSeleccionada.fila}-${celdaSeleccionada.columna}`);
       }
       
       setEscritura('');
-    } else if (event.key === 'Enter' || event.key === 'Tab' || event.key === 'Escape') {
-      // Finalizar escritura y limpiar estado
+    } else if (event.key === 'Escape') {
+      // Escape cancela la selección de rango
+      setRangoSeleccionado(null);
       setEscritura('');
     }
-  }, [celdaSeleccionada, rangoSeleccionado, escritura, handleCellChange, columnas]);
+  }, [celdaSeleccionada, rangoSeleccionado, handleCellChange, columnas]);
 
   const estaEnRango = useCallback((fila, columna) => {
     if (!rangoSeleccionado) return false;
@@ -581,17 +1161,59 @@ export default function IngresarAclaraciones() {
   // Agregar event listeners globales
   useEffect(() => {
     const handleKeyDown = (event) => {
-      copiarSeleccion(event);
-      pegarSeleccion(event);
-      manejarEscritura(event);
-      finalizarSeleccion(event);
+      // Solo manejar eventos si no estamos escribiendo en un input/select activo
+      const elementoActivo = document.activeElement;
+      const esElementoFormulario = elementoActivo && (
+        elementoActivo.tagName === 'INPUT' || 
+        elementoActivo.tagName === 'SELECT' || 
+        elementoActivo.tagName === 'TEXTAREA'
+      );
+      
+      // Permitir navegación global siempre, pero copy/paste y escritura solo cuando no hay elemento activo
+      navegarPorTeclado(event);
+      
+      if (!esElementoFormulario) {
+        copiarSeleccion(event);
+        pegarSeleccion(event);
+        copiarSeleccion(event);
+        pegarSeleccion(event);
+        manejarCopyPaste(event);
+        manejarEscritura(event);
+        finalizarSeleccion(event);
+      }
     };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [copiarSeleccion, pegarSeleccion, manejarEscritura, finalizarSeleccion]);
+  }, [navegarPorTeclado, copiarSeleccion, pegarSeleccion, manejarCopyPaste, manejarEscritura, finalizarSeleccion]);
+
+  // Event listeners para manejo de arrastre con mouse
+  useEffect(() => {
+    const handleMouseUp = () => {
+      if (arrastrando) {
+        setArrastrando(false);
+        setInicioArrastre(null);
+      }
+    };
+
+    const handleMouseLeave = () => {
+      // Finalizar arrastre si el mouse sale de la ventana
+      if (arrastrando) {
+        setArrastrando(false);
+        setInicioArrastre(null);
+      }
+    };
+
+    document.addEventListener('mouseup', handleMouseUp);
+    document.addEventListener('mouseleave', handleMouseLeave);
+    
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.removeEventListener('mouseleave', handleMouseLeave);
+    };
+  }, [arrastrando]);
 
   // Función para normalizar fechas
   function normalizarFecha(valor) {
@@ -735,8 +1357,54 @@ export default function IngresarAclaraciones() {
           console.log('📋 Fila enriquecida:', filaEnriquecida);
           return filaEnriquecida;
         } else {
-          // Si hay múltiples clientes, mostrar modal para selección
-          console.log('🔔 Múltiples clientes encontrados, mostrando modal para selección:', clientes);
+          // Si hay múltiples clientes, verificar si alguno coincide exactamente por nombre
+          console.log('🔔 Múltiples clientes encontrados:', clientes);
+          
+          // Verificar si todos los clientes tienen el mismo nombre (duplicados del mismo cliente)
+          const nombresUnicos = [...new Set(clientes.map(c => c.nombre_completo.trim().toLowerCase()))];
+          if (nombresUnicos.length === 1) {
+            // Todos los clientes tienen el mismo nombre, seleccionar automáticamente el primero
+            const clienteSeleccionado = clientes[0];
+            console.log('✅ Todos los clientes tienen el mismo nombre, seleccionando automáticamente:', clienteSeleccionado);
+            
+            const filaEnriquecida = {
+              ...filaData,
+              CLIENTE: clienteSeleccionado.nombre_completo || filaData.CLIENTE,
+              SUCURSAL: clienteSeleccionado.sucursal || filaData.SUCURSAL,
+              BLOQUE: clienteSeleccionado.bloque || filaData.BLOQUE,
+              EUROSKIN: clienteSeleccionado.es_euroskin ? "true" : "false"
+            };
+
+            console.log('📋 Fila enriquecida con cliente de mismo nombre:', filaEnriquecida);
+            return filaEnriquecida;
+          }
+          
+          // Buscar coincidencia exacta por nombre del cliente (si está disponible en la fila)
+          let clienteExacto = null;
+          if (filaData.CLIENTE || filaData.NOMBRE_DEL_COMERCIO) {
+            const nombreBuscado = (filaData.CLIENTE || filaData.NOMBRE_DEL_COMERCIO).trim().toLowerCase();
+            clienteExacto = clientes.find(cliente => 
+              cliente.nombre_completo.trim().toLowerCase() === nombreBuscado
+            );
+            
+            if (clienteExacto) {
+              console.log('✅ Cliente con nombre exacto encontrado automáticamente:', clienteExacto);
+              // Usar el cliente con coincidencia exacta
+              const filaEnriquecida = {
+                ...filaData,
+                CLIENTE: clienteExacto.nombre_completo || filaData.CLIENTE,
+                SUCURSAL: clienteExacto.sucursal || filaData.SUCURSAL,
+                BLOQUE: clienteExacto.bloque || filaData.BLOQUE,
+                EUROSKIN: clienteExacto.es_euroskin ? "true" : "false"
+              };
+
+              console.log('📋 Fila enriquecida con cliente exacto:', filaEnriquecida);
+              return filaEnriquecida;
+            }
+          }
+          
+          // Si no hay coincidencia exacta por nombre, mostrar modal para selección
+          console.log('🔔 No hay coincidencia exacta por nombre, mostrando modal para selección');
           
           // Analizar si todos los clientes tienen la misma terminación de tarjeta
           const terminacionesTarjeta = clientes.map(c => c.terminacion_real).filter(t => t);
@@ -824,6 +1492,8 @@ export default function IngresarAclaraciones() {
 
   // Función para manejar pegado de datos
   function manejarPegado(e) {
+    console.log('🔍 Iniciando pegado de datos...');
+    
     // --- EFEVOO horizontal ---
     // Encabezados típicos EFEVOO (con variaciones)
     const efevooHeaders = [
@@ -892,11 +1562,17 @@ export default function IngresarAclaraciones() {
 
     e.preventDefault();
     const paste = (e.clipboardData || window.clipboardData).getData('text');
-    if (!paste) return;
+    console.log('📋 Datos pegados:', paste);
+    if (!paste) {
+      console.log('❌ No hay datos para pegar');
+      return;
+    }
     const rows = paste.split(/\r?\n/).filter(row => row.trim());
+    console.log('📊 Filas detectadas:', rows.length, rows);
 
     // Detectar formato CREDOMATIC (formato específico con "DATOS DE LA TRANSACCIÓN")
     if (paste.includes("DATOS DE LA TRANSACCIÓN") || paste.includes("No. caso:") || paste.includes("Afiliado Pagador:")) {
+      console.log('🏪 Formato CREDOMATIC detectado');
       const obj = {};
       
       // Extraer información específica de CREDOMATIC
@@ -1629,6 +2305,38 @@ export default function IngresarAclaraciones() {
           }
           return newRow;
         });
+        console.log('✅ Filas procesadas:', newRows.length, newRows);
+        
+        // Ordenar las nuevas filas por BLOQUE y luego por CLIENTE alfabéticamente
+        const filasOrdenadas = newRows.sort((a, b) => {
+          // Primero ordenar por BLOQUE
+          const bloqueA = a.BLOQUE || '';
+          const bloqueB = b.BLOQUE || '';
+          
+          if (bloqueA !== bloqueB) {
+            // Orden específico para bloques: SIN2, SIN3, SIN4, etc.
+            const ordenBloque = ['SIN2', 'SIN3', 'SIN4', 'SIN5', 'SIN6'];
+            const indexA = ordenBloque.indexOf(bloqueA);
+            const indexB = ordenBloque.indexOf(bloqueB);
+            
+            // Si ambos están en la lista de orden específico
+            if (indexA !== -1 && indexB !== -1) {
+              return indexA - indexB;
+            }
+            // Si solo uno está en la lista, ese va primero
+            if (indexA !== -1) return -1;
+            if (indexB !== -1) return 1;
+            // Si ninguno está en la lista, orden alfabético
+            return bloqueA.localeCompare(bloqueB);
+          }
+          
+          // Si tienen el mismo bloque, ordenar por CLIENTE alfabéticamente
+          const clienteA = (a.CLIENTE || a.NOMBRE_DEL_COMERCIO || '').toLowerCase();
+          const clienteB = (b.CLIENTE || b.NOMBRE_DEL_COMERCIO || '').toLowerCase();
+          return clienteA.localeCompare(clienteB);
+        });
+        console.log('📋 Filas ordenadas por bloque y cliente:', filasOrdenadas);
+        
         setFilas(prev => {
           // Si los datos previos son las 10 filas vacías iniciales, reemplazarlas
           const todasVacias = prev.every(fila => {
@@ -1644,7 +2352,7 @@ export default function IngresarAclaraciones() {
           });
           
           if (todasVacias) {
-            return newRows;
+            return filasOrdenadas;
           }
           
           // Si hay datos previos, llenar filas vacías primero
@@ -1658,11 +2366,11 @@ export default function IngresarAclaraciones() {
             return valoresConDatos.length === 0;
           }).length;
           
-          if (newRows.length <= filasVacias) {
+          if (filasOrdenadas.length <= filasVacias) {
             // Si hay suficientes filas vacías, llenarlas
             const nuevasFilas = [...prev];
             let contadorLlenado = 0;
-            for (let i = 0; i < nuevasFilas.length && contadorLlenado < newRows.length; i++) {
+            for (let i = 0; i < nuevasFilas.length && contadorLlenado < filasOrdenadas.length; i++) {
               const fila = nuevasFilas[i];
               const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
                 if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
@@ -1671,7 +2379,7 @@ export default function IngresarAclaraciones() {
                 return value !== "" && value !== null && value !== undefined;
               });
               if (valoresConDatos.length === 0) {
-                nuevasFilas[i] = newRows[contadorLlenado];
+                nuevasFilas[i] = filasOrdenadas[contadorLlenado];
                 contadorLlenado++;
               }
             }
@@ -1682,7 +2390,7 @@ export default function IngresarAclaraciones() {
             let contadorLlenado = 0;
             
             // Llenar las filas vacías existentes
-            for (let i = 0; i < nuevasFilas.length && contadorLlenado < newRows.length; i++) {
+            for (let i = 0; i < nuevasFilas.length && contadorLlenado < filasOrdenadas.length; i++) {
               const fila = nuevasFilas[i];
               const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
                 if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
@@ -1691,22 +2399,23 @@ export default function IngresarAclaraciones() {
                 return value !== "" && value !== null && value !== undefined;
               });
               if (valoresConDatos.length === 0) {
-                nuevasFilas[i] = newRows[contadorLlenado];
+                nuevasFilas[i] = filasOrdenadas[contadorLlenado];
                 contadorLlenado++;
               }
             }
             
             // Agregar las filas restantes al principio
-            const filasRestantes = newRows.slice(contadorLlenado);
+            const filasRestantes = filasOrdenadas.slice(contadorLlenado);
             return [...filasRestantes, ...nuevasFilas];
           }
         });
-        setMensaje(`✅ Se pegaron ${newRows.length} filas y se mapearon los encabezados: ${mapeoDetectado.join(', ')}`);
+        setMensaje(`✅ Se pegaron ${filasOrdenadas.length} filas y se mapearon los encabezados: ${mapeoDetectado.join(', ')} (ordenadas por bloque y cliente)`);
         setTimeout(() => setMensaje(""), 4000);
         e.target.value = "";
         return;
       }
     
+    console.log('❌ No se detectaron encabezados válidos');
     setMensaje("❌ No se detectaron encabezados válidos");
     setTimeout(() => setMensaje(""), 4000);
   }
@@ -1939,6 +2648,17 @@ export default function IngresarAclaraciones() {
               {busquedaAutomaticaHabilitada ? '🔄 Auto ON' : '⏸️ Auto OFF'}
             </button>
             <button
+              onClick={() => {
+                console.log('🎯 Botón manual de ordenamiento presionado');
+                ordenarFilasPorBloqueYCliente();
+              }}
+              className="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition"
+              disabled={guardando}
+              title="Ordenar manualmente por bloque y cliente"
+            >
+              📋 Ordenar
+            </button>
+            <button
               onClick={limpiarDatos}
               className="px-4 py-2 bg-gray-700 text-gray-200 rounded hover:bg-gray-600 transition"
               disabled={guardando}
@@ -1962,6 +2682,25 @@ export default function IngresarAclaraciones() {
           </div>
         )}
 
+        {/* Indicadores de funcionalidad Excel */}
+        <div className="mb-3 flex flex-wrap gap-2 text-xs text-gray-400">
+          <span className="bg-gray-700 px-2 py-1 rounded">
+            📋 Ctrl+C = Copiar | Ctrl+V = Pegar
+          </span>
+          <span className="bg-gray-700 px-2 py-1 rounded">
+            🖱️ Click = Seleccionar | Arrastrar = Selección múltiple
+          </span>
+          <span className="bg-gray-700 px-2 py-1 rounded">
+            ⌨️ Flechas = Navegar | Shift+Flechas = Expandir selección
+          </span>
+          <span className="bg-gray-700 px-2 py-1 rounded">
+            🚀 Ctrl+Flechas = Saltar al extremo | Ctrl+Home/End = Esquinas
+          </span>
+          <span className="bg-gray-700 px-2 py-1 rounded">
+            ✏️ Escribir directamente | 🗑️ Delete = Borrar
+          </span>
+        </div>
+
         {mensaje && (
           <div className={`mb-4 p-3 rounded ${
             mensaje.startsWith('✅') ? 'bg-green-900 text-green-200' : 
@@ -1984,26 +2723,44 @@ export default function IngresarAclaraciones() {
           />
         </div>
 
-        <div className="bg-gray-800 rounded-lg shadow overflow-hidden mb-4">
-          <div className="overflow-x-auto custom-scrollbar">
-            <table className="min-w-full border-collapse">
+        <div className="bg-gray-800 rounded-lg shadow overflow-hidden mb-4" 
+             style={{ paddingBottom: '8px' }}
+             onMouseMove={(e) => {
+               // Manejar arrastre de selección
+               if (arrastrando && inicioArrastre) {
+                 // Encontrar la celda más cercana al cursor
+                 const element = document.elementFromPoint(e.clientX, e.clientY);
+                 if (element) {
+                   // Buscar el td que contiene los datos
+                   const celda = element.closest('td[data-fila][data-columna]');
+                   if (celda) {
+                     const fila = parseInt(celda.getAttribute('data-fila'));
+                     const columna = celda.getAttribute('data-columna');
+                     expandirSeleccion(fila, columna, e);
+                   }
+                 }
+               }
+             }}
+             onMouseUp={() => {
+               if (arrastrando) {
+                 setArrastrando(false);
+                 setInicioArrastre(null);
+               }
+             }}>
+          <div className="overflow-x-auto custom-scrollbar" style={{ padding: '2px' }}>
+            <table className="border-collapse" style={{ width: 'auto', tableLayout: 'fixed' }}>
               <thead className="bg-gray-700">
                 <tr>
-                  <th className="px-0 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-700 z-10 w-10 border border-gray-600">#</th>
+                  <th className="px-0 py-1 text-left text-xs font-medium text-gray-300 uppercase tracking-wider sticky left-0 bg-gray-700 z-10 border border-gray-600" style={{ width: '40px', minWidth: '40px', height: '24px' }}>#</th>
                   {columnas.map(col => {
                     const esObligatorio = tiposTabla[tipoTablaSeleccionada]?.camposObligatorios.includes(col);
                     
-                    // Definir anchos específicos para columnas importantes
-                    let anchoColumna = "";
-                    if (col === "NOMBRE_DEL_COMERCIO") anchoColumna = "min-w-[300px]";
-                    else if (col === "CLIENTE") anchoColumna = "min-w-[200px]";
-                    else if (col === "MONTO") anchoColumna = "min-w-[120px]";
-                    else if (col === "NUM_DE_TARJETA") anchoColumna = "min-w-[150px]";
-                    else if (col === "AÑO") anchoColumna = "min-w-[80px]";
+                    // Ancho optimizado para mostrar más datos - 85px cada columna
+                    const anchoColumna = "85px";
                     
                     return (
-                      <th key={col} className={`px-0 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider relative border border-gray-600 ${anchoColumna}`}>
-                        <div className="px-3">
+                      <th key={col} className="px-0 py-1 text-left font-medium text-gray-300 uppercase tracking-tight border border-gray-600" style={{ width: anchoColumna, minWidth: anchoColumna, height: '24px', fontSize: '10px' }}>
+                        <div className="px-1 truncate" title={col.replace(/_/g, ' ')} style={{ fontSize: '10px' }}>
                           {col.replace(/_/g, ' ')}
                           {esObligatorio && (
                             <span className="text-yellow-400 ml-1" title="Campo obligatorio">*</span>
@@ -2012,100 +2769,70 @@ export default function IngresarAclaraciones() {
                       </th>
                     );
                   })}
-                  <th className="px-0 py-2 text-left text-xs font-medium text-gray-300 uppercase tracking-wider w-10 border border-gray-600">
-                    <div className="px-3">Acción</div>
+                  <th className="px-0 py-1 text-left font-medium text-gray-300 uppercase tracking-tight border border-gray-600" style={{ width: '50px', minWidth: '50px', height: '24px', fontSize: '10px' }}>
+                    <div className="px-1" style={{ fontSize: '10px' }}>Acción</div>
                   </th>
                 </tr>
               </thead>
-              <tbody className="bg-gray-800">{/* Cambio de Excel: quitar divide-y */}
+              <tbody className="bg-gray-800" style={{ marginBottom: '6px' }}>
                 {Array.isArray(filas) ? filas.map((fila, idx) => (
                   <tr key={idx} className={`${idx % 2 === 0 ? 'bg-gray-800' : 'bg-gray-750'} hover:bg-gray-700`}>
-                    <td className="px-0 py-0 whitespace-nowrap text-sm text-gray-300 sticky left-0 bg-inherit z-10 border border-gray-600">
-                      <div className="px-3 py-2">{idx + 1}</div>
+                    <td className="px-0 py-0 whitespace-nowrap text-gray-300 sticky left-0 bg-inherit z-10 border border-gray-600" style={{ width: '40px', minWidth: '40px', height: '28px' }}>
+                      <div className="px-1 py-0 text-center" style={{ fontSize: '10px', lineHeight: '28px' }}>{idx + 1}</div>
                     </td>
                     {columnas.map(col => {
                       const esObligatorio = tiposTabla[tipoTablaSeleccionada]?.camposObligatorios.includes(col);
                       const tieneError = erroresValidacion[`${idx}-${col}`];
-                      const estiloError = tieneError ? "border-red-500 bg-red-900/20" : "border-gray-700";
-                      const estiloObligatorio = esObligatorio ? "border-yellow-500/50" : "";
+                      
+                      // Determinar el tipo de celda y opciones
+                      let tipoCelda = 'text';
+                      let opciones = null;
+                      
+                      if (col === 'PROCESADOR' && procesadores.length > 0) {
+                        opciones = procesadores;
+                      } else if (col === 'SUCURSAL' && sucursales.length > 0) {
+                        opciones = sucursales;
+                      } else if (col === 'BLOQUE' && bloques.length > 0) {
+                        opciones = bloques;
+                      } else if (col === 'VENDEDORA' && vendedoras.length > 0) {
+                        opciones = vendedoras;
+                      } else if (col === 'COMENTARIOS' && comentariosComunes.length > 0) {
+                        opciones = comentariosComunes;
+                      } else if (col === 'CAPTURA_CC' && capturaCC.length > 0) {
+                        opciones = capturaCC;
+                      } else if (col === 'EUROSKIN') {
+                        opciones = ['true', 'false'];
+                      } else if (col.includes('FECHA')) {
+                        tipoCelda = 'date';
+                      } else if (col === 'MONTO') {
+                        tipoCelda = 'number';
+                      }
+                      
+                      // Ancho optimizado para mostrar más datos - 85px cada columna
+                      const anchoColumna = "85px";
                       
                       return (
-                        <td key={`${idx}-${col}`} className="px-1 py-1 relative">
-                          {col === 'PROCESADOR' && procesadores.length > 0 ? (
-                            <SelectEditor
-                              value={fila[col]}
-                              onChange={(value) => handleCellChange(idx, col, value)}
-                              options={procesadores}
-                              className={`${estiloError} ${estiloObligatorio}`}
-                            />
-                          ) : col === 'SUCURSAL' && sucursales.length > 0 ? (
-                            <SelectEditor
-                              value={fila[col]}
-                              onChange={(value) => handleCellChange(idx, col, value)}
-                              options={sucursales}
-                              className={`${estiloError} ${estiloObligatorio}`}
-                            />
-                          ) : col === 'BLOQUE' && bloques.length > 0 ? (
-                            <SelectEditor
-                              value={fila[col]}
-                              onChange={(value) => handleCellChange(idx, col, value)}
-                              options={bloques}
-                              className={`${estiloError} ${estiloObligatorio}`}
-                            />
-                          ) : col === 'VENDEDORA' && vendedoras.length > 0 ? (
-                            <SelectEditor
-                              value={fila[col]}
-                              onChange={(value) => handleCellChange(idx, col, value)}
-                              options={vendedoras}
-                              className={`${estiloError} ${estiloObligatorio}`}
-                            />
-                          ) : col === 'COMENTARIOS' && comentariosComunes.length > 0 ? (
-                            <SelectEditor
-                              value={fila[col]}
-                              onChange={(value) => handleCellChange(idx, col, value)}
-                              options={comentariosComunes}
-                              className={`min-w-[250px] ${estiloError} ${estiloObligatorio}`}
-                            />
-                          ) : col.includes('FECHA') ? (
-                            <input
-                              type="date"
-                              className={`w-full bg-gray-800 border rounded px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${estiloError} ${estiloObligatorio}`}
-                              value={fila[col] || ""}
-                              onChange={(e) => handleCellChange(idx, col, e.target.value)}
-                            />
-                          ) : col === 'MONTO' ? (
-                            <input
-                              type="number"
-                              step="0.01"
-                              className={`w-full bg-gray-800 border rounded px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${estiloError} ${estiloObligatorio}`}
-                              value={fila[col] || ""}
-                              onChange={(e) => handleCellChange(idx, col, e.target.value)}
-                            />
-                          ) : col === 'EUROSKIN' ? (
-                            <select
-                              className={`w-full bg-gray-800 border rounded px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${estiloError} ${estiloObligatorio}`}
-                              value={fila[col] || ""}
-                              onChange={(e) => handleCellChange(idx, col, e.target.value)}
-                            >
-                              <option value="">Selecciona...</option>
-                              <option value="true">Sí</option>
-                              <option value="false">No</option>
-                            </select>
-                          ) : col === 'CAPTURA_CC' && capturaCC.length > 0 ? (
-                            <SelectEditor
-                              value={fila[col]}
-                              onChange={(value) => handleCellChange(idx, col, value)}
-                              options={capturaCC}
-                              className={`${estiloError} ${estiloObligatorio}`}
-                            />
-                          ) : (
-                            <input
-                              type="text"
-                              className={`w-full bg-gray-800 border rounded px-3 py-2 text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 ${estiloError} ${estiloObligatorio}`}
-                              value={fila[col] || ""}
-                              onChange={(e) => handleCellChange(idx, col, e.target.value)}
-                            />
-                          )}
+                        <td key={`${idx}-${col}`} 
+                            className="p-0 border border-gray-600 relative overflow-visible" 
+                            style={{ width: anchoColumna, minWidth: anchoColumna, height: '28px' }}
+                            data-fila={idx}
+                            data-columna={col}>
+                          <CeldaGrid
+                            filaIdx={idx}
+                            columna={col}
+                            valor={fila[col]}
+                            onChange={(valor) => handleCellChange(idx, col, valor)}
+                            onCellClick={seleccionarCelda}
+                            onCellMouseEnter={expandirSeleccion}
+                            esSeleccionada={esCeldaSeleccionada(idx, col)}
+                            esRangoSeleccionado={esCeldaEnRango(idx, col)}
+                            obtenerBordesRango={obtenerBordesRango}
+                            esObligatorio={esObligatorio}
+                            tieneError={tieneError}
+                            tipo={tipoCelda}
+                            opciones={opciones}
+                            placeholder={`${col.replace(/_/g, ' ').toLowerCase()}`}
+                          />
                           
                           {/* Indicador de campo obligatorio */}
                           {esObligatorio && (
@@ -2123,11 +2850,12 @@ export default function IngresarAclaraciones() {
                         </td>
                       );
                     })}
-                    <td className="px-3 py-2 whitespace-nowrap text-sm text-gray-300">
+                    <td className="px-0 py-0 whitespace-nowrap text-gray-300 border border-gray-600" style={{ width: '50px', minWidth: '50px', height: '28px' }}>
                       <button
                         onClick={() => eliminarFila(idx)}
-                        className="text-red-400 hover:text-red-300"
+                        className="text-red-400 hover:text-red-300 text-center w-full h-full flex items-center justify-center"
                         title="Eliminar fila"
+                        style={{ fontSize: '10px' }}
                       >
                         ❌
                       </button>
@@ -2173,27 +2901,27 @@ export default function IngresarAclaraciones() {
 
         {/* Modal de selección de cliente */}
         {modalSeleccionCliente.visible && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white p-6 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto">
+          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
+            <div className="bg-gray-800 p-6 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto border border-gray-600">
               <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-gray-800">
+                <h2 className="text-xl font-bold text-white">
                   Seleccionar Cliente
                 </h2>
                 <button
                   onClick={cerrarModalSeleccion}
-                  className="text-gray-500 hover:text-gray-700 text-2xl font-bold"
+                  className="text-gray-400 hover:text-gray-200 text-2xl font-bold"
                 >
                   ×
                 </button>
               </div>
               
-              <div className="mb-4 p-3 bg-blue-50 rounded">
-                <p className="text-sm text-blue-700">
+              <div className="mb-4 p-3 bg-gray-700 rounded border border-gray-600">
+                <p className="text-sm text-gray-200">
                   <strong>Se encontraron {modalSeleccionCliente.clientes.length} clientes</strong> que coinciden con los criterios de búsqueda.
                   {modalSeleccionCliente.tipoCoincidencia === "fecha_monto" && (
                     <span className="block mt-2">
                       <strong>Nota:</strong> No se encontraron coincidencias exactas con la tarjeta terminada en 
-                      <span className="font-mono bg-yellow-100 px-1 rounded">{modalSeleccionCliente.terminacionBuscada}</span>, 
+                      <span className="font-mono bg-yellow-600 text-yellow-100 px-1 rounded">{modalSeleccionCliente.terminacionBuscada}</span>, 
                       por lo que se muestran todos los clientes que coinciden con la fecha y monto.
                     </span>
                   )}
@@ -2212,53 +2940,53 @@ export default function IngresarAclaraciones() {
                 {modalSeleccionCliente.clientes.map((cliente, index) => (
                   <div
                     key={index}
-                    className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer transition-colors"
+                    className="border border-gray-600 rounded-lg p-4 hover:bg-gray-700 cursor-pointer transition-colors bg-gray-750"
                     onClick={() => seleccionarCliente(cliente)}
                   >
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       <div>
-                        <span className="font-semibold text-gray-700">Cliente:</span>
-                        <p className="text-gray-900">{cliente.nombre_completo || 'N/A'}</p>
+                        <span className="font-semibold text-gray-300">Cliente:</span>
+                        <p className="text-white">{cliente.nombre_completo || 'N/A'}</p>
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-700">Sucursal:</span>
-                        <p className="text-gray-900">{cliente.sucursal || 'N/A'}</p>
+                        <span className="font-semibold text-gray-300">Sucursal:</span>
+                        <p className="text-white">{cliente.sucursal || 'N/A'}</p>
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-700">Bloque:</span>
-                        <p className="text-gray-900">{cliente.bloque || 'N/A'}</p>
+                        <span className="font-semibold text-gray-300">Bloque:</span>
+                        <p className="text-white">{cliente.bloque || 'N/A'}</p>
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-700">Tarjeta:</span>
+                        <span className="font-semibold text-gray-300">Tarjeta:</span>
                         <div className="flex items-center space-x-2">
-                          <p className="text-gray-900">****{cliente.terminacion_real || cliente.terminacion_tarjeta || 'N/A'}</p>
+                          <p className="text-white">****{cliente.terminacion_real || cliente.terminacion_tarjeta || 'N/A'}</p>
                           {modalSeleccionCliente.terminacionBuscada && 
                            cliente.terminacion_real && 
                            cliente.terminacion_real !== modalSeleccionCliente.terminacionBuscada && (
-                            <span className="inline-block bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded-full">
+                            <span className="inline-block bg-yellow-600 text-yellow-100 text-xs px-2 py-1 rounded-full">
                               Buscada: ****{modalSeleccionCliente.terminacionBuscada}
                             </span>
                           )}
                           {modalSeleccionCliente.terminacionBuscada && 
                            cliente.terminacion_real && 
                            cliente.terminacion_real === modalSeleccionCliente.terminacionBuscada && (
-                            <span className="inline-block bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                            <span className="inline-block bg-green-600 text-green-100 text-xs px-2 py-1 rounded-full">
                               ✓ Coincide
                             </span>
                           )}
                         </div>
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-700">Fecha:</span>
-                        <p className="text-gray-900">{cliente.fecha_venta || 'N/A'}</p>
+                        <span className="font-semibold text-gray-300">Fecha:</span>
+                        <p className="text-white">{cliente.fecha_venta || 'N/A'}</p>
                       </div>
                       <div>
-                        <span className="font-semibold text-gray-700">Monto:</span>
-                        <p className="text-gray-900">₡{cliente.monto ? parseFloat(cliente.monto).toLocaleString() : 'N/A'}</p>
+                        <span className="font-semibold text-gray-300">Monto:</span>
+                        <p className="text-white">${cliente.monto ? parseFloat(cliente.monto).toLocaleString() : 'N/A'}</p>
                       </div>
                       {cliente.es_euroskin && (
                         <div className="md:col-span-2 lg:col-span-3">
-                          <span className="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">
+                          <span className="inline-block bg-blue-600 text-blue-100 text-xs px-2 py-1 rounded-full">
                             Cliente Euroskin
                           </span>
                         </div>
@@ -2271,7 +2999,7 @@ export default function IngresarAclaraciones() {
               <div className="mt-6 flex justify-end space-x-3">
                 <button
                   onClick={cerrarModalSeleccion}
-                  className="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400 transition-colors"
+                  className="px-4 py-2 bg-gray-600 text-gray-200 rounded hover:bg-gray-500 transition-colors border border-gray-500"
                 >
                   Cancelar
                 </button>

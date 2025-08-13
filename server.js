@@ -126,14 +126,19 @@ const pool = new Pool({
   query_timeout: 300000, // 5 minutos para queries
 });
 
-// ✅ Configuración de almacenamiento temporal para archivos (optimizado para archivos 50k+ filas)
+// ✅ Configuración de almacenamiento temporal para archivos (optimizado para archivos grandes)
 const upload = multer({ 
   dest: "uploads/",
   limits: {
-    fileSize: 100 * 1024 * 1024, // 100MB por archivo (para archivos 50k+ filas)
+    fileSize: 200 * 1024 * 1024, // 200MB por archivo (para archivos muy grandes)
     files: 5 // Máximo 5 archivos por request
   }
 });
+
+// Configurar límites de memoria para Node.js
+if (!process.env.NODE_OPTIONS || !process.env.NODE_OPTIONS.includes('--max-old-space-size')) {
+  console.log("⚠️ Recomendación: Configura NODE_OPTIONS=--max-old-space-size=4096 para archivos muy grandes");
+}
 
 // 🔄 Mapeo de columnas específico para cada tabla
 function mapearColumnas(tabla, columnas) {
@@ -407,6 +412,42 @@ let progresoGlobal = {
   tiempoTotal: 0,
 };
 
+// ✅ Función optimizada para insertar batches con conexión dedicada
+async function insertarBatchOptimizado(client, tabla, batch) {
+  if (batch.length === 0) return;
+
+  try {
+    const columnas = Object.keys(batch[0]);
+    const columnasSQL = columnas.map(col => `"${col}"`).join(', ');
+    
+    // Crear placeholders de manera más eficiente
+    const valoresArray = [];
+    const placeholders = [];
+    
+    let paramIndex = 1;
+    for (const registro of batch) {
+      const filaPh = [];
+      for (const columna of columnas) {
+        filaPh.push(`$${paramIndex++}`);
+        valoresArray.push(registro[columna]);
+      }
+      placeholders.push(`(${filaPh.join(', ')})`);
+    }
+    
+    const query = `
+      INSERT INTO "${tabla}" (${columnasSQL}) 
+      VALUES ${placeholders.join(', ')}
+      ON CONFLICT DO NOTHING
+    `;
+    
+    await client.query(query, valoresArray);
+    
+  } catch (error) {
+    console.error(`❌ Error insertando batch en ${tabla}:`, error.message);
+    throw error;
+  }
+}
+
 // ✅ Endpoint SSE para progreso en tiempo real
 app.get("/progreso", (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
@@ -424,30 +465,48 @@ app.get("/progreso", (req, res) => {
 app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
   const tabla = req.params.tabla;
   const filePath = req.file.path;
+  let client;
 
   try {
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(filePath);
-    const sheet = workbook.worksheets[0];
+    console.log(`📂 Iniciando carga optimizada para tabla: ${tabla}`);
+    console.log(`📂 Archivo: ${filePath}, Tamaño: ${(req.file.size / 1024 / 1024).toFixed(2)} MB`);
 
-    // ✅ Usar mapeo específico por tabla
-    const columnasOriginales = sheet.getRow(1).values.slice(1).filter(col => col !== null && col !== undefined && col !== '');
+    // Crear conexión dedicada para esta operación
+    client = await pool.connect();
     
-    // 🔍 DEBUG: Verificar primera fila completa
-    console.log(`🔍 DEBUG - Primera fila completa:`, sheet.getRow(1).values);
-    console.log(`🔍 DEBUG - Columnas filtradas:`, columnasOriginales);
+    // Configurar timeout más largo para esta conexión
+    await client.query('SET statement_timeout = 0'); // Sin timeout
+    await client.query('SET idle_in_transaction_session_timeout = 0');
+
+    const workbook = new ExcelJS.Workbook();
+    
+    // Leer archivo con opciones de streaming optimizadas
+    await workbook.xlsx.readFile(filePath, {
+      sharedStrings: 'cache', // Optimizar strings compartidos
+      hyperlinks: 'ignore',   // Ignorar hyperlinks para ahorrar memoria
+      styles: 'ignore'        // Ignorar estilos para ahorrar memoria
+    });
+
+    const sheet = workbook.worksheets[0];
+    
+    // Obtener encabezados sin cargar todas las filas
+    const primeraFila = sheet.getRow(1);
+    const columnasOriginales = primeraFila.values.slice(1).filter(col => col !== null && col !== undefined && col !== '');
+    
+    console.log(`🔍 DEBUG - Columnas detectadas:`, columnasOriginales);
     
     if (columnasOriginales.length === 0) {
       throw new Error('No se detectaron columnas en el archivo Excel. Verifica que la primera fila contenga los encabezados.');
     }
     
     const columnas = mapearColumnas(tabla, columnasOriginales);
-    
-    console.log(`📋 Columnas originales:`, columnasOriginales);
-    console.log(`📋 Columnas mapeadas:`, columnas);
+    console.log(`📋 Columnas mapeadas para ${tabla}:`, columnas);
 
+    // Contar filas de manera más eficiente
     const totalFilas = sheet.rowCount - 1;
+    console.log(`📊 Total de filas a procesar: ${totalFilas.toLocaleString()}`);
 
+    // Configurar progreso global
     progresoGlobal = {
       tabla,
       procesadas: 0,
@@ -457,74 +516,126 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
       tiempoTotal: 0,
     };
 
-    console.log(`📂 Subiendo ${totalFilas} registros a ${tabla}...`);
     const inicio = Date.now();
-
     let batch = [];
-    const batchSize = 1000;
+    
+    // Reducir batch size para archivos muy grandes
+    const batchSize = totalFilas > 50000 ? 500 : totalFilas > 10000 ? 750 : 1000;
+    console.log(`⚙️ Usando batch size: ${batchSize} para ${totalFilas.toLocaleString()} filas`);
 
-    for (let i = 2; i <= sheet.rowCount; i++) {
-      const row = sheet.getRow(i);
-      const obj = {};
+    // Iniciar transacción para mejor performance
+    await client.query('BEGIN');
 
-      columnas.forEach((col, idx) => {
-        let valor = row.values[idx + 1];
-        
-        // Usar la función de formateo específica por tabla y columna
-        obj[col] = formatearDatos(tabla, col, valor);
-      });
+    try {
+      // Procesar filas de manera streaming
+      for (let i = 2; i <= sheet.rowCount; i++) {
+        // Verificar memoria cada 5000 filas
+        if (i % 5000 === 0) {
+          const memUsage = process.memoryUsage();
+          const memMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
+          
+          if (memUsage.heapUsed > 1.5 * 1024 * 1024 * 1024) { // > 1.5GB
+            console.log(`⚠️ Uso alto de memoria: ${memMB} MB - Forzando GC`);
+            if (global.gc) global.gc();
+          }
+        }
 
-      // 🧹 Filtrar registros donde todas las columnas son null, undefined, 'null' o vacías
-      const valoresValidos = Object.values(obj).filter(valor => 
-        valor !== null && 
-        valor !== undefined && 
-        valor !== 'null' && 
-        valor !== '' && 
-        valor !== 'undefined'
-      );
+        const row = sheet.getRow(i);
+        const obj = {};
 
-      // Solo agregar al batch si tiene al menos un valor válido
-      if (valoresValidos.length > 0) {
-        batch.push(obj);
-      } else {
-        console.log(`⚠️ Registro ${i} omitido: todas las columnas son null/vacías`);
+        // Mapear datos de manera más eficiente
+        columnas.forEach((col, idx) => {
+          let valor = row.values[idx + 1];
+          obj[col] = formatearDatos(tabla, col, valor);
+        });
+
+        // Filtrar registros vacíos
+        const valoresValidos = Object.values(obj).filter(valor => 
+          valor !== null && 
+          valor !== undefined && 
+          valor !== 'null' && 
+          valor !== '' && 
+          valor !== 'undefined'
+        );
+
+        if (valoresValidos.length > 0) {
+          batch.push(obj);
+        }
+
+        // Procesar batch cuando esté lleno
+        if (batch.length === batchSize) {
+          await insertarBatchOptimizado(client, tabla, batch);
+          progresoGlobal.procesadas += batch.length;
+          actualizarProgreso(inicio);
+          
+          // Liberar memoria del batch
+          batch = [];
+          
+          // Log de progreso cada 10 batches para archivos grandes
+          if (totalFilas > 10000 && progresoGlobal.procesadas % (batchSize * 10) === 0) {
+            const memUsage = process.memoryUsage();
+            console.log(`📊 Progreso: ${progresoGlobal.procesadas.toLocaleString()}/${totalFilas.toLocaleString()} (${progresoGlobal.porcentaje.toFixed(1)}%)`);
+            console.log(`💾 Memoria: ${(memUsage.heapUsed / 1024 / 1024).toFixed(1)} MB usada`);
+          }
+        }
       }
 
-      if (batch.length === batchSize) {
-        await insertarBatch(tabla, batch);
+      // Procesar el último batch si queda algo
+      if (batch.length > 0) {
+        await insertarBatchOptimizado(client, tabla, batch);
         progresoGlobal.procesadas += batch.length;
         actualizarProgreso(inicio);
-        batch = [];
       }
+
+      // Commit de la transacción
+      await client.query('COMMIT');
+      
+      const tiempoTotal = Math.round((Date.now() - inicio) / 1000);
+      progresoGlobal.tiempoTotal = tiempoTotal;
+
+      console.log(`✅ Carga completada: ${progresoGlobal.procesadas.toLocaleString()} registros en ${tiempoTotal}s`);
+      
+      res.json({
+        success: true,
+        message: `Archivo cargado exitosamente: ${progresoGlobal.procesadas.toLocaleString()} registros procesados en ${tiempoTotal}s`,
+        registrosProcesados: progresoGlobal.procesadas,
+        tiempoTotal: tiempoTotal
+      });
+
+    } catch (dbError) {
+      // Rollback en caso de error
+      await client.query('ROLLBACK');
+      throw dbError;
     }
 
-    if (batch.length > 0) {
-      await insertarBatch(tabla, batch);
-      progresoGlobal.procesadas += batch.length;
-      actualizarProgreso(inicio);
+  } catch (error) {
+    console.error(`❌ Error cargando archivo en ${tabla}:`, error);
+    res.status(500).json({ 
+      error: `Error procesando archivo: ${error.message}`,
+      memoria: process.memoryUsage(),
+      recomendacion: "Para archivos muy grandes, considera aumentar la memoria de Node.js con: NODE_OPTIONS='--max-old-space-size=4096'"
+    });
+  } finally {
+    // Limpiar recursos
+    if (client) {
+      client.release();
     }
-
-    progresoGlobal.tiempoTotal = ((Date.now() - inicio) / 1000).toFixed(2);
-
-    fs.unlinkSync(filePath);
-    console.log(`🎉 Carga finalizada en ${progresoGlobal.tiempoTotal}s`);
     
-    // 🧹 Liberar memoria después de procesar archivo grande
+    // Eliminar archivo temporal
+    try {
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        console.log(`🗑️ Archivo temporal eliminado: ${filePath}`);
+      }
+    } catch (cleanupError) {
+      console.warn(`⚠️ No se pudo eliminar archivo temporal: ${cleanupError.message}`);
+    }
+    
+    // Forzar garbage collection si está disponible
     if (global.gc) {
       global.gc();
       console.log(`🧹 Memoria liberada después de procesar archivo`);
     }
-    
-    res.send(`✅ ${progresoGlobal.procesadas} registros insertados en ${tabla}`);
-  } catch (error) {
-    console.error(`❌ Error al actualizar ${tabla}:`, error);
-    
-    // 🧹 Liberar memoria incluso en caso de error
-    if (global.gc) {
-      global.gc();
-    }
-    
-    res.status(500).send("Error al insertar datos");
   }
 });
 

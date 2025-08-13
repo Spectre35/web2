@@ -21,8 +21,6 @@ const Aclaraciones = lazy(() => import("./pages/Aclaraciones"));
 const TelefonosDuplicados = lazy(() => import("./pages/TelefonosDuplicados"));
 const TarjetasDuplicadas = lazy(() => import("./pages/TarjetasDuplicadas"));
 const IngresarAclaraciones = lazy(() => import("./pages/IngresarAclaraciones"));
-const ExcelGrid = lazy(() => import("./pages/ExcelGrid"));
-const ExcelGridReactDataGrid = lazy(() => import("./pages/ExcelGridReactDataGrid"));
 const DashboardAclaraciones = lazy(() => import("./pages/DashboardAclaraciones"));
 const BuscadorBin = lazy(() => import("./pages/BuscadorBin"));
 const ProcesadorBinsMasivo = lazy(() => import("./pages/ProcesadorBinsMasivo"));
@@ -49,8 +47,6 @@ function App() {
             <Route path="/telefonos-duplicados" element={<TelefonosDuplicados />} />
             <Route path="/tarjetas-duplicadas" element={<TarjetasDuplicadas />} />
             <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
-            <Route path="/excel-grid" element={<ExcelGrid />} />
-            <Route path="/excel-grid-react19" element={<ExcelGridReactDataGrid />} />
             <Route path="/dashboard-aclaraciones" element={<DashboardAclaraciones />} />
             <Route path="/buscador-bin" element={<BuscadorBin />} />
             <Route path="/procesador-bins-masivo" element={<ProcesadorBinsMasivo />} />
