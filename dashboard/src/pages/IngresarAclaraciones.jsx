@@ -1707,7 +1707,7 @@ export default function IngresarAclaraciones() {
       console.log('🔍 Encabezados detectados:', headers);
       
       // Verificar si contiene encabezados clave de EFEVOO (más flexible)
-      const encabezadosClaveEFEVOO = ["ID", "Cliente", "Monto", "Fecha y Hora"];
+      const encabezadosClaveEFEVOO = ["ID", "Cliente", "Monto", "Fecha", "Tarjeta"];
       const tieneEncabezadosEFEVOO = encabezadosClaveEFEVOO.some(clave => 
         headers.some(h => h.toLowerCase().includes(clave.toLowerCase()))
       );
@@ -1769,15 +1769,20 @@ export default function IngresarAclaraciones() {
         // 🔍 BÚSQUEDA AUTOMÁTICA DE CLIENTES PARA MÚLTIPLES FILAS
         (async () => {
           try {
+            console.log('🔍 Iniciando búsqueda automática para', newRows.length, 'filas EFEVOO');
             const filasEnriquecidas = [];
             for (const fila of newRows) {
               const filaEnriquecida = await buscarClienteAutomatico(fila);
               filasEnriquecidas.push(filaEnriquecida);
             }
 
-            // Llenar las filas existentes primero, solo agregar nuevas si es necesario
+            console.log('✅ Todas las filas procesadas:', filasEnriquecidas);
+
+            // Actualizar las filas de manera simple
             setFilas(prev => {
-              const filasVacias = prev.filter(fila => {
+              console.log('🔄 Actualizando estado con filas EFEVOO:', filasEnriquecidas.length);
+              // Si todas las filas actuales están vacías, reemplazarlas
+              const todasVacias = prev.every(fila => {
                 const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
                   if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
                   if (key === "CAPTURA_CC" && value === "EN PROCESO") return false;
@@ -1786,110 +1791,22 @@ export default function IngresarAclaraciones() {
                   return value !== "" && value !== null && value !== undefined;
                 });
                 return valoresConDatos.length === 0;
-              }).length;
+              });
               
-              if (filasEnriquecidas.length <= filasVacias) {
-                // Si hay suficientes filas vacías, llenarlas
-                const nuevasFilas = [...prev];
-                let contadorLlenado = 0;
-                for (let i = 0; i < nuevasFilas.length && contadorLlenado < filasEnriquecidas.length; i++) {
-                  const fila = nuevasFilas[i];
-                  const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
-                    if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
-                    if (key === "AÑO") return false;
-                    if (key === "MES_PETICION") return false;
-                    return value !== "" && value !== null && value !== undefined;
-                  });
-                  if (valoresConDatos.length === 0) {
-                    nuevasFilas[i] = filasEnriquecidas[contadorLlenado];
-                    contadorLlenado++;
-                  }
-                }
-                return nuevasFilas;
+              if (todasVacias) {
+                console.log('✅ Reemplazando todas las filas vacías');
+                return filasEnriquecidas;
               } else {
-                // Si no hay suficientes filas vacías, llenar las existentes y agregar el resto al principio
-                const nuevasFilas = [...prev];
-                let contadorLlenado = 0;
-                
-                // Llenar las filas vacías existentes
-                for (let i = 0; i < nuevasFilas.length && contadorLlenado < filasEnriquecidas.length; i++) {
-                  const fila = nuevasFilas[i];
-                  const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
-                    if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
-                    if (key === "AÑO") return false;
-                    if (key === "MES_PETICION") return false;
-                    return value !== "" && value !== null && value !== undefined;
-                  });
-                  if (valoresConDatos.length === 0) {
-                    nuevasFilas[i] = filasEnriquecidas[contadorLlenado];
-                    contadorLlenado++;
-                  }
-                }
-                
-                // Agregar las filas restantes al principio
-                const filasRestantes = filasEnriquecidas.slice(contadorLlenado);
-                return [...filasRestantes, ...nuevasFilas];
+                console.log('✅ Agregando al principio de filas existentes');
+                return [...filasEnriquecidas, ...prev];
               }
             });
+            
             setMensaje(`✅ Se pegaron ${newRows.length} filas EFEVOO (horizontal) y se buscaron los clientes automáticamente`);
           } catch (error) {
             console.error('❌ Error en búsqueda automática masiva:', error);
-            // Si falla la búsqueda automática, usar la lógica original
-            setFilas(prev => {
-              const filasVacias = prev.filter(fila => {
-                const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
-                  if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
-                  if (key === "CAPTURA_CC" && value === "EN PROCESO") return false;
-                  if (key === "AÑO") return false;
-                  if (key === "MES_PETICION") return false;
-                  return value !== "" && value !== null && value !== undefined;
-                });
-                return valoresConDatos.length === 0;
-              }).length;
-              
-              if (newRows.length <= filasVacias) {
-                // Si hay suficientes filas vacías, llenarlas
-                const nuevasFilas = [...prev];
-                let contadorLlenado = 0;
-                for (let i = 0; i < nuevasFilas.length && contadorLlenado < newRows.length; i++) {
-                  const fila = nuevasFilas[i];
-                  const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
-                    if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
-                    if (key === "AÑO") return false;
-                    if (key === "MES_PETICION") return false;
-                    return value !== "" && value !== null && value !== undefined;
-                  });
-                  if (valoresConDatos.length === 0) {
-                    nuevasFilas[i] = newRows[contadorLlenado];
-                    contadorLlenado++;
-                  }
-                }
-                return nuevasFilas;
-              } else {
-                // Si no hay suficientes filas vacías, llenar las existentes y agregar el resto al principio
-                const nuevasFilas = [...prev];
-                let contadorLlenado = 0;
-                
-                // Llenar las filas vacías existentes
-                for (let i = 0; i < nuevasFilas.length && contadorLlenado < newRows.length; i++) {
-                  const fila = nuevasFilas[i];
-                  const valoresConDatos = Object.entries(fila).filter(([key, value]) => {
-                    if (key === "EUROSKIN" && (value === "false" || value === "")) return false;
-                    if (key === "AÑO") return false;
-                    if (key === "MES_PETICION") return false;
-                    return value !== "" && value !== null && value !== undefined;
-                  });
-                  if (valoresConDatos.length === 0) {
-                    nuevasFilas[i] = newRows[contadorLlenado];
-                    contadorLlenado++;
-                  }
-                }
-                
-                // Agregar las filas restantes al principio
-                const filasRestantes = newRows.slice(contadorLlenado);
-                return [...filasRestantes, ...nuevasFilas];
-              }
-            });
+            // Si falla la búsqueda automática, insertar sin enriquecer
+            setFilas(prev => [...newRows, ...prev]);
             setMensaje(`✅ Se pegaron ${newRows.length} filas EFEVOO (horizontal) - búsqueda automática falló`);
           }
           setTimeout(() => setMensaje(""), 4000);

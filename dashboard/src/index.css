@@ -29,6 +29,49 @@ body {
   @apply bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 text-gray-100 min-h-screen;
 }
 
+/* Estilos para el chatbot */
+@keyframes chatbot-fade-in {
+  from { 
+    opacity: 0; 
+    transform: translateY(20px) scale(0.9); 
+  }
+  to { 
+    opacity: 1; 
+    transform: translateY(0) scale(1); 
+  }
+}
+
+@keyframes chatbot-bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-5px);
+  }
+  60% {
+    transform: translateY(-3px);
+  }
+}
+
+.chatbot-animate-fade-in {
+  animation: chatbot-fade-in 0.5s ease-out;
+}
+
+.chatbot-animate-bounce {
+  animation: chatbot-bounce 2s infinite;
+}
+
+/* Estilos para el webchat de Botpress */
+.bp-webchat {
+  font-family: inherit !important;
+}
+
+.bp-webchat .bp-widget-container {
+  background-color: #1F2937 !important;
+  border: 1px solid #4B5563 !important;
+  border-radius: 12px !important;
+}
+
 @keyframes gradient-x {
   0%, 100% { background-position: 0% 50%; }
   50% { background-position: 100% 50%; }

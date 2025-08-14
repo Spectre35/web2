@@ -136,7 +136,7 @@ export default function UploadFile({ tabla }) {
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
-        setMensaje(res.data);
+        setMensaje(res.data.message || "✅ Archivo cargado exitosamente");
       } catch (err) {
         setMensaje("❌ Error al subir el archivo");
       } finally {
