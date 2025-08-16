@@ -834,7 +834,10 @@ const generarConsulta = (tabla, filtros, pagina, limite) => {
       query += ` AND "Cliente" ILIKE $${values.length}`;
     }
   }
-  if (filtros.sucursal) {
+  if (filtros.sucursal && 
+      filtros.sucursal.trim() !== "" && 
+      filtros.sucursal !== "Todas las sucursales" &&
+      filtros.sucursal !== "-- Todas las sucursales --") {
     values.push(filtros.sucursal);
     if (tabla === "aclaraciones") {
       query += ` AND "sucursal" = $${values.length}`;
@@ -864,12 +867,34 @@ const generarConsulta = (tabla, filtros, pagina, limite) => {
       query += ` AND "Total" <= $${values.length}`;
     }
   }
-  // 🔍 FILTRO POR TARJETA - INTELIGENTE
+  // 🔍 FILTRO POR TARJETA - SÚPER INTELIGENTE
+  // Combina BIN + Terminación para búsquedas más precisas
   // • 16 dígitos = Búsqueda exacta de tarjeta completa
   // • 4-15 dígitos = Búsqueda por BIN (inicio de tarjeta)  
   // • 1-3 dígitos = Búsqueda flexible (contiene)
-  if (filtros.tarjeta) {
-    const numeroTarjeta = filtros.tarjeta.toString().trim();
+  // • BIN + Terminación = Tarjetas que empiecen con BIN Y terminen con terminación
+  
+  const tieneTarjeta = filtros.tarjeta && filtros.tarjeta.toString().trim();
+  const tieneTerminacion = filtros.terminacion && filtros.terminacion.toString().trim();
+  
+  if (tieneTarjeta && tieneTerminacion) {
+    // 🎯 COMBO: BIN + Terminación (ej: "4123" que termine en "5678")
+    const numeroTarjeta = tieneTarjeta;
+    const terminacion = tieneTerminacion;
+    
+    // Crear patrón: BIN% AND %terminación
+    values.push(`${numeroTarjeta}%`);
+    values.push(`%${terminacion}`);
+    
+    if (tabla === "aclaraciones") {
+      query += ` AND "num_de_tarjeta" LIKE $${values.length - 1} AND "num_de_tarjeta" LIKE $${values.length}`;
+    } else {
+      query += ` AND "Tarjeta" LIKE $${values.length - 1} AND "Tarjeta" LIKE $${values.length}`;
+    }
+  } 
+  else if (tieneTarjeta) {
+    // 🔍 Solo filtro por tarjeta/BIN
+    const numeroTarjeta = tieneTarjeta;
     
     // Si tiene 16 dígitos, búsqueda exacta
     if (numeroTarjeta.length === 16) {
@@ -880,7 +905,7 @@ const generarConsulta = (tabla, filtros, pagina, limite) => {
         query += ` AND "Tarjeta" = $${values.length}`;
       }
     } 
-    // Si tiene menos de 16 dígitos, búsqueda por inicio (BIN)
+    // Si tiene 4-15 dígitos, búsqueda por BIN (inicio)
     else if (numeroTarjeta.length >= 4 && numeroTarjeta.length < 16) {
       values.push(`${numeroTarjeta}%`);
       if (tabla === "aclaraciones") {
@@ -889,7 +914,7 @@ const generarConsulta = (tabla, filtros, pagina, limite) => {
         query += ` AND "Tarjeta" LIKE $${values.length}`;
       }
     }
-    // Si tiene menos de 4 dígitos, búsqueda más flexible
+    // Si tiene 1-3 dígitos, búsqueda flexible (contiene)
     else if (numeroTarjeta.length > 0 && numeroTarjeta.length < 4) {
       values.push(`%${numeroTarjeta}%`);
       if (tabla === "aclaraciones") {
@@ -899,8 +924,9 @@ const generarConsulta = (tabla, filtros, pagina, limite) => {
       }
     }
   }
-  if (filtros.terminacion) {
-    values.push(`%${filtros.terminacion}`);
+  else if (tieneTerminacion) {
+    // 🎯 Solo filtro por terminación
+    values.push(`%${tieneTerminacion}`);
     if (tabla === "aclaraciones") {
       query += ` AND "num_de_tarjeta" LIKE $${values.length}`;
     } else {
@@ -967,7 +993,7 @@ if (tabla === "aclaraciones") {
 }
 
   // 🎯 FILTRO CARGOS AUTO (BSD, EFEVOO, STRIPE AUTO)
-  if (tabla === "cargos_auto" && filtros.filtro_cargos_auto === "true") {
+  if (tabla === "cargos_auto" && (filtros.filtro_cargos_auto === "true" || filtros.filtro_cargo_auto === "true")) {
     const procesadoresCargoAuto = ['BSD', 'EFEVOO', 'STRIPE AUTO'];
     const condicionesCargoAuto = procesadoresCargoAuto.map((proc, idx) => {
       values.push(`%${proc}%`);
@@ -980,18 +1006,20 @@ if (tabla === "aclaraciones") {
   if (filtros.filtros_columnas) {
     try {
       const filtrosColumnas = JSON.parse(filtros.filtros_columnas);
-      Object.entries(filtrosColumnas).forEach(([columna, valor]) => {
-        if (Array.isArray(valor)) {
-          // Selección múltiple
-          const condiciones = valor.map((v, idx) => {
-            values.push(`%${v}%`);
-            return `"${columna}" ILIKE $${values.length}`;
-          });
-          query += ` AND (${condiciones.join(' OR ')})`;
-        } else {
-          // Filtro simple
-          values.push(`%${valor}%`);
-          query += ` AND "${columna}" ILIKE $${values.length}`;
+      Object.entries(filtrosColumnas).forEach(([columna, valores]) => {
+        if (valores && valores.length > 0) {
+          if (Array.isArray(valores)) {
+            // Selección múltiple - exact match para cada valor
+            const condiciones = valores.map((v, idx) => {
+              values.push(v); // Usar exact match en lugar de LIKE
+              return `"${columna}" = $${values.length}`;
+            });
+            query += ` AND (${condiciones.join(' OR ')})`;
+          } else {
+            // Filtro simple
+            values.push(valores);
+            query += ` AND "${columna}" = $${values.length}`;
+          }
         }
       });
     } catch (error) {
@@ -3799,7 +3827,7 @@ app.post("/cargos_auto/buscar-clientes", protegerDatos, async (req, res) => {
 
 // ✅ Endpoint principal de cargos_auto (BORRA LOGS INNECESARIOS)
 app.get("/cargos_auto", async (req, res) => {
-  const { pagina = 1, limite = 1000, ...filtros } = req.query;
+  const { pagina = 1, limite = 1000, solo_count = false, ...filtros } = req.query;
   const { query, values } = generarConsulta("cargos_auto", filtros, pagina, limite);
 
   // Consulta para el total
@@ -3811,6 +3839,13 @@ app.get("/cargos_auto", async (req, res) => {
   const total = Number(countResult.rows[0].total);
 
   try {
+    // Si solo queremos el count y hay muchos datos, devolver solo eso para evitar overhead
+    if (solo_count === 'true' && limite > 500000) {
+      // Para consultas de solo count con límite muy alto, devolver datos vacíos
+      res.json({ datos: [], total });
+      return;
+    }
+
     const result = await pool.query(query, values);
     
     // 🗓️ Formatear fechas antes de enviar al frontend
