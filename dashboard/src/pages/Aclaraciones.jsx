@@ -41,6 +41,11 @@ export default function Aclaraciones() {
   const [limite, setLimite] = useState(100); // Límite optimizado
   const [indicePaginaInterna, setIndicePaginaInterna] = useState(0); // Para paginación dinámica del array
 
+  // 🆕 Estados para filtros dinámicos por columna
+  const [filtrosColumnas, setFiltrosColumnas] = useState({});
+  const [mostrarFiltros, setMostrarFiltros] = useState(false);
+  const [valoresUnicos, setValoresUnicos] = useState({});
+
   // Scroll optimization references
   const scrollTopRef = useRef(null);
   const tableContainerRef = useRef(null);
@@ -238,6 +243,58 @@ export default function Aclaraciones() {
 
   const columnas = datos.length > 0 ? Object.keys(datos[0]) : [];
   const totalPaginas = Math.max(1, Math.ceil(total / limite));
+
+  // 🆕 Funciones para filtros dinámicos
+  const calcularValoresUnicos = useCallback(() => {
+    if (datos.length === 0) return;
+    
+    const nuevosValores = {};
+    columnas.forEach(columna => {
+      const valores = [...new Set(datos.map(row => row[columna]).filter(val => val !== null && val !== undefined && val !== ''))];
+      nuevosValores[columna] = valores.sort();
+    });
+    setValoresUnicos(nuevosValores);
+  }, [datos, columnas]);
+
+  useEffect(() => {
+    calcularValoresUnicos();
+  }, [calcularValoresUnicos]);
+
+  const aplicarFiltro = (columna, valor) => {
+    setFiltrosColumnas(prev => ({
+      ...prev,
+      [columna]: valor
+    }));
+  };
+
+  const limpiarFiltros = () => {
+    setFiltrosColumnas({});
+  };
+
+  const limpiarFiltroColumna = (columna) => {
+    setFiltrosColumnas(prev => {
+      const nuevos = { ...prev };
+      delete nuevos[columna];
+      return nuevos;
+    });
+  };
+
+  // 📊 Calcular número de filtros activos
+  const filtrosActivos = Object.values(filtrosColumnas).filter(valor => valor && valor.toString().trim() !== '').length;
+
+  // Filtrar datos según filtros de columnas
+  const datosFiltrados = React.useMemo(() => {
+    if (Object.keys(filtrosColumnas).length === 0) return datos;
+    
+    return datos.filter(row => {
+      return Object.entries(filtrosColumnas).every(([columna, valor]) => {
+        if (!valor) return true;
+        const valorRow = row[columna]?.toString()?.toLowerCase() || '';
+        const valorFiltro = valor.toString().toLowerCase();
+        return valorRow.includes(valorFiltro);
+      });
+    });
+  }, [datos, filtrosColumnas]);
 
   // Funciones para el modal de contraseña de ingreso
   const manejarIngresarDatos = () => {
@@ -670,6 +727,124 @@ export default function Aclaraciones() {
             <div className="text-gray-300 text-xs">Última Act.</div>
           </div>
         </div>
+      </div>
+
+      {/* 🆕 Panel de Filtros Avanzados por Columnas */}
+      <div className="bg-gray-800/50 p-3 rounded-lg mb-3 backdrop-blur-sm">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMostrarFiltros(!mostrarFiltros)}
+              className="flex items-center gap-2 px-3 py-1 bg-purple-600 text-white rounded hover:bg-purple-700 transition text-sm"
+            >
+              <span>{mostrarFiltros ? '🔽' : '▶️'}</span>
+              Filtros por Columna
+              {filtrosActivos > 0 && (
+                <span className="bg-red-500 text-white text-xs px-2 py-0.5 rounded-full">
+                  {filtrosActivos}
+                </span>
+              )}
+            </button>
+            
+            {filtrosActivos > 0 && (
+              <button
+                onClick={limpiarFiltros}
+                className="px-3 py-1 bg-red-600 text-white rounded hover:bg-red-700 transition text-sm"
+              >
+                🗑️ Limpiar Todos
+              </button>
+            )}
+          </div>
+          
+          <div className="text-sm text-gray-300">
+            Mostrando: <span className="text-blue-400 font-bold">{datosFiltrados.length}</span> de <span className="text-gray-400">{datos.length}</span> registros
+          </div>
+        </div>
+
+        {mostrarFiltros && (
+          <div className="space-y-3">
+            <div className="text-sm text-gray-400 mb-2">
+              💡 Filtros se aplican en tiempo real sobre los datos cargados
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+              {columnas.map(columna => (
+                <div key={columna} className="relative">
+                  <label className="block text-xs text-gray-400 mb-1 capitalize">
+                    {columna.replace(/_/g, " ")}
+                    {filtrosColumnas[columna] && (
+                      <button
+                        onClick={() => limpiarFiltroColumna(columna)}
+                        className="ml-2 text-red-400 hover:text-red-300"
+                        title="Limpiar filtro"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </label>
+                  
+                  {/* Para columnas con pocos valores únicos, mostrar dropdown */}
+                  {valoresUnicos[columna]?.length <= 20 ? (
+                    <select
+                      value={filtrosColumnas[columna] || ''}
+                      onChange={(e) => aplicarFiltro(columna, e.target.value)}
+                      className="w-full px-2 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-purple-500 focus:outline-none text-xs"
+                    >
+                      <option value="">Todos ({valoresUnicos[columna]?.length || 0})</option>
+                      {valoresUnicos[columna]?.map(valor => (
+                        <option key={valor} value={valor}>
+                          {valor?.toString().substring(0, 30)}
+                          {valor?.toString().length > 30 ? '...' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    /* Para columnas con muchos valores, mostrar input de búsqueda */
+                    <input
+                      type="text"
+                      placeholder={`Buscar en ${columna.replace(/_/g, " ")}...`}
+                      value={filtrosColumnas[columna] || ''}
+                      onChange={(e) => aplicarFiltro(columna, e.target.value)}
+                      className="w-full px-2 py-1 bg-gray-700 text-white rounded border border-gray-600 focus:border-purple-500 focus:outline-none text-xs"
+                    />
+                  )}
+                  
+                  {/* Indicador de valores únicos */}
+                  <div className="text-xs text-gray-500 mt-1">
+                    {valoresUnicos[columna]?.length || 0} valores únicos
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* Filtros activos */}
+            {filtrosActivos > 0 && (
+              <div className="mt-3 p-2 bg-gray-700/50 rounded">
+                <div className="text-xs text-gray-400 mb-2">Filtros activos:</div>
+                <div className="flex flex-wrap gap-2">
+                  {Object.entries(filtrosColumnas)
+                    .filter(([, valor]) => valor)
+                    .map(([columna, valor]) => (
+                      <span
+                        key={columna}
+                        className="inline-flex items-center gap-1 px-2 py-1 bg-purple-600 text-white rounded text-xs"
+                      >
+                        <span className="capitalize">{columna.replace(/_/g, " ")}</span>
+                        <span>:</span>
+                        <span className="font-mono">"{valor.toString().substring(0, 15)}{valor.toString().length > 15 ? '...' : ''}"</span>
+                        <button
+                          onClick={() => limpiarFiltroColumna(columna)}
+                          className="ml-1 text-purple-200 hover:text-white"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tabla */}

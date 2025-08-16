@@ -242,18 +242,32 @@ export default function VendedorasStatus() {
 
   useEffect(() => {
     setCargando(true);
+    console.log("🔍 Buscando vendedoras con término:", busqueda);
+    
     axios.get(`${API_BASE_URL}/vendedoras-status`, {
       params: busqueda ? { nombre: busqueda } : {}
     })
-      .then(res => setDatos(res.data))
+      .then(res => {
+        console.log("📊 Vendedoras recibidas:", res.data.length);
+        console.log("📄 Primeras 3 vendedoras:", res.data.slice(0, 3));
+        setDatos(res.data);
+      })
+      .catch(err => {
+        console.error("❌ Error al cargar vendedoras:", err);
+      })
       .finally(() => setCargando(false));
   }, [busqueda]);
 
   // Calcula estatus y color
   const vendedoras = useMemo(() => {
+    console.log("🔄 Procesando vendedoras:", datos.length);
+    
     const hoy = new Date();
     const fechaLimite = new Date(hoy.getFullYear(), hoy.getMonth() - 2, hoy.getDate());
-    return datos.map(v => {
+    
+    const procesadas = datos.map(v => {
+      console.log("👤 Procesando vendedora:", v);
+      
       let fecha = v.fechaultima; // <-- usa el nombre tal como llega del backend
       if (fecha && typeof fecha === "object" && fecha.toISOString) {
         fecha = fecha.toISOString().slice(0, 10);
@@ -277,16 +291,23 @@ export default function VendedorasStatus() {
         color = "bg-green-600 text-white";
         icon = null;
       }
-      return {
+      
+      const resultado = {
         nombre: v.nombre,
-        bloque: v.Bloque,
-        sucursal: v.Sucursal,
+        bloque: v.Bloque || v.bloque, // Soportar ambos formatos
+        sucursal: v.Sucursal || v.sucursal, // Soportar ambos formatos
         fechaUltima: formatearFecha(fecha),
         estatus,
         color,
         icon,
       };
+      
+      console.log("✅ Vendedora procesada:", resultado);
+      return resultado;
     });
+    
+    console.log("📊 Total vendedoras procesadas:", procesadas.length);
+    return procesadas;
   }, [datos]);
 
   // Cambia el favicon al abrir la página

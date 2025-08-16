@@ -6,7 +6,7 @@ export const CHATBOT_CONFIG = {
   // Configuración de apariencia
   theme: {
     primaryColor: "#2563EB", // Azul principal
-    secondaryColor: "#F9FAFB", // Gris oscuro para mantener consistencia
+    secondaryColor: "#1F2937", // Gris oscuro para mantener consistencia
     textColor: "#FFFFFF",
     backgroundColor: "#1F2937",
     borderColor: "#4B5563",

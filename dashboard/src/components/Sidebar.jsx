@@ -23,6 +23,9 @@ const sidebarLinks = [
   // { to: "/procesador-distribuido", label: "🚀 Procesador Distribuido", section: "buscadores" },
   // { to: "/gestor-apis", label: "🔧 Gestor de APIs", section: "buscadores" },
   
+  // Colaboración
+  { to: "/onlyoffice", label: "📊 Hojas Colaborativas", section: "colaboracion" },
+  
   // Análisis y dashboards
   { to: "/sucursales-alerta", label: "🚨 Alertas Sucursales", section: "analisis" },
   { to: "/telefonos-duplicados", label: "📱 Teléfonos Duplicados", section: "analisis" },

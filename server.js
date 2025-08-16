@@ -4,9 +4,12 @@ import pkg from "pg";
 import ExcelJS from "exceljs";
 import multer from "multer";
 import fs from "fs";
+import path from "path";
 import QueryStream from "pg-query-stream"; // Agrega arriba
 import dotenv from "dotenv";
 import moment from "moment";
+import { createServer } from "http";
+import { Server } from "socket.io";
 dotenv.config();
 
 import axios from "axios";
@@ -412,27 +415,25 @@ let progresoGlobal = {
   tiempoTotal: 0,
 };
 
-// ✅ Función optimizada para insertar batches con conexión dedicada
-async function insertarBatchOptimizado(client, tabla, batch) {
-  if (batch.length === 0) return;
+// ✅ Función para insertar múltiples registros de manera eficiente
+async function insertarRegistros(client, tabla, registros) {
+  if (registros.length === 0) return;
 
   try {
-    const columnas = Object.keys(batch[0]);
+    const columnas = Object.keys(registros[0]);
     const columnasSQL = columnas.map(col => `"${col}"`).join(', ');
     
-    // Crear placeholders de manera más eficiente
-    const valoresArray = [];
+    // Construir VALUES para múltiples registros
+    const values = [];
     const placeholders = [];
     
-    let paramIndex = 1;
-    for (const registro of batch) {
-      const filaPh = [];
-      for (const columna of columnas) {
-        filaPh.push(`$${paramIndex++}`);
-        valoresArray.push(registro[columna]);
-      }
-      placeholders.push(`(${filaPh.join(', ')})`);
-    }
+    registros.forEach((registro, index) => {
+      const registroPlaceholders = columnas.map((col, colIndex) => {
+        values.push(registro[col]);
+        return `$${index * columnas.length + colIndex + 1}`;
+      });
+      placeholders.push(`(${registroPlaceholders.join(', ')})`);
+    });
     
     const query = `
       INSERT INTO "${tabla}" (${columnasSQL}) 
@@ -440,10 +441,10 @@ async function insertarBatchOptimizado(client, tabla, batch) {
       ON CONFLICT DO NOTHING
     `;
     
-    await client.query(query, valoresArray);
+    await client.query(query, values);
     
   } catch (error) {
-    console.error(`❌ Error insertando batch en ${tabla}:`, error.message);
+    console.error(`❌ Error insertando registros en ${tabla}:`, error.message);
     throw error;
   }
 }
@@ -517,33 +518,21 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
     };
 
     const inicio = Date.now();
-    let batch = [];
+    const BATCH_SIZE = 500; // Tamaño fijo y razonable
+    let registros = [];
     
-    // Reducir batch size para archivos muy grandes
-    const batchSize = totalFilas > 50000 ? 500 : totalFilas > 10000 ? 750 : 1000;
-    console.log(`⚙️ Usando batch size: ${batchSize} para ${totalFilas.toLocaleString()} filas`);
+    console.log(`🔄 Procesando archivo: ${totalFilas.toLocaleString()} filas (grupos de ${BATCH_SIZE})`);
 
     // Iniciar transacción para mejor performance
     await client.query('BEGIN');
 
     try {
-      // Procesar filas de manera streaming
+      // Procesar filas agrupándolas
       for (let i = 2; i <= sheet.rowCount; i++) {
-        // Verificar memoria cada 5000 filas
-        if (i % 5000 === 0) {
-          const memUsage = process.memoryUsage();
-          const memMB = (memUsage.heapUsed / 1024 / 1024).toFixed(1);
-          
-          if (memUsage.heapUsed > 1.5 * 1024 * 1024 * 1024) { // > 1.5GB
-            console.log(`⚠️ Uso alto de memoria: ${memMB} MB - Forzando GC`);
-            if (global.gc) global.gc();
-          }
-        }
-
         const row = sheet.getRow(i);
         const obj = {};
 
-        // Mapear datos de manera más eficiente
+        // Mapear datos
         columnas.forEach((col, idx) => {
           let valor = row.values[idx + 1];
           obj[col] = formatearDatos(tabla, col, valor);
@@ -559,31 +548,27 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
         );
 
         if (valoresValidos.length > 0) {
-          batch.push(obj);
+          registros.push(obj);
         }
 
-        // Procesar batch cuando esté lleno
-        if (batch.length === batchSize) {
-          await insertarBatchOptimizado(client, tabla, batch);
-          progresoGlobal.procesadas += batch.length;
+        // Procesar cuando tengamos suficientes registros
+        if (registros.length >= BATCH_SIZE) {
+          await insertarRegistros(client, tabla, registros);
+          progresoGlobal.procesadas += registros.length;
           actualizarProgreso(inicio);
           
-          // Liberar memoria del batch
-          batch = [];
-          
-          // Log de progreso cada 10 batches para archivos grandes
-          if (totalFilas > 10000 && progresoGlobal.procesadas % (batchSize * 10) === 0) {
-            const memUsage = process.memoryUsage();
+          if (progresoGlobal.procesadas % 1000 === 0) {
             console.log(`📊 Progreso: ${progresoGlobal.procesadas.toLocaleString()}/${totalFilas.toLocaleString()} (${progresoGlobal.porcentaje.toFixed(1)}%)`);
-            console.log(`💾 Memoria: ${(memUsage.heapUsed / 1024 / 1024).toFixed(1)} MB usada`);
           }
+          
+          registros = []; // Limpiar array
         }
       }
 
-      // Procesar el último batch si queda algo
-      if (batch.length > 0) {
-        await insertarBatchOptimizado(client, tabla, batch);
-        progresoGlobal.procesadas += batch.length;
+      // Procesar registros restantes
+      if (registros.length > 0) {
+        await insertarRegistros(client, tabla, registros);
+        progresoGlobal.procesadas += registros.length;
         actualizarProgreso(inicio);
       }
 
@@ -821,57 +806,13 @@ app.delete("/delete-julio-agosto/:tabla", protegerDatos, async (req, res) => {
   }
 });
 
-// ✅ Inserción por lotes (ajusta las columnas dinámicamente)
-async function insertarBatch(tabla, batch) {
-  if (!batch.length) return;
-
-  // 🔍 Verificar que el batch tenga datos válidos
-  const primerObjeto = batch[0];
-  const columnas = Object.keys(primerObjeto);
-  
-  if (columnas.length === 0) {
-    throw new Error(`No hay columnas válidas en el batch para la tabla ${tabla}`);
-  }
-
-  const columnasSQL = columnas
-    .map((c) => `"${c}"`)
-    .join(", ");
-
-  const values = [];
-  const placeholders = batch
-    .map((row, rowIndex) => {
-      const rowValues = Object.values(row);
-      values.push(...rowValues);
-      const start = rowIndex * rowValues.length + 1;
-      return `(${rowValues
-        .map((_, i) => `$${start + i}`)
-        .join(", ")})`;
-    })
-    .join(", ");
-
-  const query = `INSERT INTO "${tabla}" (${columnasSQL}) VALUES ${placeholders} ON CONFLICT DO NOTHING`;
-
-  // 🔍 DEBUG: Mostrar query problemático
-  console.log(`🔍 DEBUG - Tabla: ${tabla}`);
-  console.log(`🔍 DEBUG - Columnas SQL: ${columnasSQL}`);
-  console.log(`🔍 DEBUG - Query: ${query.substring(0, 200)}...`);
-  console.log(`🔍 DEBUG - Total values: ${values.length}`);
-  console.log(`🔍 DEBUG - Primer batch:`, batch[0]);
-
-  await pool.query(query, values);
-}
-
 // ✅ Calcular porcentaje y tiempo estimado
 function actualizarProgreso(inicio) {
   const tiempoTranscurrido = (Date.now() - inicio) / 1000;
-  progresoGlobal.porcentaje = (
-    (progresoGlobal.procesadas / progresoGlobal.total) *
-    100
-  ).toFixed(2);
-  progresoGlobal.tiempoEstimado = (
-    (tiempoTranscurrido / progresoGlobal.procesadas) *
-    progresoGlobal.total
-  ).toFixed(2);
+  progresoGlobal.porcentaje = 
+    (progresoGlobal.procesadas / progresoGlobal.total) * 100;
+  progresoGlobal.tiempoEstimado = 
+    (tiempoTranscurrido / progresoGlobal.procesadas) * progresoGlobal.total;
 }
 
 
@@ -923,12 +864,39 @@ const generarConsulta = (tabla, filtros, pagina, limite) => {
       query += ` AND "Total" <= $${values.length}`;
     }
   }
+  // 🔍 FILTRO POR TARJETA - INTELIGENTE
+  // • 16 dígitos = Búsqueda exacta de tarjeta completa
+  // • 4-15 dígitos = Búsqueda por BIN (inicio de tarjeta)  
+  // • 1-3 dígitos = Búsqueda flexible (contiene)
   if (filtros.tarjeta) {
-    values.push(filtros.tarjeta);
-    if (tabla === "aclaraciones") {
-      query += ` AND "num_de_tarjeta" = $${values.length}`;
-    } else {
-      query += ` AND "Tarjeta" = $${values.length}`;
+    const numeroTarjeta = filtros.tarjeta.toString().trim();
+    
+    // Si tiene 16 dígitos, búsqueda exacta
+    if (numeroTarjeta.length === 16) {
+      values.push(numeroTarjeta);
+      if (tabla === "aclaraciones") {
+        query += ` AND "num_de_tarjeta" = $${values.length}`;
+      } else {
+        query += ` AND "Tarjeta" = $${values.length}`;
+      }
+    } 
+    // Si tiene menos de 16 dígitos, búsqueda por inicio (BIN)
+    else if (numeroTarjeta.length >= 4 && numeroTarjeta.length < 16) {
+      values.push(`${numeroTarjeta}%`);
+      if (tabla === "aclaraciones") {
+        query += ` AND "num_de_tarjeta" LIKE $${values.length}`;
+      } else {
+        query += ` AND "Tarjeta" LIKE $${values.length}`;
+      }
+    }
+    // Si tiene menos de 4 dígitos, búsqueda más flexible
+    else if (numeroTarjeta.length > 0 && numeroTarjeta.length < 4) {
+      values.push(`%${numeroTarjeta}%`);
+      if (tabla === "aclaraciones") {
+        query += ` AND "num_de_tarjeta" LIKE $${values.length}`;
+      } else {
+        query += ` AND "Tarjeta" LIKE $${values.length}`;
+      }
     }
   }
   if (filtros.terminacion) {
@@ -997,6 +965,39 @@ if (tabla === "aclaraciones") {
     query += ` AND "procesador" = $${values.length}`;
   }
 }
+
+  // 🎯 FILTRO CARGOS AUTO (BSD, EFEVOO, STRIPE AUTO)
+  if (tabla === "cargos_auto" && filtros.filtro_cargos_auto === "true") {
+    const procesadoresCargoAuto = ['BSD', 'EFEVOO', 'STRIPE AUTO'];
+    const condicionesCargoAuto = procesadoresCargoAuto.map((proc, idx) => {
+      values.push(`%${proc}%`);
+      return `"Cobrado_Por" ILIKE $${values.length}`;
+    });
+    query += ` AND (${condicionesCargoAuto.join(' OR ')})`;
+  }
+
+  // 🔍 FILTROS DE COLUMNAS TIPO EXCEL
+  if (filtros.filtros_columnas) {
+    try {
+      const filtrosColumnas = JSON.parse(filtros.filtros_columnas);
+      Object.entries(filtrosColumnas).forEach(([columna, valor]) => {
+        if (Array.isArray(valor)) {
+          // Selección múltiple
+          const condiciones = valor.map((v, idx) => {
+            values.push(`%${v}%`);
+            return `"${columna}" ILIKE $${values.length}`;
+          });
+          query += ` AND (${condiciones.join(' OR ')})`;
+        } else {
+          // Filtro simple
+          values.push(`%${valor}%`);
+          query += ` AND "${columna}" ILIKE $${values.length}`;
+        }
+      });
+    } catch (error) {
+      console.error('Error parsing filtros_columnas:', error);
+    }
+  }
 
   const offset = (pagina - 1) * limite;
   query += ` ORDER BY ${columnaFecha} DESC LIMIT ${limite} OFFSET ${offset}`;
@@ -1566,42 +1567,208 @@ const TIPO_CAMBIO = {
   USD: 18.75,
 };
 
+// ================= �️ ENDPOINT PARA LIMPIAR REGISTROS CON FECHA NULL =================
+// ================= 📊 ENDPOINT PARA VERIFICAR REGISTROS CON FECHA NULL =================
+app.get("/verificar-fechas-null", async (req, res) => {
+  try {
+    // Contar registros con FechaCompra null
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM "ventas" 
+      WHERE "FechaCompra" IS NULL;
+    `;
+    
+    // Ver algunos ejemplos
+    const examplesQuery = `
+      SELECT "Vendedor", "Sucursal", "Bloque", "FechaCompra", "ID"
+      FROM "ventas" 
+      WHERE "FechaCompra" IS NULL
+      LIMIT 5;
+    `;
+    
+    const [countResult, examplesResult] = await Promise.all([
+      pool.query(countQuery),
+      pool.query(examplesQuery)
+    ]);
+    
+    res.json({
+      totalRegistrosConFechaNull: countResult.rows[0].total,
+      ejemplos: examplesResult.rows,
+      mensaje: `Hay ${countResult.rows[0].total} registros con FechaCompra null`
+    });
+    
+  } catch (error) {
+    console.error("❌ Error al verificar fechas null:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/limpiar-fechas-null", async (req, res) => {
+  try {
+    // 1. Primero contar cuántos registros hay
+    const countQuery = `
+      SELECT COUNT(*) as total
+      FROM "ventas" 
+      WHERE "FechaCompra" IS NULL;
+    `;
+    
+    const countResult = await pool.query(countQuery);
+    const totalRegistros = countResult.rows[0].total;
+    
+    console.log(`🔍 Encontrados ${totalRegistros} registros con FechaCompra null`);
+    
+    if (totalRegistros === 0) {
+      return res.json({ 
+        mensaje: "No hay registros con FechaCompra null para eliminar",
+        registrosEliminados: 0 
+      });
+    }
+    
+    // 2. Eliminar los registros
+    const deleteQuery = `
+      DELETE FROM "ventas" 
+      WHERE "FechaCompra" IS NULL;
+    `;
+    
+    const deleteResult = await pool.query(deleteQuery);
+    
+    console.log(`🗑️ Eliminados ${deleteResult.rowCount} registros con FechaCompra null`);
+    
+    res.json({
+      mensaje: `Se eliminaron ${deleteResult.rowCount} registros con FechaCompra null`,
+      registrosEliminados: deleteResult.rowCount,
+      totalEncontrados: totalRegistros
+    });
+    
+  } catch (error) {
+    console.error("❌ Error al limpiar registros con fecha null:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ================= �🔍 ENDPOINT DEBUG VENDEDORA ESPECÍFICA =================
+app.get("/debug-vendedora/:nombre", async (req, res) => {
+  const nombre = req.params.nombre;
+  
+  console.log("🔍 Debug vendedora:", nombre);
+  
+  try {
+    // 1. Buscar todas las ventas de esta vendedora
+    const ventasQuery = `
+      SELECT "Vendedor", "Sucursal", "Bloque", "FechaCompra", "ID"
+      FROM "ventas"
+      WHERE "Vendedor" ILIKE $1
+      ORDER BY "FechaCompra" DESC
+      LIMIT 10;
+    `;
+    
+    const ventas = await pool.query(ventasQuery, [`%${nombre}%`]);
+    
+    // 2. Buscar la última venta específicamente
+    const ultimaVentaQuery = `
+      WITH ultima_venta_por_vendedora AS (
+        SELECT 
+          "Vendedor",
+          "Sucursal",
+          "Bloque", 
+          "FechaCompra",
+          ROW_NUMBER() OVER (PARTITION BY "Vendedor" ORDER BY "FechaCompra" DESC, "ID" DESC) as rn
+        FROM "ventas"
+        WHERE "Vendedor" ILIKE $1
+      )
+      SELECT *
+      FROM ultima_venta_por_vendedora
+      WHERE rn = 1;
+    `;
+    
+    const ultimaVenta = await pool.query(ultimaVentaQuery, [`%${nombre}%`]);
+    
+    // 3. Verificar el endpoint original
+    const endpointQuery = `
+      WITH ultima_venta_por_vendedora AS (
+        SELECT 
+          "Vendedor",
+          "Sucursal",
+          "Bloque", 
+          "FechaCompra",
+          ROW_NUMBER() OVER (PARTITION BY "Vendedor" ORDER BY "FechaCompra" DESC, "ID" DESC) as rn
+        FROM "ventas"
+      )
+      SELECT
+        "Vendedor" AS nombre,
+        "Sucursal",
+        "Bloque",
+        "FechaCompra" AS fechaultima
+      FROM ultima_venta_por_vendedora
+      WHERE rn = 1 AND "Vendedor" ILIKE $1
+      ORDER BY "FechaCompra" DESC NULLS LAST;
+    `;
+    
+    const endpointResult = await pool.query(endpointQuery, [`%${nombre}%`]);
+    
+    res.json({
+      vendedora: nombre,
+      todasLasVentas: ventas.rows,
+      ultimaVentaEspecifica: ultimaVenta.rows,
+      resultadoEndpoint: endpointResult.rows,
+      totalVentas: ventas.rows.length
+    });
+    
+  } catch (error) {
+    console.error("❌ Error en debug-vendedora:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/vendedoras-status", async (req, res) => {
   const { nombre } = req.query;
   let values = [];
   let idx = 1;
 
-  // Subconsulta: obtiene la última venta por vendedora
-  const subquery = `
-    SELECT DISTINCT ON ("Vendedor")
-      "Vendedor", "Sucursal", "Bloque", "FechaCompra"
-    FROM "ventas"
-    ORDER BY "Vendedor", "FechaCompra" DESC
-  `;
+  console.log("🔍 Buscando vendedoras - parámetros:", { nombre });
 
-  // Filtro por nombre en el SELECT principal
+  // Query mejorada: obtiene la última venta por vendedora con toda la información necesaria
   let whereClause = "";
   if (nombre) {
-    whereClause = `WHERE v."Vendedor" ILIKE $${idx++}`;
+    whereClause = `WHERE "Vendedor" ILIKE $${idx++}`;
     values.push(`%${nombre}%`);
   }
 
   const query = `
+    WITH ultima_venta_por_vendedora AS (
+      SELECT 
+        "Vendedor",
+        "Sucursal",
+        "Bloque", 
+        "FechaCompra",
+        ROW_NUMBER() OVER (PARTITION BY "Vendedor" ORDER BY "FechaCompra" DESC, "ID" DESC) as rn
+      FROM "ventas"
+      ${whereClause}
+    )
     SELECT
-      v."Vendedor" AS nombre,
-      v."Sucursal",
-      v."Bloque",
-      v."FechaCompra" AS fechaUltima
-    FROM (${subquery}) v
-    ${whereClause}
-    ORDER BY fechaUltima DESC
+      "Vendedor" AS nombre,
+      "Sucursal",
+      "Bloque",
+      "FechaCompra" AS fechaultima
+    FROM ultima_venta_por_vendedora
+    WHERE rn = 1
+    ORDER BY "FechaCompra" DESC NULLS LAST;
   `;
 
   try {
+    console.log("📊 Ejecutando query vendedoras-status:", query);
+    console.log("📊 Valores:", values);
+    
     const result = await pool.query(query, values);
+    
+    console.log(`✅ Encontradas ${result.rows.length} vendedoras`);
+    if (result.rows.length > 0) {
+      console.log("📄 Primeras 3 vendedoras:", result.rows.slice(0, 3));
+    }
+    
     res.json(result.rows);
   } catch (err) {
-    console.error(err);
+    console.error("❌ Error en vendedoras-status:", err);
     res.status(500).json({ error: "Error al obtener vendedoras" });
   }
 });
@@ -6655,92 +6822,6 @@ app.get('/api/test-columns-ventas', async (req, res) => {
       success: false,
       message: 'Error obteniendo columnas de la tabla ventas',
       error: error.message
-    });
-  }
-});
-
-// Endpoint para búsqueda en Sinergia usando sesión existente de Chrome
-app.post("/aclaraciones/buscar-cliente-sinergia-existente", async (req, res) => {
-  try {
-    const { 
-      nombreCliente,
-      usarSesionExistente = true,
-      tomarScreenshot = true,
-      debugPort = 9222
-    } = req.body;
-
-    console.log('🤖 Búsqueda Sinergia (sesión existente) - datos recibidos:', { 
-      nombreCliente,
-      usarSesionExistente,
-      tomarScreenshot,
-      debugPort
-    });
-
-    if (!nombreCliente || nombreCliente.trim() === '') {
-      return res.status(400).json({ 
-        error: "Nombre del cliente es requerido para la búsqueda en Sinergia" 
-      });
-    }
-
-    const automator = new WebAutomator();
-    
-    try {
-      // Conectar a Chrome existente
-      await automator.init({ 
-        conectarExistente: true, 
-        debugPort 
-      });
-      
-      // Verificar sesión existente
-      console.log('🔍 Verificando sesión existente en Sinergia...');
-      const verificacionSesion = await automator.verificarSesionSinergia();
-      
-      if (!verificacionSesion.sesionActiva) {
-        return res.status(401).json({
-          error: "No hay sesión activa en Sinergia",
-          detalle: verificacionSesion.mensaje,
-          sugerencia: "Inicia sesión manualmente en Chrome y vuelve a intentar"
-        });
-      }
-
-      // Buscar cliente en Sinergia usando la sesión existente
-      console.log('🔍 Buscando cliente en Sinergia...');
-      const resultado = await automator.buscarClienteEnSinergia(nombreCliente, true);
-
-      console.log('🤖 Resultado de búsqueda en Sinergia (sesión existente):', {
-        exito: resultado.exito,
-        cliente: resultado.cliente,
-        totalEncontrados: resultado.totalEncontrados
-      });
-
-      res.json({
-        exito: true,
-        cliente: nombreCliente,
-        sesionVerificada: verificacionSesion,
-        busqueda: resultado
-      });
-
-    } catch (automationError) {
-      console.error('❌ Error en automatización de Sinergia (sesión existente):', automationError);
-      res.status(500).json({
-        error: "Error durante la automatización de Sinergia",
-        detalle: automationError.message,
-        cliente: nombreCliente,
-        sugerencia: "Verifica que Chrome esté abierto en modo debug y que tengas sesión activa en Sinergia"
-      });
-    } finally {
-      // NO cerrar el navegador ya que es una sesión existente
-      if (automator.browser && !automator.browser.isConnected()) {
-        console.log('🔗 Desconectando de Chrome existente...');
-        await automator.browser.disconnect();
-      }
-    }
-
-  } catch (error) {
-    console.error('❌ Error general en búsqueda Sinergia (sesión existente):', error);
-    res.status(500).json({ 
-      error: "Error al procesar búsqueda en Sinergia", 
-      detalle: error.message 
     });
   }
 });
