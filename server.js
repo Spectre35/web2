@@ -15,6 +15,26 @@ dotenv.config();
 import axios from "axios";
 // import { WebAutomator } from "./web-automator.js"; // Comentado temporalmente
 
+// 🗓️ FUNCIÓN PARA FORMATEAR FECHAS LOCALES SIN PROBLEMAS DE ZONA HORARIA
+const formatearFechaLocal = (fecha) => {
+  if (!fecha) return null;
+  
+  // Si recibimos un objeto Date, usar la fecha local
+  if (fecha instanceof Date) {
+    const año = fecha.getFullYear();
+    const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
+    const dia = fecha.getDate().toString().padStart(2, '0');
+    return `${año}-${mes}-${dia}`;
+  }
+  
+  // Si recibimos un string, devolverlo tal como está
+  if (typeof fecha === 'string') {
+    return fecha;
+  }
+  
+  return null;
+};
+
 // 🗓️ FUNCIÓN PARA FORMATEAR FECHAS SIN CONVERSIÓN DE ZONA HORARIA
 const formatearFechaSinZona = (fecha) => {
   if (!fecha) return fecha;
@@ -6103,12 +6123,15 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
       const ayer = new Date(fechaHoy);
       ayer.setDate(fechaHoy.getDate() - 1); // Ayer
       
+      const fechaInicioStr = formatearFechaLocal(inicioDelAno);
+      const fechaFinStr = formatearFechaLocal(ayer);
+      
       whereConditions.push(`"Fecha" >= $${idx++}`);
-      values.push(inicioDelAno.toISOString().split('T')[0]);
+      values.push(fechaInicioStr);
       whereConditions.push(`"Fecha" <= $${idx++}`);
-      values.push(ayer.toISOString().split('T')[0]);
+      values.push(fechaFinStr);
       console.log('📅 [DASHBOARD] Aplicando filtro automático: desde inicio del año hasta ayer', 
-                  inicioDelAno.toISOString().split('T')[0], 'hasta', ayer.toISOString().split('T')[0]);
+                  fechaInicioStr, 'hasta', fechaFinStr);
     }
 
     // Filtros por rango de fechas específico

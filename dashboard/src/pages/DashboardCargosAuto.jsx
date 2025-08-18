@@ -65,13 +65,41 @@ function obtenerRangoAmplioDefault() {
   const ayer = new Date(hoy);
   ayer.setDate(hoy.getDate() - 1);
   
+  // Usar formato local para evitar problemas de zona horaria
+  const formatearFechaLocal = (fecha) => {
+    const año = fecha.getFullYear();
+    const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
+    const dia = fecha.getDate().toString().padStart(2, '0');
+    return `${año}-${mes}-${dia}`;
+  };
+  
   return {
-    fechaInicio: fechaInicio.toISOString().split('T')[0],
-    fechaFin: ayer.toISOString().split('T')[0]
+    fechaInicio: formatearFechaLocal(fechaInicio),
+    fechaFin: formatearFechaLocal(ayer)
   };
 }
 
 export default function DashboardCargosAuto() {
+  // Función auxiliar para formatear fechas locales sin problemas de zona horaria
+  const formatearFechaLocal = (fecha) => {
+    if (!fecha) return '';
+    
+    // Si recibimos un string de fecha (YYYY-MM-DD), devolverlo tal como está
+    if (typeof fecha === 'string' && fecha.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      return fecha;
+    }
+    
+    // Si recibimos un objeto Date, usar la fecha local
+    if (fecha instanceof Date) {
+      const año = fecha.getFullYear();
+      const mes = (fecha.getMonth() + 1).toString().padStart(2, '0');
+      const dia = fecha.getDate().toString().padStart(2, '0');
+      return `${año}-${mes}-${dia}`;
+    }
+    
+    return '';
+  };
+
   // Estados
   const [anio, setAnio] = useState("2025");
   const [bloque, setBloque] = useState("");
