@@ -1,19 +1,20 @@
 services:
   # Backend API Server
   - type: web
-    name: buscadores-backend
+    name: cargosfraudes-backend
     env: node
     buildCommand: npm install
     startCommand: node server.js
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production
       - key: PORT
         value: 10000
 
-  # Frontend Static Site
+  # Frontend Static Site  
   - type: static
-    name: buscadores-spa
+    name: cargosfraudes
     buildCommand: |
       cd dashboard
       npm ci

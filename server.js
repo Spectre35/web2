@@ -63,7 +63,46 @@ const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 por defecto
 
-app.use(cors());
+// 🌐 CONFIGURACIÓN CORS OPTIMIZADA PARA RENDER
+const corsOptions = {
+  origin: [
+    'http://localhost:5173',              // Vite dev server
+    'http://localhost:3000',              // React dev alternate
+    'http://127.0.0.1:5173',             // Local IP
+    'https://cargosfraudes.onrender.com', // Frontend en Render (si existe)
+    'https://cargosfraudes-spa.onrender.com', // Frontend SPA (si existe)
+    /\.onrender\.com$/                    // Cualquier subdominio de onrender.com
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+};
+
+app.use(cors(corsOptions));
+
+// 🔍 Logging para debugging CORS en producción
+app.use((req, res, next) => {
+  console.log(`📨 ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  next();
+});
+
+// Middleware adicional para headers de seguridad en producción
+if (process.env.NODE_ENV === 'production') {
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', req.headers.origin);
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+    
+    if (req.method === 'OPTIONS') {
+      res.sendStatus(200);
+    } else {
+      next();
+    }
+  });
+}
+
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
@@ -77,6 +116,20 @@ const IPS_AUTORIZADAS_DATOS = [
 
 // Middleware para proteger endpoints con datos confidenciales
 const protegerDatos = (req, res, next) => {
+  // En producción (Render), permitir acceso desde el mismo dominio
+  if (process.env.NODE_ENV === 'production') {
+    const origin = req.headers.origin;
+    const referer = req.headers.referer;
+    
+    // Permitir si viene desde el frontend de Render o es una request interna
+    if (origin && origin.includes('onrender.com') || 
+        referer && referer.includes('onrender.com') ||
+        !origin) { // Request directa al backend
+      console.log(`✅ Acceso autorizado en producción desde: ${origin || referer || 'directo'}`);
+      return next();
+    }
+  }
+
   // Obtener IP real considerando proxies (Render usa proxies)
   const forwarded = req.headers['x-forwarded-for'];
   const clientIP = forwarded ? forwarded.split(',')[0].trim() : 

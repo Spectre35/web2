@@ -10,18 +10,9 @@ const getAPIBaseURL = () => {
     return 'http://localhost:3001';
   }
   
-  // En Render.com - patrón: frontend = app-spa.onrender.com, backend = app-backend.onrender.com
+  // En Render.com - URL específica del backend
   if (hostname.includes('onrender.com')) {
-    // Si estamos en el frontend (-spa), apuntar al backend (-backend)
-    if (hostname.includes('-spa')) {
-      const backendHost = hostname.replace('-spa', '-backend');
-      return `${protocol}//${backendHost}`;
-    }
-    // Si por alguna razón no tiene -spa, asumir que es el patrón estándar
-    else {
-      const backendHost = hostname.replace(/^([^.]+)/, '$1-backend');
-      return `${protocol}//${backendHost}`;
-    }
+    return 'https://buscadores.onrender.com';
   }
   
   // Fallback para otros servicios de hosting que usen puerto específico
