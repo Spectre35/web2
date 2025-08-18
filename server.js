@@ -6245,7 +6245,7 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
     `;
     
     console.log('🔍 [DEBUG] Consultando fechas disponibles en la base de datos...');
-    const debugResult = await client.query(debugFechasQuery);
+    const debugResult = await pool.query(debugFechasQuery);
     console.log('📅 [DEBUG] Últimas 10 fechas en la base de datos:', 
       debugResult.rows.map(row => `${row.fecha_str} (${row.fecha})`));
     
