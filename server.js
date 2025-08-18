@@ -1696,10 +1696,20 @@ app.get("/anios", async (req, res) => {
 
 app.get("/bloques", async (req, res) => {
   try {
-    const result = await pool.query('SELECT DISTINCT "Bloque" FROM "ventas" ORDER BY "Bloque"');
-    const bloques = result.rows.map(r => r.Bloque ? r.Bloque.toUpperCase() : '').filter(Boolean);
-    res.json(bloques);
+    // Consultar bloques de ambas tablas y combinarlos
+    const ventasResult = await pool.query('SELECT DISTINCT "Bloque" FROM "ventas" WHERE "Bloque" IS NOT NULL ORDER BY "Bloque"');
+    const cargosResult = await pool.query('SELECT DISTINCT "Bloque" FROM "cargos_auto" WHERE "Bloque" IS NOT NULL ORDER BY "Bloque"');
+    
+    const bloquesVentas = ventasResult.rows.map(r => r.Bloque).filter(Boolean);
+    const bloquesCargos = cargosResult.rows.map(r => r.Bloque).filter(Boolean);
+    
+    // Combinar y eliminar duplicados
+    const todosLosBloques = [...new Set([...bloquesVentas, ...bloquesCargos])].sort();
+    
+    console.log('📦 Bloques encontrados:', todosLosBloques);
+    res.json(todosLosBloques);
   } catch (error) {
+    console.error('❌ Error al obtener bloques:', error);
     res.status(500).send("Error al obtener bloques");
   }
 });
@@ -6074,7 +6084,7 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
     console.log('🔍 [CARGOS AUTO DASHBOARD] Origin:', req.headers.origin);
     console.log('📋 [CARGOS AUTO DASHBOARD] Parámetros:', req.query);
     
-    const { anio, bloque, mes, fechaInicio, fechaFin } = req.query;
+    const { bloque, fechaInicio, fechaFin, sucursal } = req.query;
     let whereConditions = [];
     let values = [];
     let idx = 1;
@@ -6086,13 +6096,19 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
       UPPER("Cobrado_Por") = 'STRIPE AUTO'
     )`);
 
-    // Si no se especifica rango de fechas, usar los últimos 6 meses por defecto
-    if (!fechaInicio && !fechaFin && !anio && !mes) {
+    // Si no se especifica rango de fechas, usar desde el inicio del año actual hasta ayer por defecto
+    if (!fechaInicio && !fechaFin) {
       const fechaHoy = new Date();
-      const hace6Meses = new Date(fechaHoy.getFullYear(), fechaHoy.getMonth() - 6, 1);
+      const inicioDelAno = new Date(fechaHoy.getFullYear(), 0, 1); // Primer día del año actual
+      const ayer = new Date(fechaHoy);
+      ayer.setDate(fechaHoy.getDate() - 1); // Ayer
+      
       whereConditions.push(`"Fecha" >= $${idx++}`);
-      values.push(hace6Meses.toISOString().split('T')[0]);
-      console.log('📅 [DASHBOARD] Aplicando filtro automático: últimos 6 meses desde', hace6Meses.toISOString().split('T')[0]);
+      values.push(inicioDelAno.toISOString().split('T')[0]);
+      whereConditions.push(`"Fecha" <= $${idx++}`);
+      values.push(ayer.toISOString().split('T')[0]);
+      console.log('📅 [DASHBOARD] Aplicando filtro automático: desde inicio del año hasta ayer', 
+                  inicioDelAno.toISOString().split('T')[0], 'hasta', ayer.toISOString().split('T')[0]);
     }
 
     // Filtros por rango de fechas específico
@@ -6108,20 +6124,23 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
     }
 
     // Filtros adicionales (solo si se especifican)
-    if (anio && anio !== "") {
-      whereConditions.push(`EXTRACT(YEAR FROM "Fecha") = $${idx++}`);
-      values.push(anio);
-    }
     if (bloque && bloque !== "") {
       whereConditions.push(`"Bloque" = $${idx++}`);
       values.push(bloque);
     }
-    if (mes && mes !== "") {
-      whereConditions.push(`EXTRACT(MONTH FROM "Fecha") = $${idx++}`);
-      values.push(mes);
+    
+    // Filtro por sucursal
+    if (sucursal && sucursal !== "") {
+      whereConditions.push(`"Sucursal" = $${idx++}`);
+      values.push(sucursal);
+      console.log('🏢 [DASHBOARD] Filtro sucursal:', sucursal);
     }
 
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    console.log('🚨 DEBUG BACKEND - Parámetros recibidos:', { bloque, fechaInicio, fechaFin, sucursal });
+    console.log('🚨 DEBUG BACKEND - WHERE Clause:', whereClause);
+    console.log('🚨 DEBUG BACKEND - Values:', values);
 
     // Query 1: Registros por sucursal para cada procesador
     const registrosPorSucursal = await pool.query(`
@@ -6281,7 +6300,7 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
       desglosePorDiaSucursalConsolidado: desglosePorDiaSucursalConsolidado.rows,
       desglosePorDiaProcesador: desglosePorDiaProcesador.rows,
       desglosePorDiaProcesadorSucursal: desglosePorDiaProcesadorSucursal.rows,
-      filtrosAplicados: { anio, bloque, mes }
+      filtrosAplicados: { bloque, fechaInicio, fechaFin }
     });
 
   } catch (error) {

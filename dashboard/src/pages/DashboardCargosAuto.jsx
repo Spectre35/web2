@@ -59,13 +59,15 @@ const VISTAS = {
 // Función para obtener un rango amplio que incluya datos disponibles
 function obtenerRangoAmplioDefault() {
   const hoy = new Date();
-  // Empezar desde 6 meses atrás para asegurar que incluimos todos los datos
-  const fechaInicio = new Date(hoy.getFullYear(), hoy.getMonth() - 6, 1); // Primer día hace 6 meses
-  const fechaFin = new Date(hoy.getFullYear(), hoy.getMonth() + 1, 0); // Último día del mes actual
+  // Empezar desde el 1 de enero del año actual
+  const fechaInicio = new Date(hoy.getFullYear(), 0, 1); // Primer día del año actual
+  // Fecha fin es ayer (un día menos que hoy)
+  const ayer = new Date(hoy);
+  ayer.setDate(hoy.getDate() - 1);
   
   return {
     fechaInicio: fechaInicio.toISOString().split('T')[0],
-    fechaFin: fechaFin.toISOString().split('T')[0]
+    fechaFin: ayer.toISOString().split('T')[0]
   };
 }
 
@@ -79,6 +81,7 @@ export default function DashboardCargosAuto() {
   const [error, setError] = useState("");
   const [anios, setAnios] = useState([]);
   const [bloques, setBloques] = useState([]);
+  const [sucursalesDisponibles, setSucursalesDisponibles] = useState([]);
   const [vistaActual, setVistaActual] = useState('resumen');
   const [ordenTabla, setOrdenTabla] = useState({ campo: 'monto_total', direccion: 'desc' });
   const [tablaExpandida, setTablaExpandida] = useState(false); // Estado para expandir tabla
@@ -95,6 +98,7 @@ export default function DashboardCargosAuto() {
   // Nuevos estados para filtros avanzados
   const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
+  const [sucursalUniversal, setSucursalUniversal] = useState(''); // Filtro universal de sucursal
   const [filtroSucursal, setFiltroSucursal] = useState('');
   const [filtroProcesador, setFiltroProcesador] = useState('');
   const [vistaDetallada, setVistaDetallada] = useState(VISTAS.RESUMEN);
@@ -116,12 +120,10 @@ export default function DashboardCargosAuto() {
 
   // Cargar opciones de filtros
   useEffect(() => {
-    console.log('🔄 Cargando filtros para Dashboard Cargos Auto...');
     
     // Cargar años
     axios.get(`${API_BASE_URL}/anios`)
       .then(r => {
-        console.log('✅ Años cargados:', r.data);
         setAnios(r.data.map(a => a.toString()));
       })
       .catch(e => {
@@ -129,45 +131,41 @@ export default function DashboardCargosAuto() {
         setAnios(['2024', '2025']);
       });
     
-    // Cargar bloques
-    axios.get(`${API_BASE_URL}/bloques`)
-      .then(r => {
-        console.log('✅ Bloques cargados:', r.data);
-        setBloques(r.data);
-      })
-      .catch(e => {
-        console.error('❌ Error cargando bloques:', e);
-        setBloques(['COL1', 'COL2', 'CHI', 'ESP1', 'ESP2', 'BRA', 'USA1']);
-      });
+    // Cargar bloques específicos para cargos_auto
+    // En lugar de usar el endpoint general, usar los bloques conocidos de cargos_auto
+    setBloques(['Col1', 'Mty1', 'Mty2', 'Mty3', 'Mty4', 'Sin1', 'Sin2', 'Sin3']);
   }, []);
 
   // Función para cargar dashboard (manual)
   const cargarDashboard = () => {
-    console.log('📊 Cargando dashboard de cargos auto...');
-    console.log('🔍 Filtros aplicados:', { anio, bloque, mes, fechaInicio, fechaFin });
-    
     setLoading(true);
     setError("");
     setCambiosPendientes(false); // Resetear cambios pendientes
     
     // Preparar parámetros para el backend
-    const params = { anio, bloque, mes };
+    const params = {};
     
-    // Agregar fechas si están definidas
-    if (fechaInicio) params.fechaInicio = fechaInicio;
-    if (fechaFin) params.fechaFin = fechaFin;
+    // Solo agregar parámetros si tienen valores válidos
+    if (bloque && bloque !== '' && bloque !== 'Todos los bloques') params.bloque = bloque; // ✅ FIX: No enviar si es "Todos los bloques"
+    if (fechaInicio && fechaInicio !== '') params.fechaInicio = fechaInicio;
+    if (fechaFin && fechaFin !== '') params.fechaFin = fechaFin;
+    if (sucursalUniversal && sucursalUniversal !== '' && sucursalUniversal !== 'Todas las sucursales') params.sucursal = sucursalUniversal;
     
-    console.log('📅 Parámetros enviados al backend:', params);
+    console.log('� DEBUG TEMPORAL - Parámetros enviados al backend:', params);
+    console.log('🚨 DEBUG TEMPORAL - Estado bloque:', bloque, 'es vacío?', bloque === '');
+    console.log('🚨 DEBUG TEMPORAL - Todos los filtros:', { bloque, fechaInicio, fechaFin, sucursalUniversal });
     
     axios.get(`${API_BASE_URL}/cargos_auto/dashboard`, { params })
       .then(r => {
-        console.log('✅ Dashboard cargado exitosamente:', r.data);
-        console.log('📊 Registros recibidos:', {
+        console.log('🚨 DEBUG TEMPORAL - Respuesta del backend:', {
           consolidado: r.data.desglosePorDiaConsolidado?.length || 0,
           porProcesador: r.data.desglosePorDiaProcesador?.length || 0,
           porSucursal: r.data.desglosePorDiaProcesadorSucursal?.length || 0
         });
         setDashboard(r.data);
+        
+        // Extraer sucursales únicas de los datos
+        extraerSucursalesDisponibles(r.data);
       })
       .catch(e => {
         console.error('❌ Error cargando dashboard:', e);
@@ -178,6 +176,45 @@ export default function DashboardCargosAuto() {
         setError(errorMsg);
       })
       .finally(() => setLoading(false));
+  };
+
+  // Función para extraer sucursales únicas de los datos
+  const extraerSucursalesDisponibles = (data) => {
+    const sucursalesSet = new Set();
+    
+    // Extraer de registrosPorSucursal
+    if (data.registrosPorSucursal) {
+      data.registrosPorSucursal.forEach(item => {
+        if (item.Sucursal && item.Sucursal.trim() !== '') {
+          sucursalesSet.add(item.Sucursal.trim());
+        }
+      });
+    }
+    
+    // Extraer de desglosePorDiaProcesadorSucursal
+    if (data.desglosePorDiaProcesadorSucursal) {
+      data.desglosePorDiaProcesadorSucursal.forEach(item => {
+        if (item.Sucursal && item.Sucursal.trim() !== '') {
+          sucursalesSet.add(item.Sucursal.trim());
+        }
+        if (item.sucursal && item.sucursal.trim() !== '') {
+          sucursalesSet.add(item.sucursal.trim());
+        }
+      });
+    }
+    
+    // Extraer de topSucursales
+    if (data.topSucursales) {
+      data.topSucursales.forEach(item => {
+        if (item.Sucursal && item.Sucursal.trim() !== '') {
+          sucursalesSet.add(item.Sucursal.trim());
+        }
+      });
+    }
+    
+    // Convertir Set a Array y ordenar
+    const sucursalesArray = Array.from(sucursalesSet).sort();
+    setSucursalesDisponibles(sucursalesArray);
   };
 
   // Cargar datos iniciales solo una vez al montar el componente
@@ -204,7 +241,6 @@ export default function DashboardCargosAuto() {
         ? 'asc' 
         : 'desc';
     setOrdenTabla({ campo, direccion: nuevaDireccion });
-    console.log('🔄 Ordenando por:', campo, nuevaDireccion);
   };
 
   // Función para calcular totales generales
@@ -312,19 +348,21 @@ export default function DashboardCargosAuto() {
 
   // Funciones para filtrado avanzado (solo aplican filtros adicionales, no fechas)
   const filtrarDatosPorSucursalAvanzado = (datos) => {
-    if (!datos || !filtroSucursal) return datos;
+    if (!datos || !filtroSucursal || filtroSucursal.trim() === '') return datos;
     
-    return datos.filter(item => 
+    const resultado = datos.filter(item => 
       (item.Sucursal || item.sucursal || '').toLowerCase().includes(filtroSucursal.toLowerCase())
     );
+    return resultado;
   };
 
   const filtrarDatosPorProcesadorAvanzado = (datos) => {
-    if (!datos || !filtroProcesador) return datos;
+    if (!datos || !filtroProcesador || filtroProcesador.trim() === '') return datos;
     
-    return datos.filter(item => 
+    const resultado = datos.filter(item => 
       (item.procesador || '').toLowerCase().includes(filtroProcesador.toLowerCase())
     );
+    return resultado;
   };
 
   // Función para obtener datos procesados según la vista detallada
@@ -350,15 +388,10 @@ export default function DashboardCargosAuto() {
         datos = dashboard.desglosePorDiaConsolidado || [];
     }
     
-    console.log('🔍 Vista detallada:', vistaDetallada);
-    console.log('📊 Datos iniciales del backend:', datos.length);
-    
     // Solo aplicar filtros adicionales (no fechas, que ya maneja el backend)
     datos = filtrarDatosPorSucursalAvanzado(datos);
-    console.log('🏢 Después filtro sucursal:', datos.length);
     
     datos = filtrarDatosPorProcesadorAvanzado(datos);
-    console.log('💳 Después filtro procesador:', datos.length);
     
     // Ordenar datos
     if (ordenTabla.campo) {
@@ -386,19 +419,39 @@ export default function DashboardCargosAuto() {
       });
     }
     
-    console.log('📊 Datos finales:', datos.length);
     return datos;
+  };
+
+  // Función para limpiar TODOS los filtros
+  const limpiarTodosLosFiltros = () => {
+    
+    // Filtros principales
+    setBloque('');
+    setFechaInicio('');
+    setFechaFin('');
+    setSucursalUniversal('');
+    
+    // Filtros avanzados
+    setFiltroSucursal('');
+    setFiltroProcesador('');
+    
+    // Otros filtros
+    setBusquedaSucursal('');
+    setProcesadorExpandido('consolidado');
+    
+    // Reset paginación
+    setPaginaActual(1);
+    setCambiosPendientes(false);
   };
 
   // Función para resetear filtros al rango amplio
   const resetearAMesActual = () => {
+    limpiarTodosLosFiltros();
+    
+    // Establecer rango amplio de fechas
     const { fechaInicio: inicio, fechaFin: fin } = obtenerRangoAmplioDefault();
     setFechaInicio(inicio);
     setFechaFin(fin);
-    setFiltroSucursal('');
-    setFiltroProcesador('');
-    setPaginaActual(1);
-    setCambiosPendientes(false);
     
     // Ejecutar búsqueda automáticamente después de resetear
     setTimeout(() => {
@@ -441,8 +494,6 @@ export default function DashboardCargosAuto() {
       registros: parseInt(item.total_registros) || 0,
       monto: parseFloat(item.monto_total) || 0
     })) || [];
-
-    console.log('📊 Datos preparados para gráficas:', { barData, pieData, areaData });
 
     return { barData, pieData, areaData };
   };
@@ -531,23 +582,15 @@ export default function DashboardCargosAuto() {
 
         {/* Filtros */}
         <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 mb-8 shadow-lg">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="relative">
-              <label className="block text-sm font-medium text-gray-300 mb-2">Año</label>
-              <select 
-                value={anio} 
-                onChange={e => setAnio(e.target.value)} 
-                className="w-full border border-gray-600/50 bg-gray-900/50 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-              >
-                <option value="">Todos los años</option>
-                {anios.map(a => <option key={a} value={a}>{a}</option>)}
-              </select>
-            </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="relative">
               <label className="block text-sm font-medium text-gray-300 mb-2">Bloque</label>
               <select 
                 value={bloque} 
-                onChange={e => setBloque(e.target.value)} 
+                onChange={e => {
+                  setBloque(e.target.value);
+                  setCambiosPendientes(true);
+                }} 
                 className="w-full border border-gray-600/50 bg-gray-900/50 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               >
                 <option value="">Todos los bloques</option>
@@ -555,25 +598,91 @@ export default function DashboardCargosAuto() {
               </select>
             </div>
             <div className="relative">
-              <label className="block text-sm font-medium text-gray-300 mb-2">Mes</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Sucursal</label>
               <select 
-                value={mes} 
-                onChange={e => setMes(e.target.value)} 
+                value={sucursalUniversal} 
+                onChange={e => {
+                  setSucursalUniversal(e.target.value);
+                  setCambiosPendientes(true);
+                }} 
                 className="w-full border border-gray-600/50 bg-gray-900/50 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
               >
-                <option value="">Todos los meses</option>
-                {meses.map(m => <option key={m.valor} value={m.valor}>{m.nombre}</option>)}
+                <option value="">Todas las sucursales</option>
+                {sucursalesDisponibles.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
+            </div>
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Fecha Inicio</label>
+              <input
+                type="date"
+                value={fechaInicio}
+                onChange={e => {
+                  setFechaInicio(e.target.value);
+                  setCambiosPendientes(true);
+                }}
+                className="w-full border border-gray-600/50 bg-gray-900/50 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              />
+            </div>
+            <div className="relative">
+              <label className="block text-sm font-medium text-gray-300 mb-2">Fecha Fin</label>
+              <input
+                type="date"
+                value={fechaFin}
+                onChange={e => {
+                  setFechaFin(e.target.value);
+                  setCambiosPendientes(true);
+                }}
+                className="w-full border border-gray-600/50 bg-gray-900/50 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+              />
             </div>
           </div>
           
-          {/* Información de debugging temporal */}
-          <div className="mt-4 p-3 bg-gray-900/60 rounded-lg border border-gray-600/30 text-xs text-gray-400">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div>📡 API: {API_BASE_URL}</div>
-              <div>📊 Años cargados: {anios.length > 0 ? anios.join(', ') : 'Ninguno'}</div>
-              <div>🏢 Bloques cargados: {bloques.length > 0 ? bloques.slice(0, 3).join(', ') + (bloques.length > 3 ? '...' : '') : 'Ninguno'}</div>
-            </div>
+          {/* Botón de búsqueda para filtros principales */}
+          <div className="mt-4 flex justify-end gap-3">
+            {cambiosPendientes && (
+              <div className="px-3 py-2 bg-orange-900/50 border border-orange-600/50 rounded-lg text-orange-300 text-sm flex items-center">
+                ⏳ Hay cambios sin aplicar
+              </div>
+            )}
+            <button
+              onClick={cargarDashboard}
+              disabled={loading}
+              className={`px-6 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
+                cambiosPendientes
+                  ? 'bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white'
+                  : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
+              }`}
+            >
+              {loading ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Buscando...
+                </>
+              ) : cambiosPendientes ? (
+                <>
+                  ⚠️ Aplicar Filtros
+                </>
+              ) : (
+                <>
+                  🔍 Buscar
+                </>
+              )}
+            </button>
+            <button
+              onClick={() => {
+                limpiarTodosLosFiltros();
+                setCambiosPendientes(true);
+              }}
+              className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-all"
+            >
+              🧹 Limpiar Filtros
+            </button>
+            <button
+              onClick={resetearAMesActual}
+              className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-all"
+            >
+              📅 Resetear Todo
+            </button>
           </div>
         </div>
 
@@ -597,7 +706,7 @@ export default function DashboardCargosAuto() {
             {vistaActual === 'resumen' && (
               <div className="space-y-8">
                 {/* Tarjetas de resumen */}
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   <div className="bg-gradient-to-br from-blue-600/20 to-blue-800/20 border border-blue-500/30 rounded-xl p-6">
                     <div className="flex items-center justify-between">
                       <div>
@@ -631,18 +740,6 @@ export default function DashboardCargosAuto() {
                         </p>
                       </div>
                       <div className="text-purple-400 text-3xl">🏢</div>
-                    </div>
-                  </div>
-                  
-                  <div className="bg-gradient-to-br from-orange-600/20 to-orange-800/20 border border-orange-500/30 rounded-xl p-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <p className="text-orange-300 text-sm font-medium">Bloques</p>
-                        <p className="text-2xl font-bold text-white">
-                          {formatNumber(dashboard.resumenGeneral?.total_bloques)}
-                        </p>
-                      </div>
-                      <div className="text-orange-400 text-3xl">🌎</div>
                     </div>
                   </div>
                 </div>
@@ -1056,83 +1153,16 @@ export default function DashboardCargosAuto() {
                   <p className="text-sm">Control total sobre rangos de fechas, filtros por sucursal y procesador con navegación entre vistas especializadas.</p>
                 </div>
 
-                {/* Panel de Controles Avanzados */}
+                {/* Navegación entre Vistas Detalladas */}
                 <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6">
-                  <h3 className="text-xl font-bold text-gray-100 mb-4">⚙️ Controles Avanzados</h3>
-                  
-                  {/* Controles de Filtro */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-                    {/* Rango de Fechas */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-300">📅 Fecha Inicio</label>
-                      <input
-                        type="date"
-                        value={fechaInicio}
-                        onChange={(e) => {
-                          setFechaInicio(e.target.value);
-                          setCambiosPendientes(true);
-                          setPaginaActual(1); // Reset pagination when filter changes
-                        }}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                    
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-300">📅 Fecha Fin</label>
-                      <input
-                        type="date"
-                        value={fechaFin}
-                        onChange={(e) => {
-                          setFechaFin(e.target.value);
-                          setCambiosPendientes(true);
-                          setPaginaActual(1); // Reset pagination when filter changes
-                        }}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                    
-                    {/* Filtro por Sucursal */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-300">🏢 Filtrar Sucursal</label>
-                      <input
-                        type="text"
-                        value={filtroSucursal}
-                        onChange={(e) => {
-                          setFiltroSucursal(e.target.value);
-                          setCambiosPendientes(true);
-                          setPaginaActual(1); // Reset pagination when filter changes
-                        }}
-                        placeholder="Buscar sucursal..."
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      />
-                    </div>
-                    
-                    {/* Filtro por Procesador */}
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-300">💳 Filtrar Procesador</label>
-                      <select
-                        value={filtroProcesador}
-                        onChange={(e) => {
-                          setFiltroProcesador(e.target.value);
-                          setCambiosPendientes(true);
-                          setPaginaActual(1); // Reset pagination when filter changes
-                        }}
-                        className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-                      >
-                        <option value="">Todos los procesadores</option>
-                        <option value="BSD">BSD</option>
-                        <option value="EFEVOO">EFEVOO</option>
-                        <option value="STRIPE AUTO">STRIPE AUTO</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Navegación entre Vistas Detalladas */}
                   <div className="flex flex-wrap gap-2 mb-4">
                     <button
                       onClick={() => {
                         setVistaDetallada(VISTAS.RESUMEN);
                         setPaginaActual(1);
+                        // Para resumen, limpiar filtros específicos ya que solo mostramos totales
+                        setFiltroSucursal('');
+                        setFiltroProcesador('');
                       }}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         vistaDetallada === VISTAS.RESUMEN 
@@ -1146,6 +1176,8 @@ export default function DashboardCargosAuto() {
                       onClick={() => {
                         setVistaDetallada(VISTAS.POR_SUCURSAL);
                         setPaginaActual(1);
+                        // Para vista por sucursal, mantener filtro sucursal pero limpiar procesador
+                        setFiltroProcesador('');
                       }}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         vistaDetallada === VISTAS.POR_SUCURSAL 
@@ -1159,6 +1191,8 @@ export default function DashboardCargosAuto() {
                       onClick={() => {
                         setVistaDetallada(VISTAS.POR_PROCESADOR);
                         setPaginaActual(1);
+                        // Para vista por procesador, mantener filtro procesador pero limpiar sucursal
+                        setFiltroSucursal('');
                       }}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         vistaDetallada === VISTAS.POR_PROCESADOR 
@@ -1172,6 +1206,7 @@ export default function DashboardCargosAuto() {
                       onClick={() => {
                         setVistaDetallada(VISTAS.DETALLE_COMPLETO);
                         setPaginaActual(1);
+                        // Para detalle completo, mantener ambos filtros
                       }}
                       className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                         vistaDetallada === VISTAS.DETALLE_COMPLETO 
@@ -1181,54 +1216,6 @@ export default function DashboardCargosAuto() {
                     >
                       🔍 Detalle Completo
                     </button>
-                    
-                    {/* Botones de Acción */}
-                    <div className="ml-auto flex gap-2">
-                      <button
-                        onClick={cargarDashboard}
-                        disabled={loading}
-                        className={`px-6 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${
-                          cambiosPendientes
-                            ? 'bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white animate-pulse'
-                            : 'bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white'
-                        }`}
-                      >
-                        {loading ? (
-                          <>
-                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                            Buscando...
-                          </>
-                        ) : cambiosPendientes ? (
-                          <>
-                            ⚠️ Aplicar Cambios
-                          </>
-                        ) : (
-                          <>
-                            🔍 Buscar Datos
-                          </>
-                        )}
-                      </button>
-                      {cambiosPendientes && (
-                        <div className="px-3 py-2 bg-orange-900/50 border border-orange-600/50 rounded-lg text-orange-300 text-xs flex items-center">
-                          ⏳ Cambios pendientes
-                        </div>
-                      )}
-                      <button
-                        onClick={resetearAMesActual}
-                        className="px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-medium transition-all"
-                      >
-                        📅 Ver Todos
-                      </button>
-                      <button
-                        onClick={() => {
-                          setFiltroSucursal('');
-                          setFiltroProcesador('');
-                        }}
-                        className="px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg text-sm font-medium transition-all"
-                      >
-                        🗑️ Limpiar Filtros
-                      </button>
-                    </div>
                   </div>
                 </div>
 
