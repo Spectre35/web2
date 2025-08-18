@@ -5440,6 +5440,27 @@ app.get("/aclaraciones/dashboard", protegerDatos, async (req, res) => {
       valuesPerdidas
     )).rows;
 
+    // 13. 📊 NUEVO: Aclaraciones por procesador con estado (En proceso, Ganadas, Perdidas)
+    const aclaracionesPorProcesadorQuery = `
+      SELECT 
+        "procesador",
+        COUNT(*) as total,
+        COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) = 'ganada') as ganadas,
+        COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) = 'perdida') as perdidas,
+        COUNT(*) FILTER (WHERE LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida') 
+                        OR LOWER(COALESCE("captura_cc",'')) = 'en proceso') as "enProceso",
+        COALESCE(SUM("monto_mnx"),0) as monto_total,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'ganada' THEN "monto_mnx" ELSE 0 END),0) as monto_ganado,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) = 'perdida' THEN "monto_mnx" ELSE 0 END),0) as monto_perdido,
+        COALESCE(SUM(CASE WHEN LOWER(COALESCE("captura_cc",'')) NOT IN ('ganada','perdida') 
+                         OR LOWER(COALESCE("captura_cc",'')) = 'en proceso' THEN "monto_mnx" ELSE 0 END),0) as monto_en_proceso
+      FROM aclaraciones
+      ${whereClause}
+      GROUP BY "procesador"
+      ORDER BY total DESC
+    `;
+    const aclaracionesPorProcesador = (await pool.query(aclaracionesPorProcesadorQuery, values)).rows;
+
     // ✅ RESPUESTA CORREGIDA: Devolver datos estructurados correctamente
     res.json({
       total: {
@@ -5460,7 +5481,8 @@ app.get("/aclaraciones/dashboard", protegerDatos, async (req, res) => {
       topVendedorasMonto,
       vendedoresIncompletos,
       resolucionPorMes,
-      topSucursalesPerdidas
+      topSucursalesPerdidas,
+      aclaracionesPorProcesador
     });
   } catch (error) {
     console.error("Error en dashboard de aclaraciones:", error);

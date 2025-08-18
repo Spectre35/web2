@@ -29,6 +29,7 @@ export default function DashboardAclaraciones() {
   const [anios, setAnios] = useState([]);
   const [bloques, setBloques] = useState([]);
   const [vistaActual, setVistaActual] = useState('resumen'); // 'resumen', 'graficos', 'tablas'
+  const [ordenProcesadores, setOrdenProcesadores] = useState({ campo: '', direccion: 'desc' }); // Estado para ordenamiento
   const [meses] = useState([
     "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
   ]);
@@ -50,6 +51,48 @@ export default function DashboardAclaraciones() {
       .catch(e => setError(e?.response?.data?.error || "Error al cargar datos"))
       .finally(() => setLoading(false));
   }, [anio, bloque, mes]);
+
+  // Función para manejar el ordenamiento de las tablas de procesadores
+  const handleOrdenar = (campo) => {
+    const nuevaDireccion = 
+      ordenProcesadores.campo === campo && ordenProcesadores.direccion === 'desc' 
+        ? 'asc' 
+        : 'desc';
+    
+    setOrdenProcesadores({ campo, direccion: nuevaDireccion });
+  };
+
+  // Función para ordenar los datos de procesadores
+  const ordenarDatosProcesadores = (datos) => {
+    if (!ordenProcesadores.campo) return datos;
+
+    return [...datos].sort((a, b) => {
+      let valorA = a[ordenProcesadores.campo];
+      let valorB = b[ordenProcesadores.campo];
+
+      // Para el campo procesador (texto), usar comparación de strings
+      if (ordenProcesadores.campo === 'procesador') {
+        valorA = valorA.toString().toLowerCase();
+        valorB = valorB.toString().toLowerCase();
+        
+        if (ordenProcesadores.direccion === 'asc') {
+          return valorA.localeCompare(valorB);
+        } else {
+          return valorB.localeCompare(valorA);
+        }
+      }
+
+      // Para campos numéricos
+      valorA = parseFloat(valorA) || 0;
+      valorB = parseFloat(valorB) || 0;
+
+      if (ordenProcesadores.direccion === 'asc') {
+        return valorA - valorB;
+      } else {
+        return valorB - valorA;
+      }
+    });
+  };
 
   // Preparar datos para gráficas
   const prepararDatosGraficas = () => {
@@ -103,10 +146,50 @@ export default function DashboardAclaraciones() {
       }
     ];
 
-    return { lineData, pieData, barData, areaData, metricsData };
+    // 📊 NUEVO: Datos para gráfica de aclaraciones por procesador
+    const procesadorDataBase = resumen.aclaracionesPorProcesador?.map(item => ({
+      procesador: item.procesador,
+      enProceso: parseInt(item.enProceso) || 0,
+      ganadas: parseInt(item.ganadas) || 0,
+      perdidas: parseInt(item.perdidas) || 0,
+      total: parseInt(item.total) || 0,
+      montoTotal: parseFloat(item.monto_total) || 0,
+      montoGanado: parseFloat(item.monto_ganado) || 0,
+      montoPerdido: parseFloat(item.monto_perdido) || 0,
+      montoEnProceso: parseFloat(item.monto_en_proceso) || 0
+    })) || [];
+
+    // Aplicar ordenamiento a los datos de procesadores
+    const procesadorData = ordenarDatosProcesadores(procesadorDataBase);
+
+    return { lineData, pieData, barData, areaData, metricsData, procesadorData };
   };
 
-  const { lineData, pieData, barData, areaData, metricsData } = prepararDatosGraficas();
+  const { lineData, pieData, barData, areaData, metricsData, procesadorData } = prepararDatosGraficas();
+
+  // Componente para encabezados de tabla ordenables
+  const EncabezadoOrdenable = ({ campo, children, className = "", align = "text-left" }) => {
+    const estaOrdenado = ordenProcesadores.campo === campo;
+    const direccion = ordenProcesadores.direccion;
+    
+    return (
+      <th 
+        className={`px-3 py-2 font-medium cursor-pointer hover:bg-gray-700/30 transition-colors ${align} ${className}`}
+        onClick={() => handleOrdenar(campo)}
+      >
+        <div className="flex items-center gap-1 justify-center">
+          <span>{children}</span>
+          <span className="text-xs opacity-70">
+            {estaOrdenado ? (
+              direccion === 'desc' ? '▼' : '▲'
+            ) : (
+              '⇅'
+            )}
+          </span>
+        </div>
+      </th>
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
@@ -412,6 +495,132 @@ export default function DashboardAclaraciones() {
                           <Bar dataKey="cantidad" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 📊 NUEVA GRÁFICA: Aclaraciones por Procesador */}
+                <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
+                  <h3 className="text-xl font-semibold text-gray-100 mb-4">💳 Aclaraciones por Procesador</h3>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={procesadorData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+                        <XAxis dataKey="procesador" stroke="#D1D5DB" fontSize={12} />
+                        <YAxis stroke="#D1D5DB" />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: '#1F2937', 
+                            border: '1px solid #374151',
+                            borderRadius: '8px',
+                            color: '#F9FAFB'
+                          }}
+                          formatter={(value, name) => [
+                            value,
+                            name === 'enProceso' ? 'En Proceso' :
+                            name === 'ganadas' ? 'Ganadas' :
+                            name === 'perdidas' ? 'Perdidas' : name
+                          ]}
+                        />
+                        <Legend 
+                          wrapperStyle={{ color: '#D1D5DB' }}
+                          formatter={(value) => 
+                            value === 'enProceso' ? 'En Proceso' :
+                            value === 'ganadas' ? 'Ganadas' :
+                            value === 'perdidas' ? 'Perdidas' : value
+                          }
+                        />
+                        <Bar dataKey="enProceso" stackId="a" fill="#FCD34D" name="enProceso" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="ganadas" stackId="a" fill="#10B981" name="ganadas" radius={[0, 0, 0, 0]} />
+                        <Bar dataKey="perdidas" stackId="a" fill="#F87171" name="perdidas" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  
+                  {/* Tabla resumen debajo de la gráfica */}
+                  <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Tabla de Cantidades */}
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-200 mb-3 flex items-center">
+                        <span className="mr-2">📊</span>
+                        Cantidades por Estado
+                      </h4>
+                      <div className="overflow-x-auto bg-gray-900/30 rounded-lg">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-700 bg-gray-800/50">
+                              <EncabezadoOrdenable campo="procesador" className="text-gray-300">
+                                Procesador
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="enProceso" className="text-yellow-400" align="text-center">
+                                En Proceso
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="ganadas" className="text-green-400" align="text-center">
+                                Ganadas
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="perdidas" className="text-red-400" align="text-center">
+                                Perdidas
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="total" className="text-blue-400" align="text-center">
+                                Total
+                              </EncabezadoOrdenable>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {procesadorData.map((proc, index) => (
+                              <tr key={`cantidades-${proc.procesador}`} className={`${index % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-700/40 transition-colors`}>
+                                <td className="px-3 py-2 font-medium text-gray-200">{proc.procesador}</td>
+                                <td className="px-3 py-2 text-center text-yellow-400 font-medium">{proc.enProceso.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-center text-green-400 font-medium">{proc.ganadas.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-center text-red-400 font-medium">{proc.perdidas.toLocaleString()}</td>
+                                <td className="px-3 py-2 text-center text-blue-400 font-bold">{proc.total.toLocaleString()}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Tabla de Montos */}
+                    <div>
+                      <h4 className="text-lg font-semibold text-gray-200 mb-3 flex items-center">
+                        <span className="mr-2">💰</span>
+                        Montos por Estado
+                      </h4>
+                      <div className="overflow-x-auto bg-gray-900/30 rounded-lg">
+                        <table className="w-full text-sm">
+                          <thead>
+                            <tr className="border-b border-gray-700 bg-gray-800/50">
+                              <EncabezadoOrdenable campo="procesador" className="text-gray-300">
+                                Procesador
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="montoEnProceso" className="text-yellow-400" align="text-center">
+                                En Proceso
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="montoGanado" className="text-green-400" align="text-center">
+                                Ganado
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="montoPerdido" className="text-red-400" align="text-center">
+                                Perdido
+                              </EncabezadoOrdenable>
+                              <EncabezadoOrdenable campo="montoTotal" className="text-blue-400" align="text-center">
+                                Total
+                              </EncabezadoOrdenable>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {procesadorData.map((proc, index) => (
+                              <tr key={`montos-${proc.procesador}`} className={`${index % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-700/40 transition-colors`}>
+                                <td className="px-3 py-2 font-medium text-gray-200">{proc.procesador}</td>
+                                <td className="px-3 py-2 text-center text-yellow-400 font-medium">{formatCurrency(proc.montoEnProceso)}</td>
+                                <td className="px-3 py-2 text-center text-green-400 font-medium">{formatCurrency(proc.montoGanado)}</td>
+                                <td className="px-3 py-2 text-center text-red-400 font-medium">{formatCurrency(proc.montoPerdido)}</td>
+                                <td className="px-3 py-2 text-center text-blue-400 font-bold">{formatCurrency(proc.montoTotal)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 </div>
