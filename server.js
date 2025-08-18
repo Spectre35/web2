@@ -102,41 +102,59 @@ const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 por defecto
 
-// 🌐 CONFIGURACIÓN CORS OPTIMIZADA PARA RENDER
+// 🌐 CONFIGURACIÓN CORS ULTRA-PERMISIVA PARA RENDER
 const corsOptions = {
   origin: function (origin, callback) {
-    // Permitir requests sin origin (por ejemplo, aplicaciones móviles o Postman)
-    if (!origin) return callback(null, true);
+    // En producción, permitir cualquier origen que contenga onrender.com
+    // En desarrollo, permitir localhost
+    console.log('🌍 [CORS] Verificando origen:', origin);
     
-    // Lista de orígenes permitidos
-    const allowedOrigins = [
-      'http://localhost:5173',              // Vite dev server
-      'http://localhost:5174',              // Vite dev server alternate port
-      'http://localhost:3000',              // React dev alternate
-      'http://127.0.0.1:5173',             // Local IP
-      'http://127.0.0.1:5174',             // Local IP alternate port
-      'https://cargosfraudes.onrender.com', // Frontend específico en Render
-      'https://cargosfraudes-spa.onrender.com', // Frontend SPA (si existe)
-      'https://buscadores.onrender.com',    // Por si el backend sirve frontend
-    ];
-    
-    // Permitir cualquier dominio onrender.com
-    if (origin.includes('onrender.com') || allowedOrigins.includes(origin)) {
-      callback(null, true);
-    } else {
-      console.log(`❌ CORS: Origen no permitido: ${origin}`);
-      callback(new Error('No permitido por política CORS'));
+    // Siempre permitir si no hay origen (requests directas)
+    if (!origin) {
+      console.log('✅ [CORS] Permitido: Sin origen');
+      return callback(null, true);
     }
+    
+    // Permitir cualquier subdominio de onrender.com
+    if (origin.includes('onrender.com') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
+      console.log('✅ [CORS] Permitido:', origin);
+      return callback(null, true);
+    }
+    
+    // En producción, ser más permisivo
+    console.log('⚠️ [CORS] Permitiendo origen no reconocido para debugging:', origin);
+    return callback(null, true); // Temporalmente permitir todo para debugging
   },
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control']
 };
 
 app.use(cors(corsOptions));
 
-// 🔍 Logging detallado para debugging CORS en producción
+// � MIDDLEWARE GLOBAL CORS EMERGENCY (se ejecuta antes que todo)
+app.use('*', (req, res, next) => {
+  const origin = req.headers.origin;
+  
+  // Forzar headers CORS en TODAS las respuestas
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH,HEAD');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Expose-Headers', '*');
+  
+  console.log(`🚨 [CORS EMERGENCY] ${req.method} ${req.originalUrl} - Origin: ${origin || 'none'}`);
+  
+  if (req.method === 'OPTIONS') {
+    console.log(`🚨 [CORS EMERGENCY] Preflight handled for ${req.originalUrl}`);
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+// �🔍 Logging detallado para debugging CORS en producción
 app.use((req, res, next) => {
   console.log(`📨 ${req.method} ${req.path}`);
   console.log(`🌐 Origin: ${req.headers.origin || 'no-origin'}`);
@@ -145,33 +163,33 @@ app.use((req, res, next) => {
   next();
 });
 
-// Middleware adicional CORS para Render (más permisivo)
+// Middleware adicional CORS para Render (ultra-permisivo para debugging)
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  // Log para debugging
-  console.log(`🌍 CORS Check - Origin: ${origin || 'no-origin'}`);
+  // Log detallado
+  console.log(`🌍 [CORS MIDDLEWARE] ${req.method} ${req.path}`);
+  console.log(`🌍 [CORS MIDDLEWARE] Origin: ${origin || 'no-origin'}`);
+  console.log(`🌍 [CORS MIDDLEWARE] User-Agent: ${req.headers['user-agent'] || 'no-user-agent'}`);
   
-  // Si es de un dominio onrender.com o localhost, permitir siempre
-  if (origin && (origin.includes('onrender.com') || origin.includes('localhost'))) {
+  // Configurar headers CORS siempre
+  if (origin) {
     res.header('Access-Control-Allow-Origin', origin);
-    console.log(`✅ CORS: Permitido para ${origin}`);
-  } else if (!origin) {
-    // Para requests directas sin origin (como Postman)
-    res.header('Access-Control-Allow-Origin', '*');
-    console.log(`✅ CORS: Permitido sin origen`);
+    console.log(`✅ [CORS MIDDLEWARE] Permitido explícitamente: ${origin}`);
   } else {
-    console.log(`⚠️ CORS: Origen no reconocido: ${origin}`);
-    res.header('Access-Control-Allow-Origin', origin); // Permitir de todas formas para debugging
+    res.header('Access-Control-Allow-Origin', '*');
+    console.log(`✅ [CORS MIDDLEWARE] Permitido sin origen específico`);
   }
   
+  // Headers estándar siempre
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control');
+  res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
   
   // Responder a preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
-    console.log(`🎯 CORS: Preflight OPTIONS para ${req.path}`);
+    console.log(`🎯 [CORS MIDDLEWARE] Preflight OPTIONS para ${req.path} completado`);
     res.status(200).end();
     return;
   }
