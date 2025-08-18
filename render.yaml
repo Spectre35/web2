@@ -1,10 +1,17 @@
 services:
+  # Backend API Server
   - type: web
     name: buscadores-backend
     env: node
     buildCommand: npm install
     startCommand: node server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
 
+  # Frontend Static Site
   - type: static
     name: buscadores-spa
     buildCommand: |
