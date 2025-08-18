@@ -85,17 +85,30 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 po
 
 // 🌐 CONFIGURACIÓN CORS OPTIMIZADA PARA RENDER
 const corsOptions = {
-  origin: [
-    'http://localhost:5173',              // Vite dev server
-    'http://localhost:5174',              // Vite dev server alternate port
-    'http://localhost:3000',              // React dev alternate
-    'http://127.0.0.1:5173',             // Local IP
-    'http://127.0.0.1:5174',             // Local IP alternate port
-    'https://cargosfraudes.onrender.com', // Frontend específico en Render
-    'https://cargosfraudes-spa.onrender.com', // Frontend SPA (si existe)
-    'https://buscadores.onrender.com',    // Por si el backend sirve frontend
-    /\.onrender\.com$/                    // Cualquier subdominio de onrender.com
-  ],
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (por ejemplo, aplicaciones móviles o Postman)
+    if (!origin) return callback(null, true);
+    
+    // Lista de orígenes permitidos
+    const allowedOrigins = [
+      'http://localhost:5173',              // Vite dev server
+      'http://localhost:5174',              // Vite dev server alternate port
+      'http://localhost:3000',              // React dev alternate
+      'http://127.0.0.1:5173',             // Local IP
+      'http://127.0.0.1:5174',             // Local IP alternate port
+      'https://cargosfraudes.onrender.com', // Frontend específico en Render
+      'https://cargosfraudes-spa.onrender.com', // Frontend SPA (si existe)
+      'https://buscadores.onrender.com',    // Por si el backend sirve frontend
+    ];
+    
+    // Permitir cualquier dominio onrender.com
+    if (origin.includes('onrender.com') || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      console.log(`❌ CORS: Origen no permitido: ${origin}`);
+      callback(new Error('No permitido por política CORS'));
+    }
+  },
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -117,23 +130,31 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
+  // Log para debugging
+  console.log(`🌍 CORS Check - Origin: ${origin || 'no-origin'}`);
+  
   // Si es de un dominio onrender.com o localhost, permitir siempre
   if (origin && (origin.includes('onrender.com') || origin.includes('localhost'))) {
     res.header('Access-Control-Allow-Origin', origin);
+    console.log(`✅ CORS: Permitido para ${origin}`);
   } else if (!origin) {
-    // Para requests directas sin origin
+    // Para requests directas sin origin (como Postman)
     res.header('Access-Control-Allow-Origin', '*');
+    console.log(`✅ CORS: Permitido sin origen`);
+  } else {
+    console.log(`⚠️ CORS: Origen no reconocido: ${origin}`);
+    res.header('Access-Control-Allow-Origin', origin); // Permitir de todas formas para debugging
   }
   
   res.header('Access-Control-Allow-Credentials', 'true');
   res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control');
-  res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
   
-  // Responder a preflight requests
+  // Responder a preflight OPTIONS requests
   if (req.method === 'OPTIONS') {
-    console.log(`✅ Preflight request handled for ${req.path} from ${origin || 'no-origin'}`);
-    return res.status(200).end();
+    console.log(`🎯 CORS: Preflight OPTIONS para ${req.path}`);
+    res.status(200).end();
+    return;
   }
   
   next();
