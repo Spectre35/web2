@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test CORS - Buscadores Backend</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-result {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        .success {
+            background-color: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+        }
+        .info {
+            background-color: #e2e3e5;
+            border: 1px solid #d6d8db;
+            color: #383d41;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .loading {
+            color: #6c757d;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test CORS - Buscadores Backend</h1>
+        <p>Esta página prueba la conectividad CORS entre el frontend y backend.</p>
+        
+        <div>
+            <button onclick="testHealth()">🩺 Test Health Endpoint</button>
+            <button onclick="testCors()">🔍 Test CORS Endpoint</button>
+            <button onclick="testAPI()">📊 Test API Endpoint</button>
+            <button onclick="clearResults()">🧹 Limpiar Resultados</button>
+        </div>
+        
+        <div id="results"></div>
+        
+        <div class="test-result info">
+            <strong>Información del entorno:</strong>
+            Hostname: <span id="hostname"></span>
+            Protocol: <span id="protocol"></span>
+            User Agent: <span id="userAgent"></span>
+        </div>
+    </div>
+
+    <script>
+        // Configuración automática de API URL
+        const getAPIBaseURL = () => {
+            const hostname = window.location.hostname;
+            const protocol = window.location.protocol;
+            
+            // En desarrollo local
+            if (hostname === 'localhost' || hostname === '127.0.0.1') {
+                return 'http://localhost:3001';
+            }
+            
+            // En Render.com
+            if (hostname.includes('onrender.com')) {
+                return 'https://buscadores.onrender.com';
+            }
+            
+            // Fallback
+            return `${protocol}//${hostname}:10000`;
+        };
+
+        const API_BASE_URL = getAPIBaseURL();
+        
+        // Mostrar información del entorno
+        document.getElementById('hostname').textContent = window.location.hostname;
+        document.getElementById('protocol').textContent = window.location.protocol;
+        document.getElementById('userAgent').textContent = navigator.userAgent.substring(0, 100) + '...';
+
+        function addResult(title, content, type = 'info') {
+            const resultsDiv = document.getElementById('results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${type}`;
+            resultDiv.innerHTML = `<strong>${title}</strong>\n${content}`;
+            resultsDiv.appendChild(resultDiv);
+            resultsDiv.scrollTop = resultsDiv.scrollHeight;
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        async function testHealth() {
+            addResult('🩺 Testing Health Endpoint...', 'Enviando request...', 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/health`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(
+                        '✅ Health Check - Éxito', 
+                        `Status: ${response.status}\nAPI URL: ${API_BASE_URL}\n\nRespuesta:\n${JSON.stringify(data, null, 2)}`,
+                        'success'
+                    );
+                } else {
+                    addResult(
+                        '❌ Health Check - Error HTTP',
+                        `Status: ${response.status}\nStatus Text: ${response.statusText}\nAPI URL: ${API_BASE_URL}`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                addResult(
+                    '❌ Health Check - Error de Red',
+                    `Error: ${error.message}\nAPI URL: ${API_BASE_URL}\nTipo: ${error.name}`,
+                    'error'
+                );
+            }
+        }
+
+        async function testCors() {
+            addResult('🔍 Testing CORS Endpoint...', 'Enviando request CORS específico...', 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/test-cors`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    },
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(
+                        '✅ CORS Test - Éxito',
+                        `Status: ${response.status}\nAPI URL: ${API_BASE_URL}\n\nRespuesta:\n${JSON.stringify(data, null, 2)}`,
+                        'success'
+                    );
+                } else {
+                    addResult(
+                        '❌ CORS Test - Error HTTP',
+                        `Status: ${response.status}\nStatus Text: ${response.statusText}\nAPI URL: ${API_BASE_URL}`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                addResult(
+                    '❌ CORS Test - Error de Red',
+                    `Error: ${error.message}\nAPI URL: ${API_BASE_URL}\nTipo: ${error.name}`,
+                    'error'
+                );
+            }
+        }
+
+        async function testAPI() {
+            addResult('📊 Testing API Endpoint...', 'Probando endpoint real de API...', 'loading');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/api/sucursales?limite=5`, {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    credentials: 'include'
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    addResult(
+                        '✅ API Test - Éxito',
+                        `Status: ${response.status}\nAPI URL: ${API_BASE_URL}\nRegistros obtenidos: ${data.data ? data.data.length : 'N/A'}\n\nPrimeros datos:\n${JSON.stringify(data.data ? data.data.slice(0, 2) : data, null, 2)}`,
+                        'success'
+                    );
+                } else {
+                    addResult(
+                        '❌ API Test - Error HTTP',
+                        `Status: ${response.status}\nStatus Text: ${response.statusText}\nAPI URL: ${API_BASE_URL}`,
+                        'error'
+                    );
+                }
+            } catch (error) {
+                addResult(
+                    '❌ API Test - Error de Red',
+                    `Error: ${error.message}\nAPI URL: ${API_BASE_URL}\nTipo: ${error.name}`,
+                    'error'
+                );
+            }
+        }
+
+        // Auto-test inicial
+        setTimeout(() => {
+            addResult('🚀 Iniciando Tests Automáticos', `API Base URL detectada: ${API_BASE_URL}`, 'info');
+        }, 500);
+    </script>
+</body>
+</html>

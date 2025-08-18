@@ -69,39 +69,73 @@ const corsOptions = {
     'http://localhost:5173',              // Vite dev server
     'http://localhost:3000',              // React dev alternate
     'http://127.0.0.1:5173',             // Local IP
-    'https://cargosfraudes.onrender.com', // Frontend en Render (si existe)
+    'https://cargosfraudes.onrender.com', // Frontend específico en Render
     'https://cargosfraudes-spa.onrender.com', // Frontend SPA (si existe)
+    'https://buscadores.onrender.com',    // Por si el backend sirve frontend
     /\.onrender\.com$/                    // Cualquier subdominio de onrender.com
   ],
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 };
 
 app.use(cors(corsOptions));
 
-// 🔍 Logging para debugging CORS en producción
+// 🔍 Logging detallado para debugging CORS en producción
 app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  console.log(`📨 ${req.method} ${req.path}`);
+  console.log(`🌐 Origin: ${req.headers.origin || 'no-origin'}`);
+  console.log(`🔄 Referer: ${req.headers.referer || 'no-referer'}`);
+  console.log(`🗂️ Headers:`, Object.keys(req.headers));
   next();
 });
 
-// Middleware adicional para headers de seguridad en producción
-if (process.env.NODE_ENV === 'production') {
-  app.use((req, res, next) => {
-    res.header('Access-Control-Allow-Origin', req.headers.origin);
-    res.header('Access-Control-Allow-Credentials', 'true');
-    res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
-    res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
-    
-    if (req.method === 'OPTIONS') {
-      res.sendStatus(200);
-    } else {
-      next();
-    }
-  });
-}
+// Middleware adicional CORS para Render (más permisivo)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  
+  // Si es de un dominio onrender.com, permitir siempre
+  if (origin && origin.includes('onrender.com')) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else if (!origin) {
+    // Para requests directas sin origin
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control');
+  res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
+  
+  // Responder a preflight requests
+  if (req.method === 'OPTIONS') {
+    console.log(`✅ Preflight request handled for ${req.path} from ${origin || 'no-origin'}`);
+    return res.status(200).end();
+  }
+  
+  next();
+});
+
+// 🚦 Middleware específico para manejar todas las requests OPTIONS
+app.options('*', (req, res) => {
+  const origin = req.headers.origin;
+  console.log(`🚦 OPTIONS request for ${req.path} from ${origin || 'no-origin'}`);
+  
+  // Headers específicos para OPTIONS
+  if (origin && origin.includes('onrender.com')) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-HTTP-Method-Override');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400');
+  
+  res.status(200).end();
+});
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
@@ -116,18 +150,22 @@ const IPS_AUTORIZADAS_DATOS = [
 
 // Middleware para proteger endpoints con datos confidenciales
 const protegerDatos = (req, res, next) => {
-  // En producción (Render), permitir acceso desde el mismo dominio
+  // En producción (Render), permitir acceso desde el frontend específico
   if (process.env.NODE_ENV === 'production') {
     const origin = req.headers.origin;
     const referer = req.headers.referer;
     
-    // Permitir si viene desde el frontend de Render o es una request interna
-    if (origin && origin.includes('onrender.com') || 
-        referer && referer.includes('onrender.com') ||
+    // Permitir si viene desde cargosfraudes.onrender.com o requests internas
+    if ((origin && origin.includes('cargosfraudes.onrender.com')) || 
+        (referer && referer.includes('cargosfraudes.onrender.com')) ||
         !origin) { // Request directa al backend
       console.log(`✅ Acceso autorizado en producción desde: ${origin || referer || 'directo'}`);
       return next();
     }
+    
+    // Log para debugging
+    console.log(`🔍 Request origin: ${origin}`);
+    console.log(`🔍 Request referer: ${referer}`);
   }
 
   // Obtener IP real considerando proxies (Render usa proxies)
@@ -5760,11 +5798,51 @@ app.get("/validar-tarjetas/sucursal/:sucursal", async (req, res) => {
 
 // ====================  HEALTH CHECK PARA RENDER/RAILWAY ====================
 app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
+  const healthInfo = {
+    status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    port: PORT,
+    
+    // Información de la request para debugging CORS
+    requestInfo: {
+      origin: req.headers.origin || 'no-origin',
+      referer: req.headers.referer || 'no-referer',
+      userAgent: req.headers['user-agent'] || 'no-user-agent',
+      host: req.headers.host || 'no-host',
+      method: req.method
+    },
+    
+    // Headers CORS aplicados
+    corsHeaders: {
+      'access-control-allow-origin': res.getHeader('access-control-allow-origin'),
+      'access-control-allow-credentials': res.getHeader('access-control-allow-credentials'),
+      'access-control-allow-methods': res.getHeader('access-control-allow-methods')
+    },
+    
+    // Configuración de base de datos
+    database: {
+      connected: !!pool,
+      host: process.env.DATABASE_URL ? '[CONFIGURED]' : '[NOT CONFIGURED]'
+    }
+  };
+  
+  console.log('🩺 Health check request from:', healthInfo.requestInfo.origin);
+  
+  res.status(200).json(healthInfo);
+});
+
+// 🔍 Endpoint específico para testing CORS desde cargosfraudes.onrender.com
+app.get('/test-cors', (req, res) => {
+  console.log('🧪 CORS Test request from:', req.headers.origin);
+  res.json({
+    success: true,
+    message: 'CORS está funcionando correctamente',
+    origin: req.headers.origin,
+    timestamp: new Date().toISOString(),
+    allowedOrigin: res.getHeader('access-control-allow-origin'),
+    allHeaders: Object.keys(req.headers)
   });
 });
 
@@ -6939,6 +7017,25 @@ app.get('/api/test-columns-ventas', async (req, res) => {
 // ==================== INICIO DEL SERVIDOR ====================
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`✅ Servidor ejecutándose en http://localhost:${PORT}`);
-  console.log(`🌐 También disponible en http://192.168.1.111:${PORT}`);
+  console.log(`
+  🚀 ========== SERVIDOR BUSCADORES ==========
+  ✅ Puerto: ${PORT}
+  🌐 Entorno: ${process.env.NODE_ENV || 'development'}
+  🔗 Local: http://localhost:${PORT}
+  🔗 Red: http://192.168.1.111:${PORT}
+  ${process.env.NODE_ENV === 'production' ? '🔗 Render: https://buscadores.onrender.com' : ''}
+  
+  📡 CORS configurado para:
+     - http://localhost:5173 (Vite dev)
+     - http://localhost:3000 (React dev)
+     - https://cargosfraudes.onrender.com (Frontend prod)
+     - *.onrender.com (Cualquier subdomain Render)
+  
+  🩺 Endpoints de diagnóstico:
+     - GET /health (Status + CORS info)
+     - GET /test-cors (Prueba específica CORS)
+  
+  ⏰ Iniciado: ${new Date().toLocaleString()}
+  ===========================================
+  `);
 });
