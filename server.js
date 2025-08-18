@@ -102,29 +102,9 @@ const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 por defecto
 
-// 🌐 CONFIGURACIÓN CORS ULTRA-PERMISIVA PARA RENDER
+// 🌐 CONFIGURACIÓN CORS SIMPLIFICADA
 const corsOptions = {
-  origin: function (origin, callback) {
-    // En producción, permitir cualquier origen que contenga onrender.com
-    // En desarrollo, permitir localhost
-    console.log('🌍 [CORS] Verificando origen:', origin);
-    
-    // Siempre permitir si no hay origen (requests directas)
-    if (!origin) {
-      console.log('✅ [CORS] Permitido: Sin origen');
-      return callback(null, true);
-    }
-    
-    // Permitir cualquier subdominio de onrender.com
-    if (origin.includes('onrender.com') || origin.includes('localhost') || origin.includes('127.0.0.1')) {
-      console.log('✅ [CORS] Permitido:', origin);
-      return callback(null, true);
-    }
-    
-    // En producción, ser más permisivo
-    console.log('⚠️ [CORS] Permitiendo origen no reconocido para debugging:', origin);
-    return callback(null, true); // Temporalmente permitir todo para debugging
-  },
+  origin: true, // Permitir todos los orígenes
   credentials: true,
   optionsSuccessStatus: 200,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
@@ -6234,7 +6214,7 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
     // Debug: Consulta para ver qué fechas están disponibles en la base de datos
     const debugFechasQuery = `
       SELECT DISTINCT "Fecha"::text as fecha_str, "Fecha"
-      FROM public."RAW_DATA_EVILBOT_ESP_CARGOSAUTO" 
+      FROM "cargos_auto" 
       WHERE (
         UPPER("Cobrado_Por") LIKE '%BSD%' OR 
         UPPER("Cobrado_Por") LIKE '%EFEVOO%' OR 
