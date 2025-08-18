@@ -35,6 +35,25 @@ const formatearFechaLocal = (fecha) => {
   return null;
 };
 
+// 🗓️ FUNCIÓN PARA PROCESAR FECHAS EN CONSULTAS SQL SIN DESFASE DE ZONA HORARIA
+const procesarFechaParaSQL = (fechaStr) => {
+  if (!fechaStr) return null;
+  
+  // Si ya tiene formato YYYY-MM-DD, devolverlo tal como está
+  if (typeof fechaStr === 'string' && fechaStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+    return fechaStr;
+  }
+  
+  // Si es otro formato, intentar convertir
+  try {
+    const fecha = new Date(fechaStr);
+    return formatearFechaLocal(fecha);
+  } catch (error) {
+    console.log('⚠️ Error procesando fecha:', fechaStr, error.message);
+    return fechaStr; // Devolver el original si hay error
+  }
+};
+
 // 🗓️ FUNCIÓN PARA FORMATEAR FECHAS SIN CONVERSIÓN DE ZONA HORARIA
 const formatearFechaSinZona = (fecha) => {
   if (!fecha) return fecha;
@@ -6126,6 +6145,12 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
     console.log('📋 [CARGOS AUTO DASHBOARD] Parámetros:', req.query);
     
     const { bloque, fechaInicio, fechaFin, sucursal } = req.query;
+    
+    // Log detallado de fechas recibidas
+    console.log('📅 [DEBUG FECHAS] Fecha inicio recibida:', fechaInicio, typeof fechaInicio);
+    console.log('📅 [DEBUG FECHAS] Fecha fin recibida:', fechaFin, typeof fechaFin);
+    console.log('🕒 [DEBUG FECHAS] Zona horaria del servidor:', new Date().getTimezoneOffset() / 60, 'horas diferencia UTC');
+    
     let whereConditions = [];
     let values = [];
     let idx = 1;
@@ -6147,9 +6172,9 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
       const fechaInicioStr = formatearFechaLocal(inicioDelAno);
       const fechaFinStr = formatearFechaLocal(ayer);
       
-      whereConditions.push(`"Fecha" >= $${idx++}`);
+      whereConditions.push(`"Fecha"::date >= $${idx++}::date`);
       values.push(fechaInicioStr);
-      whereConditions.push(`"Fecha" <= $${idx++}`);
+      whereConditions.push(`"Fecha"::date <= $${idx++}::date`);
       values.push(fechaFinStr);
       console.log('📅 [DASHBOARD] Aplicando filtro automático: desde inicio del año hasta ayer', 
                   fechaInicioStr, 'hasta', fechaFinStr);
@@ -6157,14 +6182,18 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
 
     // Filtros por rango de fechas específico
     if (fechaInicio && fechaInicio !== "") {
-      whereConditions.push(`DATE("Fecha") >= $${idx++}`);
-      values.push(fechaInicio);
-      console.log('📅 [DASHBOARD] Fecha inicio:', fechaInicio);
+      const fechaInicioSQL = procesarFechaParaSQL(fechaInicio);
+      // Usar comparación directa con el campo fecha como string para evitar problemas de zona horaria
+      whereConditions.push(`"Fecha"::date >= $${idx++}::date`);
+      values.push(fechaInicioSQL);
+      console.log('📅 [DASHBOARD] Fecha inicio procesada:', fechaInicio, '->', fechaInicioSQL);
     }
     if (fechaFin && fechaFin !== "") {
-      whereConditions.push(`DATE("Fecha") <= $${idx++}`);
-      values.push(fechaFin);
-      console.log('📅 [DASHBOARD] Fecha fin:', fechaFin);
+      const fechaFinSQL = procesarFechaParaSQL(fechaFin);
+      // Usar comparación directa con el campo fecha como string para evitar problemas de zona horaria
+      whereConditions.push(`"Fecha"::date <= $${idx++}::date`);
+      values.push(fechaFinSQL);
+      console.log('📅 [DASHBOARD] Fecha fin procesada:', fechaFin, '->', fechaFinSQL);
     }
 
     // Filtros adicionales (solo si se especifican)
