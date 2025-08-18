@@ -102,39 +102,43 @@ const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 por defecto
 
-// 🌐 CONFIGURACIÓN CORS SIMPLIFICADA
-const corsOptions = {
-  origin: true, // Permitir todos los orígenes
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin', 'Cache-Control']
-};
-
-app.use(cors(corsOptions));
-
-// � MIDDLEWARE GLOBAL CORS EMERGENCY (se ejecuta antes que todo)
-app.use('*', (req, res, next) => {
-  const origin = req.headers.origin;
-  
-  // Forzar headers CORS en TODAS las respuestas
-  res.header('Access-Control-Allow-Origin', origin || '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH,HEAD');
-  res.header('Access-Control-Allow-Headers', '*');
-  res.header('Access-Control-Expose-Headers', '*');
-  
-  console.log(`🚨 [CORS EMERGENCY] ${req.method} ${req.originalUrl} - Origin: ${origin || 'none'}`);
+// CORS simplificado
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Accept');
   
   if (req.method === 'OPTIONS') {
-    console.log(`🚨 [CORS EMERGENCY] Preflight handled for ${req.originalUrl}`);
     return res.status(200).end();
   }
   
   next();
 });
 
+// � MIDDLEWARE GLOBAL CORS EMERGENCY (se ejecuta antes que todo)
+// app.use('*', (req, res, next) => {
+  // const origin = req.headers.origin;
+  
+  // Forzar headers CORS en TODAS las respuestas
+  // res.header('Access-Control-Allow-Origin', origin || '*');
+  // res.header('Access-Control-Allow-Credentials', 'true');
+  // res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH,HEAD');
+  // res.header('Access-Control-Allow-Headers', '*');
+  // res.header('Access-Control-Expose-Headers', '*');
+  
+  // console.log(`🚨 [CORS EMERGENCY] ${req.method} ${req.originalUrl} - Origin: ${origin || 'none'}`);
+  
+  // if (req.method === 'OPTIONS') {
+    // console.log(`🚨 [CORS EMERGENCY] Preflight handled for ${req.originalUrl}`);
+    // return res.status(200).end();
+  // }
+  
+  // next();
+// });
+
 // �🔍 Logging detallado para debugging CORS en producción
+// LOGGING COMENTADO
+/*
 app.use((req, res, next) => {
   console.log(`📨 ${req.method} ${req.path}`);
   console.log(`🌐 Origin: ${req.headers.origin || 'no-origin'}`);
@@ -142,42 +146,46 @@ app.use((req, res, next) => {
   console.log(`🗂️ Headers:`, Object.keys(req.headers));
   next();
 });
+*/
 
-// Middleware adicional CORS para Render (ultra-permisivo para debugging)
+// MIDDLEWARE ADICIONAL COMENTADO
+/*
 app.use((req, res, next) => {
-  const origin = req.headers.origin;
+  // const origin = req.headers.origin;
   
   // Log detallado
-  console.log(`🌍 [CORS MIDDLEWARE] ${req.method} ${req.path}`);
-  console.log(`🌍 [CORS MIDDLEWARE] Origin: ${origin || 'no-origin'}`);
-  console.log(`🌍 [CORS MIDDLEWARE] User-Agent: ${req.headers['user-agent'] || 'no-user-agent'}`);
+  // console.log(`🌍 [CORS MIDDLEWARE] ${req.method} ${req.path}`);
+  // console.log(`🌍 [CORS MIDDLEWARE] Origin: ${origin || 'no-origin'}`);
+  // console.log(`🌍 [CORS MIDDLEWARE] User-Agent: ${req.headers['user-agent'] || 'no-user-agent'}`);
   
   // Configurar headers CORS siempre
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-    console.log(`✅ [CORS MIDDLEWARE] Permitido explícitamente: ${origin}`);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-    console.log(`✅ [CORS MIDDLEWARE] Permitido sin origen específico`);
-  }
+  // if (origin) {
+    // res.header('Access-Control-Allow-Origin', origin);
+    // console.log(`✅ [CORS MIDDLEWARE] Permitido explícitamente: ${origin}`);
+  // } else {
+    // res.header('Access-Control-Allow-Origin', '*');
+    // console.log(`✅ [CORS MIDDLEWARE] Permitido sin origen específico`);
+  // }
   
   // Headers estándar siempre
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control');
-  res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
+  // res.header('Access-Control-Allow-Credentials', 'true');
+  // res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
+  // res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control');
+  // res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
   
   // Responder a preflight OPTIONS requests
-  if (req.method === 'OPTIONS') {
-    console.log(`🎯 [CORS MIDDLEWARE] Preflight OPTIONS para ${req.path} completado`);
-    res.status(200).end();
-    return;
-  }
+  // if (req.method === 'OPTIONS') {
+    // console.log(`🎯 [CORS MIDDLEWARE] Preflight OPTIONS para ${req.path} completado`);
+    // res.status(200).end();
+    // return;
+  // }
   
-  next();
-});
+  // next();
+// });
+*/
 
-// 🚦 Middleware específico para manejar todas las requests OPTIONS
+// OPTIONS MIDDLEWARE COMENTADO
+/*
 app.options('*', (req, res) => {
   const origin = req.headers.origin;
   console.log(`🚦 OPTIONS request for ${req.path} from ${origin || 'no-origin'}`);
@@ -196,6 +204,7 @@ app.options('*', (req, res) => {
   
   res.status(200).end();
 });
+*/
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
