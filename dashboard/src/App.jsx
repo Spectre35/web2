@@ -22,11 +22,11 @@ const TelefonosDuplicados = lazy(() => import("./pages/TelefonosDuplicados"));
 const TarjetasDuplicadas = lazy(() => import("./pages/TarjetasDuplicadas"));
 const IngresarAclaraciones = lazy(() => import("./pages/IngresarAclaraciones"));
 const DashboardAclaraciones = lazy(() => import("./pages/DashboardAclaraciones"));
+const DashboardCargosAuto = lazy(() => import("./pages/DashboardCargosAuto"));
 const BuscadorBin = lazy(() => import("./pages/BuscadorBin"));
 const ProcesadorBinsMasivo = lazy(() => import("./pages/ProcesadorBinsMasivo"));
 const ProcesadorDistribuido = lazy(() => import("./pages/ProcesadorDistribuido"));
 const GestorAPIs = lazy(() => import("./pages/GestorAPIs"));
-const OnlyOfficeEditor = lazy(() => import("./pages/OnlyOfficeEditor"));
 import DashboardLayout from "./layouts/DashboardLayout";
 
 function App() {
@@ -49,11 +49,11 @@ function App() {
             <Route path="/tarjetas-duplicadas" element={<TarjetasDuplicadas />} />
             <Route path="/ingresar-aclaraciones" element={<IngresarAclaraciones />} />
             <Route path="/dashboard-aclaraciones" element={<DashboardAclaraciones />} />
+            <Route path="/dashboard-cargos-auto" element={<DashboardCargosAuto />} />
             <Route path="/buscador-bin" element={<BuscadorBin />} />
             <Route path="/procesador-bins-masivo" element={<ProcesadorBinsMasivo />} />
             <Route path="/procesador-distribuido" element={<ProcesadorDistribuido />} />
             <Route path="/gestor-apis" element={<GestorAPIs />} />
-            <Route path="/onlyoffice" element={<OnlyOfficeEditor />} />
           </Route>
         </Routes>
       </Suspense>

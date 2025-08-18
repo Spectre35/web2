@@ -32,6 +32,7 @@ const sidebarLinks = [
   { to: "/tarjetas-duplicadas", label: "💳 Tarjetas Duplicadas", section: "analisis" },
   { to: "/dashboard-recuperacion", label: "📊 Recuperación", section: "analisis" },  
   { to: "/dashboard-aclaraciones", label: "📈 Dashboard Aclaraciones", section: "analisis" },
+  { to: "/dashboard-cargos-auto", label: "📊Dashboard Cargos Auto", section: "analisis" },
 ];
 
 export default function Sidebar() {

@@ -67,8 +67,10 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 po
 const corsOptions = {
   origin: [
     'http://localhost:5173',              // Vite dev server
+    'http://localhost:5174',              // Vite dev server alternate port
     'http://localhost:3000',              // React dev alternate
     'http://127.0.0.1:5173',             // Local IP
+    'http://127.0.0.1:5174',             // Local IP alternate port
     'https://cargosfraudes.onrender.com', // Frontend específico en Render
     'https://cargosfraudes-spa.onrender.com', // Frontend SPA (si existe)
     'https://buscadores.onrender.com',    // Por si el backend sirve frontend
@@ -95,8 +97,8 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  // Si es de un dominio onrender.com, permitir siempre
-  if (origin && origin.includes('onrender.com')) {
+  // Si es de un dominio onrender.com o localhost, permitir siempre
+  if (origin && (origin.includes('onrender.com') || origin.includes('localhost'))) {
     res.header('Access-Control-Allow-Origin', origin);
   } else if (!origin) {
     // Para requests directas sin origin
@@ -122,8 +124,8 @@ app.options('*', (req, res) => {
   const origin = req.headers.origin;
   console.log(`🚦 OPTIONS request for ${req.path} from ${origin || 'no-origin'}`);
   
-  // Headers específicos para OPTIONS
-  if (origin && origin.includes('onrender.com')) {
+  // Headers específicos para OPTIONS - más permisivo para localhost
+  if (origin && (origin.includes('onrender.com') || origin.includes('localhost'))) {
     res.header('Access-Control-Allow-Origin', origin);
   } else {
     res.header('Access-Control-Allow-Origin', '*');
@@ -5904,6 +5906,149 @@ app.get('/test-aclaraciones', (req, res) => {
   });
 });
 
+// 🧪 Endpoint para testing específico del Dashboard de Cargos Auto
+app.get('/test-cargos-auto', (req, res) => {
+  console.log('🧪 Test Cargos Auto request from:', req.headers.origin);
+  res.json({
+    success: true,
+    message: 'Conectividad OK para Dashboard Cargos Auto',
+    endpoints: {
+      anios: '/anios',
+      bloques: '/bloques',
+      dashboard: '/cargos_auto/dashboard'
+    },
+    sampleData: {
+      anios: [2024, 2025],
+      bloques: ['COL1', 'CHI', 'ESP1'],
+      procesadores: ['BSD', 'EFEVOO', 'STRIPE AUTO'],
+      estado: 'Conectado correctamente'
+    },
+    timestamp: new Date().toISOString()
+  });
+});
+
+// 🧪 Test endpoint para verificar estructura de cargos_auto
+app.get('/test/cargos_auto/columns', async (req, res) => {
+  try {
+    console.log('🧪 Endpoint de prueba: verificando columnas de cargos_auto');
+    
+    const testQuery = await pool.query(`
+      SELECT column_name, data_type 
+      FROM information_schema.columns 
+      WHERE table_name = 'cargos_auto' 
+      ORDER BY ordinal_position
+    `);
+    
+    res.json({
+      success: true,
+      columns: testQuery.rows
+    });
+  } catch (error) {
+    console.error('❌ Error en test de columnas:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🧪 Test endpoint simple para verificar datos de cargos_auto
+app.get('/test/cargos_auto/sample', async (req, res) => {
+  try {
+    console.log('🧪 Endpoint de prueba: obteniendo muestra de cargos_auto');
+    
+    const sampleQuery = await pool.query(`
+      SELECT * FROM "cargos_auto" 
+      WHERE "Fecha" >= NOW() - INTERVAL '30 days'
+      LIMIT 3
+    `);
+    
+    res.json({
+      success: true,
+      sample_count: sampleQuery.rows.length,
+      columns: sampleQuery.rows.length > 0 ? Object.keys(sampleQuery.rows[0]) : [],
+      sample_data: sampleQuery.rows
+    });
+  } catch (error) {
+    console.error('❌ Error en test de muestra:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🧪 Test endpoint para verificar procesadores disponibles
+app.get('/test/cargos_auto/procesadores', async (req, res) => {
+  try {
+    console.log('🧪 Endpoint de prueba: verificando procesadores disponibles');
+    
+    const procesadoresQuery = await pool.query(`
+      SELECT 
+        "Cobrado_Por",
+        COUNT(*) as cantidad,
+        CASE 
+          WHEN UPPER("Cobrado_Por") LIKE '%BSD%' THEN 'BSD'
+          WHEN UPPER("Cobrado_Por") LIKE '%EFEVOO%' THEN 'EFEVOO'
+          WHEN UPPER("Cobrado_Por") LIKE '%STRIPE%' THEN 'STRIPE AUTO'
+          ELSE 'OTRO'
+        END as procesador_clasificado
+      FROM "cargos_auto" 
+      WHERE "Cobrado_Por" IS NOT NULL 
+        AND "Fecha" >= NOW() - INTERVAL '90 days'
+      GROUP BY "Cobrado_Por"
+      ORDER BY cantidad DESC
+      LIMIT 20
+    `);
+    
+    res.json({
+      success: true,
+      procesadores: procesadoresQuery.rows
+    });
+  } catch (error) {
+    console.error('❌ Error en test de procesadores:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// 🧪 Test endpoint simple para dashboard query
+app.get('/test/cargos_auto/dashboard-simple', async (req, res) => {
+  try {
+    console.log('🧪 Test simple del dashboard query');
+    
+    const simpleQuery = await pool.query(`
+      SELECT 
+        "Sucursal",
+        CASE 
+          WHEN UPPER("Cobrado_Por") LIKE '%BSD%' THEN 'BSD'
+          WHEN UPPER("Cobrado_Por") LIKE '%EFEVOO%' THEN 'EFEVOO'
+          WHEN UPPER("Cobrado_Por") = 'STRIPE AUTO' THEN 'STRIPE AUTO'
+          ELSE 'OTRO'
+        END as procesador,
+        COUNT(*) as cantidad_registros,
+        COALESCE(SUM(
+          CASE 
+            WHEN "TotalMxn" IS NOT NULL AND "TotalMxn" != 0 THEN "TotalMxn"
+            ELSE 0
+          END
+        ), 0) as monto_total
+      FROM "cargos_auto"
+      WHERE (
+        UPPER("Cobrado_Por") LIKE '%BSD%' OR 
+        UPPER("Cobrado_Por") LIKE '%EFEVOO%' OR 
+        UPPER("Cobrado_Por") = 'STRIPE AUTO'
+      )
+      AND EXTRACT(YEAR FROM "Fecha") = 2025
+      GROUP BY "Sucursal", procesador
+      ORDER BY "Sucursal", procesador
+      LIMIT 10
+    `);
+    
+    res.json({
+      success: true,
+      total_rows: simpleQuery.rows.length,
+      sample_data: simpleQuery.rows
+    });
+  } catch (error) {
+    console.error('❌ Error en test simple dashboard:', error);
+    res.status(500).json({ error: error.message, stack: error.stack });
+  }
+});
+
 // ====================  HEALTH CHECK ENDPOINT ====================
 // Endpoint para keep-alive (mantener el servicio activo)
 app.get('/health-check', (req, res) => {
@@ -5920,7 +6065,235 @@ app.get('/health-check', (req, res) => {
   res.status(200).json(healthStatus);
 });
 
-// ==================== GESTIÓN DE BINs ====================
+// ==================== 📊 DASHBOARD CARGOS AUTO - NUEVO ====================
+
+// Endpoint para dashboard de cargos auto (BSD, EFEVOO, STRIPE AUTO)
+app.get("/cargos_auto/dashboard", async (req, res) => {
+  try {
+    console.log('📊 [CARGOS AUTO DASHBOARD] Iniciando consulta...');
+    console.log('🔍 [CARGOS AUTO DASHBOARD] Origin:', req.headers.origin);
+    console.log('📋 [CARGOS AUTO DASHBOARD] Parámetros:', req.query);
+    
+    const { anio, bloque, mes, fechaInicio, fechaFin } = req.query;
+    let whereConditions = [];
+    let values = [];
+    let idx = 1;
+
+    // Filtro base: Solo los 3 procesadores específicos
+    whereConditions.push(`(
+      UPPER("Cobrado_Por") LIKE '%BSD%' OR 
+      UPPER("Cobrado_Por") LIKE '%EFEVOO%' OR 
+      UPPER("Cobrado_Por") = 'STRIPE AUTO'
+    )`);
+
+    // Si no se especifica rango de fechas, usar los últimos 6 meses por defecto
+    if (!fechaInicio && !fechaFin && !anio && !mes) {
+      const fechaHoy = new Date();
+      const hace6Meses = new Date(fechaHoy.getFullYear(), fechaHoy.getMonth() - 6, 1);
+      whereConditions.push(`"Fecha" >= $${idx++}`);
+      values.push(hace6Meses.toISOString().split('T')[0]);
+      console.log('📅 [DASHBOARD] Aplicando filtro automático: últimos 6 meses desde', hace6Meses.toISOString().split('T')[0]);
+    }
+
+    // Filtros por rango de fechas específico
+    if (fechaInicio && fechaInicio !== "") {
+      whereConditions.push(`DATE("Fecha") >= $${idx++}`);
+      values.push(fechaInicio);
+      console.log('📅 [DASHBOARD] Fecha inicio:', fechaInicio);
+    }
+    if (fechaFin && fechaFin !== "") {
+      whereConditions.push(`DATE("Fecha") <= $${idx++}`);
+      values.push(fechaFin);
+      console.log('📅 [DASHBOARD] Fecha fin:', fechaFin);
+    }
+
+    // Filtros adicionales (solo si se especifican)
+    if (anio && anio !== "") {
+      whereConditions.push(`EXTRACT(YEAR FROM "Fecha") = $${idx++}`);
+      values.push(anio);
+    }
+    if (bloque && bloque !== "") {
+      whereConditions.push(`"Bloque" = $${idx++}`);
+      values.push(bloque);
+    }
+    if (mes && mes !== "") {
+      whereConditions.push(`EXTRACT(MONTH FROM "Fecha") = $${idx++}`);
+      values.push(mes);
+    }
+
+    const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+
+    // Query 1: Registros por sucursal para cada procesador
+    const registrosPorSucursal = await pool.query(`
+      SELECT 
+        "Sucursal",
+        CASE 
+          WHEN UPPER("Cobrado_Por") LIKE '%BSD%' THEN 'BSD'
+          WHEN UPPER("Cobrado_Por") LIKE '%EFEVOO%' THEN 'EFEVOO'
+          WHEN UPPER("Cobrado_Por") = 'STRIPE AUTO' THEN 'STRIPE AUTO'
+          ELSE 'OTRO'
+        END as procesador,
+        COUNT(*) as cantidad_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY "Sucursal", procesador
+      ORDER BY "Sucursal", procesador
+    `, values);
+
+    // Query 2: Totales por procesador
+    const totalesPorProcesador = await pool.query(`
+      SELECT 
+        CASE 
+          WHEN UPPER("Cobrado_Por") LIKE '%BSD%' THEN 'BSD'
+          WHEN UPPER("Cobrado_Por") LIKE '%EFEVOO%' THEN 'EFEVOO'
+          WHEN UPPER("Cobrado_Por") = 'STRIPE AUTO' THEN 'STRIPE AUTO'
+          ELSE 'OTRO'
+        END as procesador,
+        COUNT(*) as total_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY procesador
+      ORDER BY total_registros DESC
+    `, values);
+
+    // Query 3: Desglose por procesador y bloque
+    const desglosePorBloque = await pool.query(`
+      SELECT 
+        "Bloque",
+        CASE 
+          WHEN UPPER("Cobrado_Por") LIKE '%BSD%' THEN 'BSD'
+          WHEN UPPER("Cobrado_Por") LIKE '%EFEVOO%' THEN 'EFEVOO'
+          WHEN UPPER("Cobrado_Por") = 'STRIPE AUTO' THEN 'STRIPE AUTO'
+          ELSE 'OTRO'
+        END as procesador,
+        COUNT(*) as cantidad_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY "Bloque", procesador
+      ORDER BY "Bloque", cantidad_registros DESC
+    `, values);
+
+    // Query 4: Resumen general
+    const resumenGeneral = await pool.query(`
+      SELECT 
+        COUNT(*) as total_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total_general,
+        COUNT(DISTINCT "Sucursal") as total_sucursales,
+        COUNT(DISTINCT "Bloque") as total_bloques
+      FROM "cargos_auto"
+      ${whereClause}
+    `, values);
+
+    // Query 5: Top 10 sucursales por monto
+    const topSucursales = await pool.query(`
+      SELECT 
+        "Sucursal",
+        COUNT(*) as total_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY "Sucursal"
+      ORDER BY monto_total DESC
+      LIMIT 10
+    `, values);
+
+    // Query 6: Desglose CONSOLIDADO por día (todos los procesadores juntos) - SIN LÍMITES
+    const desglosePorDiaConsolidado = await pool.query(`
+      SELECT 
+        DATE("Fecha") as fecha,
+        COUNT(*) as total_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total,
+        COUNT(DISTINCT "Sucursal") as sucursales_activas
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY DATE("Fecha")
+      ORDER BY fecha DESC
+    `, values);
+
+    // Query 7: Desglose por día y SUCURSAL (consolidado todos los procesadores) - SIN LÍMITES
+    const desglosePorDiaSucursalConsolidado = await pool.query(`
+      SELECT 
+        DATE("Fecha") as fecha,
+        "Sucursal",
+        COUNT(*) as total_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY DATE("Fecha"), "Sucursal"
+      ORDER BY fecha DESC, "Sucursal"
+    `, values);
+
+    // Query 8: Desglose por día y PROCESADOR - SIN LÍMITES
+    const desglosePorDiaProcesador = await pool.query(`
+      SELECT 
+        DATE("Fecha") as fecha,
+        CASE 
+          WHEN UPPER("Cobrado_Por") LIKE '%BSD%' THEN 'BSD'
+          WHEN UPPER("Cobrado_Por") LIKE '%EFEVOO%' THEN 'EFEVOO'
+          WHEN UPPER("Cobrado_Por") = 'STRIPE AUTO' THEN 'STRIPE AUTO'
+          ELSE 'OTRO'
+        END as procesador,
+        COUNT(*) as total_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY DATE("Fecha"), procesador
+      ORDER BY fecha DESC, procesador
+    `, values);
+
+    // Query 9: Desglose por día, PROCESADOR y SUCURSAL (detalle completo) - SIN LÍMITES
+    const desglosePorDiaProcesadorSucursal = await pool.query(`
+      SELECT 
+        DATE("Fecha") as fecha,
+        CASE 
+          WHEN UPPER("Cobrado_Por") LIKE '%BSD%' THEN 'BSD'
+          WHEN UPPER("Cobrado_Por") LIKE '%EFEVOO%' THEN 'EFEVOO'
+          WHEN UPPER("Cobrado_Por") = 'STRIPE AUTO' THEN 'STRIPE AUTO'
+          ELSE 'OTRO'
+        END as procesador,
+        "Sucursal",
+        COUNT(*) as total_registros,
+        COALESCE(SUM(COALESCE("TotalMxn", 0)), 0) as monto_total
+      FROM "cargos_auto"
+      ${whereClause}
+      GROUP BY DATE("Fecha"), procesador, "Sucursal"
+      ORDER BY fecha DESC, procesador, "Sucursal"
+    `, values);
+
+    console.log('📊 [DASHBOARD] Registros recuperados:');
+    console.log(`   - Consolidado por día: ${desglosePorDiaConsolidado.rows.length}`);
+    console.log(`   - Por día y procesador: ${desglosePorDiaProcesador.rows.length}`);
+    console.log(`   - Por día, procesador y sucursal: ${desglosePorDiaProcesadorSucursal.rows.length}`);
+
+    console.log('✅ Dashboard de cargos auto generado exitosamente');
+
+    res.json({
+      registrosPorSucursal: registrosPorSucursal.rows,
+      totalesPorProcesador: totalesPorProcesador.rows,
+      desglosePorBloque: desglosePorBloque.rows,
+      resumenGeneral: resumenGeneral.rows[0],
+      topSucursales: topSucursales.rows,
+      // Nuevos datos por día
+      desglosePorDiaConsolidado: desglosePorDiaConsolidado.rows,
+      desglosePorDiaSucursalConsolidado: desglosePorDiaSucursalConsolidado.rows,
+      desglosePorDiaProcesador: desglosePorDiaProcesador.rows,
+      desglosePorDiaProcesadorSucursal: desglosePorDiaProcesadorSucursal.rows,
+      filtrosAplicados: { anio, bloque, mes }
+    });
+
+  } catch (error) {
+    console.error('❌ Error en dashboard de cargos auto:', error);
+    res.status(500).json({ 
+      error: "Error al generar dashboard de cargos auto",
+      details: error.message 
+    });
+  }
+});
+
+// ==================== 📊 FIN DASHBOARD CARGOS AUTO ====================
 
 // Función para inicializar la tabla de BINs
 async function inicializarTablaBins() {
