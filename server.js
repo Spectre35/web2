@@ -6172,9 +6172,9 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
       const fechaInicioStr = formatearFechaLocal(inicioDelAno);
       const fechaFinStr = formatearFechaLocal(ayer);
       
-      whereConditions.push(`"Fecha"::date >= $${idx++}::date`);
+      whereConditions.push(`"Fecha" >= $${idx++}`);
       values.push(fechaInicioStr);
-      whereConditions.push(`"Fecha"::date <= $${idx++}::date`);
+      whereConditions.push(`"Fecha" <= $${idx++}`);
       values.push(fechaFinStr);
       console.log('📅 [DASHBOARD] Aplicando filtro automático: desde inicio del año hasta ayer', 
                   fechaInicioStr, 'hasta', fechaFinStr);
@@ -6183,15 +6183,15 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
     // Filtros por rango de fechas específico
     if (fechaInicio && fechaInicio !== "") {
       const fechaInicioSQL = procesarFechaParaSQL(fechaInicio);
-      // Usar comparación directa con el campo fecha como string para evitar problemas de zona horaria
-      whereConditions.push(`"Fecha"::date >= $${idx++}::date`);
+      // Usar comparación directa sin conversión de tipo para evitar problemas de zona horaria
+      whereConditions.push(`"Fecha" >= $${idx++}`);
       values.push(fechaInicioSQL);
       console.log('📅 [DASHBOARD] Fecha inicio procesada:', fechaInicio, '->', fechaInicioSQL);
     }
     if (fechaFin && fechaFin !== "") {
       const fechaFinSQL = procesarFechaParaSQL(fechaFin);
-      // Usar comparación directa con el campo fecha como string para evitar problemas de zona horaria
-      whereConditions.push(`"Fecha"::date <= $${idx++}::date`);
+      // Usar comparación directa sin conversión de tipo para evitar problemas de zona horaria
+      whereConditions.push(`"Fecha" <= $${idx++}`);
       values.push(fechaFinSQL);
       console.log('📅 [DASHBOARD] Fecha fin procesada:', fechaFin, '->', fechaFinSQL);
     }
@@ -6209,7 +6209,30 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
       console.log('🏢 [DASHBOARD] Filtro sucursal:', sucursal);
     }
 
+    // Debug: Mostrar la consulta SQL completa que se va a ejecutar
+    console.log('🔍 [DEBUG SQL] Condiciones WHERE:', whereConditions);
+    console.log('🔍 [DEBUG SQL] Valores de parámetros:', values);
+    
+    // Debug: Consulta para ver qué fechas están disponibles en la base de datos
+    const debugFechasQuery = `
+      SELECT DISTINCT "Fecha"::text as fecha_str, "Fecha"
+      FROM public."RAW_DATA_EVILBOT_ESP_CARGOSAUTO" 
+      WHERE (
+        UPPER("Cobrado_Por") LIKE '%BSD%' OR 
+        UPPER("Cobrado_Por") LIKE '%EFEVOO%' OR 
+        UPPER("Cobrado_Por") = 'STRIPE AUTO'
+      )
+      ORDER BY "Fecha" DESC 
+      LIMIT 10
+    `;
+    
+    console.log('🔍 [DEBUG] Consultando fechas disponibles en la base de datos...');
+    const debugResult = await client.query(debugFechasQuery);
+    console.log('📅 [DEBUG] Últimas 10 fechas en la base de datos:', 
+      debugResult.rows.map(row => `${row.fecha_str} (${row.fecha})`));
+    
     const whereClause = whereConditions.length > 0 ? `WHERE ${whereConditions.join(' AND ')}` : '';
+    console.log('🔍 [DEBUG SQL] Consulta WHERE completa:', whereClause);
     
     console.log('🚨 DEBUG BACKEND - Parámetros recibidos:', { bloque, fechaInicio, fechaFin, sucursal });
     console.log('🚨 DEBUG BACKEND - WHERE Clause:', whereClause);
