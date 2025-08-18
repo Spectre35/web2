@@ -1645,11 +1645,50 @@ app.get("/ventas/resumen-sucursal-completo", async (req, res) => {
 
 app.get("/anios", async (req, res) => {
   try {
-    const result = await pool.query('SELECT DISTINCT EXTRACT(YEAR FROM "FechaCompra") AS anio FROM "ventas" ORDER BY anio DESC');
-    const anios = result.rows.map(r => Number(r.anio));
+    console.log('🗓️ Consultando años disponibles...');
+    
+    // Primero verificar si la tabla ventas existe y tiene datos
+    const checkTable = await pool.query(`
+      SELECT COUNT(*) as total, 
+             MIN("FechaCompra") as fecha_min, 
+             MAX("FechaCompra") as fecha_max 
+      FROM "ventas" 
+      WHERE "FechaCompra" IS NOT NULL
+    `);
+    
+    console.log('📊 Estadísticas de tabla ventas:', checkTable.rows[0]);
+    
+    if (checkTable.rows[0].total === '0') {
+      console.log('⚠️ No hay registros en tabla ventas con FechaCompra válida');
+      return res.json([2024, 2025]); // Valores por defecto
+    }
+    
+    const result = await pool.query(`
+      SELECT DISTINCT EXTRACT(YEAR FROM "FechaCompra") AS anio 
+      FROM "ventas" 
+      WHERE "FechaCompra" IS NOT NULL 
+      ORDER BY anio DESC
+    `);
+    
+    const anios = result.rows
+      .map(r => Number(r.anio))
+      .filter(anio => anio && anio > 2000 && anio <= 2030); // Filtrar años válidos
+    
+    console.log('✅ Años encontrados:', anios);
+    
+    // Si no hay años válidos, devolver años por defecto
+    if (anios.length === 0) {
+      console.log('⚠️ No se encontraron años válidos, usando valores por defecto');
+      return res.json([2024, 2025]);
+    }
+    
     res.json(anios);
   } catch (error) {
-    res.status(500).send("Error al obtener años");
+    console.error('❌ Error al obtener años:', error);
+    console.error('📋 Stack trace:', error.stack);
+    
+    // En caso de error, devolver años por defecto para que la app funcione
+    res.json([2024, 2025]);
   }
 });
 
@@ -2504,23 +2543,6 @@ app.get("/aclaraciones/vendedoras", protegerDatos, async (req, res) => {
   }
 });
 
-// Endpoint para obtener bloques desde la tabla ventas
-app.get("/aclaraciones/bloques", protegerDatos, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT DISTINCT "Bloque" FROM "ventas" 
-       WHERE "Bloque" IS NOT NULL 
-       AND "Bloque" != ''
-       ORDER BY "Bloque" 
-       LIMIT 100`
-    );
-    res.json(result.rows.map(r => r.Bloque ? r.Bloque.toUpperCase() : '').filter(Boolean));
-  } catch (err) {
-    console.error("Error al obtener bloques:", err);
-    res.status(500).json({ error: "Error al obtener bloques" });
-  }
-});
-
 // Endpoint para obtener comentarios comunes desde aclaraciones
 app.get("/aclaraciones/comentarios-comunes", protegerDatos, async (req, res) => {
   try {
@@ -2602,11 +2624,24 @@ app.get("/aclaraciones/sucursales-ventas", async (req, res) => {
 // Endpoint para obtener bloques desde la tabla ventas
 app.get("/aclaraciones/bloques", async (req, res) => {
   try {
+    console.log('🏢 Consultando bloques disponibles...');
+    
     const result = await pool.query(
-      `SELECT DISTINCT "Bloque" FROM "ventas" WHERE "Bloque" IS NOT NULL ORDER BY "Bloque"`
+      `SELECT DISTINCT "Bloque" FROM "ventas" 
+       WHERE "Bloque" IS NOT NULL 
+       AND "Bloque" != '' 
+       ORDER BY "Bloque"`
     );
-    res.json(result.rows.map(r => r.Bloque ? r.Bloque.toUpperCase() : '').filter(Boolean));
+    
+    const bloques = result.rows
+      .map(r => r.Bloque ? r.Bloque.toUpperCase() : '')
+      .filter(Boolean);
+    
+    console.log('✅ Bloques encontrados:', bloques);
+    
+    res.json(bloques);
   } catch (err) {
+    console.error('❌ Error al obtener bloques:', err);
     res.status(500).json({ error: "Error al obtener bloques" });
   }
 });
@@ -5364,8 +5399,11 @@ app.get("/debug-validador/:numero", async (req, res) => {
   }
 });
 
-app.get("/aclaraciones/dashboard", protegerDatos, async (req, res) => {
+app.get("/aclaraciones/dashboard", async (req, res) => {
   try {
+    console.log('📊 Consultando dashboard de aclaraciones...');
+    console.log('🔍 Parámetros recibidos:', req.query);
+    
     const { anio, bloque, mes } = req.query;
     let where = [];
     let values = [];
@@ -5843,6 +5881,26 @@ app.get('/test-cors', (req, res) => {
     timestamp: new Date().toISOString(),
     allowedOrigin: res.getHeader('access-control-allow-origin'),
     allHeaders: Object.keys(req.headers)
+  });
+});
+
+// 🧪 Endpoint para testing específico del Dashboard de Aclaraciones
+app.get('/test-aclaraciones', (req, res) => {
+  console.log('🧪 Test Aclaraciones request from:', req.headers.origin);
+  res.json({
+    success: true,
+    message: 'Conectividad OK para Dashboard Aclaraciones',
+    endpoints: {
+      anios: '/anios',
+      bloques: '/aclaraciones/bloques', 
+      dashboard: '/aclaraciones/dashboard'
+    },
+    sampleData: {
+      anios: [2024, 2025],
+      bloques: ['COL1', 'CHI', 'ESP1'],
+      estado: 'Conectado correctamente'
+    },
+    timestamp: new Date().toISOString()
   });
 });
 

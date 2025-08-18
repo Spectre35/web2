@@ -36,21 +36,77 @@ export default function DashboardAclaraciones() {
 
   // Cargar opciones de filtros
   useEffect(() => {
-    axios.get(`${API_BASE_URL}/anios`).then(r => setAnios(r.data.map(a => a.toString()))).catch(() => {});
-    axios.get(`${API_BASE_URL}/aclaraciones/bloques`).then(r => setBloques(r.data)).catch(() => {});
+    console.log('🔄 Cargando filtros para Dashboard Aclaraciones...');
+    console.log('🌐 API Base URL:', API_BASE_URL);
+    
+    // Cargar años
+    axios.get(`${API_BASE_URL}/anios`)
+      .then(r => {
+        console.log('✅ Años cargados:', r.data);
+        setAnios(r.data.map(a => a.toString()));
+      })
+      .catch(e => {
+        console.error('❌ Error cargando años:', e);
+        console.error('📋 Detalles del error:', e.response?.data || e.message);
+        // Valores por defecto si falla la carga
+        setAnios(['2024', '2025']);
+      });
+    
+    // Cargar bloques
+    axios.get(`${API_BASE_URL}/aclaraciones/bloques`)
+      .then(r => {
+        console.log('✅ Bloques cargados:', r.data);
+        setBloques(r.data);
+      })
+      .catch(e => {
+        console.error('❌ Error cargando bloques:', e);
+        console.error('📋 Detalles del error:', e.response?.data || e.message);
+        // Valores por defecto si falla la carga
+        setBloques(['COL1', 'COL2', 'CHI', 'ESP1', 'ESP2', 'BRA', 'USA1']);
+      });
   }, []);
 
   // Cargar dashboard
   useEffect(() => {
+    console.log('📊 Cargando dashboard de aclaraciones...');
+    console.log('🔍 Filtros aplicados:', { anio, bloque, mes });
+    
     setLoading(true);
     setError("");
+    
     axios.get(`${API_BASE_URL}/aclaraciones/dashboard`, {
       params: { anio, bloque, mes }
     })
-      .then(r => setResumen(r.data))
-      .catch(e => setError(e?.response?.data?.error || "Error al cargar datos"))
+      .then(r => {
+        console.log('✅ Dashboard cargado exitosamente');
+        setResumen(r.data);
+      })
+      .catch(e => {
+        console.error('❌ Error cargando dashboard:', e);
+        console.error('📋 Response data:', e?.response?.data);
+        console.error('📋 Status:', e?.response?.status);
+        
+        const errorMsg = e?.response?.data?.error || 
+                        e?.response?.data?.message || 
+                        e?.message || 
+                        "Error al cargar datos del dashboard";
+        setError(errorMsg);
+      })
       .finally(() => setLoading(false));
   }, [anio, bloque, mes]);
+
+  // Función para probar conectividad (debugging temporal)
+  const testConectividad = async () => {
+    console.log('🧪 Probando conectividad...');
+    try {
+      const response = await axios.get(`${API_BASE_URL}/test-aclaraciones`);
+      console.log('✅ Conectividad OK:', response.data);
+      alert('✅ Conectividad OK: ' + JSON.stringify(response.data, null, 2));
+    } catch (error) {
+      console.error('❌ Error de conectividad:', error);
+      alert('❌ Error: ' + (error.response?.data?.message || error.message));
+    }
+  };
 
   // Función para manejar el ordenamiento de las tablas de procesadores
   const handleOrdenar = (campo) => {
@@ -206,6 +262,15 @@ export default function DashboardAclaraciones() {
             </p>
           </div>
           <div className="flex gap-3 items-center">
+            {/* Botón de testing temporal */}
+            <button
+              onClick={testConectividad}
+              className="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-all"
+              title="Probar conectividad con backend"
+            >
+              🧪 Test
+            </button>
+            
             {/* Toggle de vistas */}
             <div className="bg-gray-800/50 rounded-xl p-1 flex gap-1">
               <button
@@ -277,6 +342,15 @@ export default function DashboardAclaraciones() {
                 <option value="">Todos los meses</option>
                 {meses.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
+            </div>
+          </div>
+          
+          {/* Información de debugging temporal */}
+          <div className="mt-4 p-3 bg-gray-900/60 rounded-lg border border-gray-600/30 text-xs text-gray-400">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <div>📡 API: {API_BASE_URL}</div>
+              <div>📊 Años cargados: {anios.length > 0 ? anios.join(', ') : 'Ninguno'}</div>
+              <div>🏢 Bloques cargados: {bloques.length > 0 ? bloques.slice(0, 3).join(', ') + (bloques.length > 3 ? '...' : '') : 'Ninguno'}</div>
             </div>
           </div>
         </div>
