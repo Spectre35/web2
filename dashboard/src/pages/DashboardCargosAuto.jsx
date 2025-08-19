@@ -61,9 +61,8 @@ function obtenerRangoAmplioDefault() {
   const hoy = new Date();
   // Empezar desde el 1 de enero del año actual
   const fechaInicio = new Date(hoy.getFullYear(), 0, 1); // Primer día del año actual
-  // Fecha fin es ayer (un día menos que hoy)
-  const ayer = new Date(hoy);
-  ayer.setDate(hoy.getDate() - 1);
+  // Fecha fin es HOY (no ayer)
+  const fechaFin = new Date(hoy);
   
   // Usar formato local para evitar problemas de zona horaria
   const formatearFechaLocal = (fecha) => {
@@ -75,7 +74,7 @@ function obtenerRangoAmplioDefault() {
   
   return {
     fechaInicio: formatearFechaLocal(fechaInicio),
-    fechaFin: formatearFechaLocal(ayer)
+    fechaFin: formatearFechaLocal(fechaFin)
   };
 }
 

@@ -6011,21 +6011,20 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
       UPPER("Cobrado_Por") = 'STRIPE AUTO'
     )`);
 
-    // Si no se especifica rango de fechas, usar desde el inicio del año actual hasta ayer por defecto
+    // Si no se especifica rango de fechas, usar desde el inicio del año actual hasta HOY por defecto
     if (!fechaInicio && !fechaFin) {
       const fechaHoy = new Date();
       const inicioDelAno = new Date(fechaHoy.getFullYear(), 0, 1); // Primer día del año actual
-      const ayer = new Date(fechaHoy);
-      ayer.setDate(fechaHoy.getDate() - 1); // Ayer
+      const hoy = new Date(fechaHoy); // HOY, no ayer
       
       const fechaInicioStr = formatearFechaLocal(inicioDelAno);
-      const fechaFinStr = formatearFechaLocal(ayer);
+      const fechaFinStr = formatearFechaLocal(hoy);
       
       whereConditions.push(`"Fecha" >= $${idx++}`);
       values.push(fechaInicioStr);
       whereConditions.push(`"Fecha" <= $${idx++}`);
       values.push(fechaFinStr);
-      console.log('📅 [DASHBOARD] Aplicando filtro automático: desde inicio del año hasta ayer', 
+      console.log('📅 [DASHBOARD] Aplicando filtro automático: desde inicio del año hasta HOY', 
                   fechaInicioStr, 'hasta', fechaFinStr);
     }
 
@@ -6234,17 +6233,20 @@ app.get("/cargos_auto/dashboard", async (req, res) => {
 
     console.log('✅ Dashboard de cargos auto generado exitosamente');
 
+    // Formatear fechas en todos los datos antes de enviar
+    const formatearArrayFechas = (arr) => arr.map(row => formatearFechasEnObjeto(row));
+
     res.json({
-      registrosPorSucursal: registrosPorSucursal.rows,
-      totalesPorProcesador: totalesPorProcesador.rows,
-      desglosePorBloque: desglosePorBloque.rows,
+      registrosPorSucursal: formatearArrayFechas(registrosPorSucursal.rows),
+      totalesPorProcesador: formatearArrayFechas(totalesPorProcesador.rows),
+      desglosePorBloque: formatearArrayFechas(desglosePorBloque.rows),
       resumenGeneral: resumenGeneral.rows[0],
-      topSucursales: topSucursales.rows,
-      // Nuevos datos por día
-      desglosePorDiaConsolidado: desglosePorDiaConsolidado.rows,
-      desglosePorDiaSucursalConsolidado: desglosePorDiaSucursalConsolidado.rows,
-      desglosePorDiaProcesador: desglosePorDiaProcesador.rows,
-      desglosePorDiaProcesadorSucursal: desglosePorDiaProcesadorSucursal.rows,
+      topSucursales: formatearArrayFechas(topSucursales.rows),
+      // Nuevos datos por día con fechas formateadas
+      desglosePorDiaConsolidado: formatearArrayFechas(desglosePorDiaConsolidado.rows),
+      desglosePorDiaSucursalConsolidado: formatearArrayFechas(desglosePorDiaSucursalConsolidado.rows),
+      desglosePorDiaProcesador: formatearArrayFechas(desglosePorDiaProcesador.rows),
+      desglosePorDiaProcesadorSucursal: formatearArrayFechas(desglosePorDiaProcesadorSucursal.rows),
       filtrosAplicados: { bloque, fechaInicio, fechaFin }
     });
 
