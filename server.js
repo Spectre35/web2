@@ -100,10 +100,7 @@ const formatearFechasEnObjeto = (obj) => {
 
 const { Pool } = pkg;
 const app = express();
-const PORT = process.env.PORT || 3001;
-
-console.log('🚀 Iniciando servidor...');
-console.log('📦 Puerto configurado:', PORT);
+const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 por defecto
 
 // CORS simplificado
 app.use((req, res, next) => {
@@ -118,142 +115,8 @@ app.use((req, res, next) => {
   next();
 });
 
-// � MIDDLEWARE GLOBAL CORS EMERGENCY (se ejecuta antes que todo)
-// app.use('*', (req, res, next) => {
-  // const origin = req.headers.origin;
-  
-  // Forzar headers CORS en TODAS las respuestas
-  // res.header('Access-Control-Allow-Origin', origin || '*');
-  // res.header('Access-Control-Allow-Credentials', 'true');
-  // res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH,HEAD');
-  // res.header('Access-Control-Allow-Headers', '*');
-  // res.header('Access-Control-Expose-Headers', '*');
-  
-  // console.log(`🚨 [CORS EMERGENCY] ${req.method} ${req.originalUrl} - Origin: ${origin || 'none'}`);
-  
-  // if (req.method === 'OPTIONS') {
-    // console.log(`🚨 [CORS EMERGENCY] Preflight handled for ${req.originalUrl}`);
-    // return res.status(200).end();
-  // }
-  
-  // next();
-// });
 
-// �🔍 Logging detallado para debugging CORS en producción
-// LOGGING COMENTADO
-/*
-app.use((req, res, next) => {
-  console.log(`📨 ${req.method} ${req.path}`);
-  console.log(`🌐 Origin: ${req.headers.origin || 'no-origin'}`);
-  console.log(`🔄 Referer: ${req.headers.referer || 'no-referer'}`);
-  console.log(`🗂️ Headers:`, Object.keys(req.headers));
-  next();
-});
-*/
-
-// MIDDLEWARE ADICIONAL COMENTADO
-/*
-app.use((req, res, next) => {
-  // const origin = req.headers.origin;
   
-  // Log detallado
-  // console.log(`🌍 [CORS MIDDLEWARE] ${req.method} ${req.path}`);
-  // console.log(`🌍 [CORS MIDDLEWARE] Origin: ${origin || 'no-origin'}`);
-  // console.log(`🌍 [CORS MIDDLEWARE] User-Agent: ${req.headers['user-agent'] || 'no-user-agent'}`);
-  
-  // Configurar headers CORS siempre
-  // if (origin) {
-    // res.header('Access-Control-Allow-Origin', origin);
-    // console.log(`✅ [CORS MIDDLEWARE] Permitido explícitamente: ${origin}`);
-  // } else {
-    // res.header('Access-Control-Allow-Origin', '*');
-    // console.log(`✅ [CORS MIDDLEWARE] Permitido sin origen específico`);
-  // }
-  
-  // Headers estándar siempre
-  // res.header('Access-Control-Allow-Credentials', 'true');
-  // res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
-  // res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control');
-  // res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
-  
-  // Responder a preflight OPTIONS requests
-  // if (req.method === 'OPTIONS') {
-    // console.log(`🎯 [CORS MIDDLEWARE] Preflight OPTIONS para ${req.path} completado`);
-    // res.status(200).end();
-    // return;
-  // }
-  
-  // next();
-// });
-app.use(express.json({ limit: '100mb' }));
-app.use(express.urlencoded({ limit: '100mb', extended: true }));
-
-// 🔒 RESTRICCIÓN POR IP PARA DATOS CONFIDENCIALES
-const IPS_AUTORIZADAS_DATOS = [
-  '127.0.0.1', '::1',                    // Localhost (desarrollo)
-  '192.168.1.0/24', '192.168.0.0/24',   // Redes locales comunes
-  process.env.IP_AUTORIZADA_1 || '',     // IP desde variable de entorno
-  process.env.IP_AUTORIZADA_2 || '',     // IP adicional desde variable de entorno
-].filter(Boolean); // Remover valores vacíos
-
-// Middleware para proteger endpoints con datos confidenciales
-const protegerDatos = (req, res, next) => {
-  // En producción (Render), permitir acceso desde el frontend específico
-  if (process.env.NODE_ENV === 'production') {
-    const origin = req.headers.origin;
-    const referer = req.headers.referer;
-    
-    // Permitir si viene desde cargosfraudes.onrender.com o requests internas
-    if ((origin && origin.includes('cargosfraudes.onrender.com')) || 
-        (referer && referer.includes('cargosfraudes.onrender.com')) ||
-        !origin) { // Request directa al backend
-      console.log(`✅ Acceso autorizado en producción desde: ${origin || referer || 'directo'}`);
-      return next();
-    }
-    
-    // Log para debugging
-    console.log(`🔍 Request origin: ${origin}`);
-    console.log(`🔍 Request referer: ${referer}`);
-  }
-
-  // Obtener IP real considerando proxies (Render usa proxies)
-  const forwarded = req.headers['x-forwarded-for'];
-  const clientIP = forwarded ? forwarded.split(',')[0].trim() : 
-                   req.connection.remoteAddress || 
-                   req.socket.remoteAddress ||
-                   req.ip;
-  
-  const cleanIP = clientIP.replace(/^::ffff:/, '');
-  
-  console.log(`🔍 Intento de acceso a datos desde IP: ${cleanIP}`);
-  console.log(`🔒 IPs autorizadas:`, IPS_AUTORIZADAS_DATOS);
-  
-  // Verificar si la IP está autorizada
-  const isAuthorized = IPS_AUTORIZADAS_DATOS.some(authorizedIP => {
-    if (authorizedIP.includes('/')) {
-      // Manejo básico de rangos CIDR (192.168.1.0/24)
-      const [network, mask] = authorizedIP.split('/');
-      const networkBase = network.split('.').slice(0, parseInt(mask) / 8).join('.');
-      const clientBase = cleanIP.split('.').slice(0, parseInt(mask) / 8).join('.');
-      return networkBase === clientBase;
-    }
-    return authorizedIP === cleanIP;
-  });
-  
-  if (isAuthorized) {
-    console.log(`✅ IP autorizada para datos: ${cleanIP}`);
-    next();
-  } else {
-    console.log(`❌ IP NO autorizada para datos: ${cleanIP}`);
-    res.status(403).json({ 
-      error: 'Acceso denegado desde esta ubicación',
-      message: 'Los datos confidenciales solo son accesibles desde ubicaciones autorizadas',
-      ip: cleanIP,
-      timestamp: new Date().toISOString()
-    });
-  }
-};
-
 // Configurar Express para confiar en proxies (necesario para Render)
 app.set('trust proxy', true);
 
@@ -764,7 +627,7 @@ app.post("/upload/:tabla", upload.single("archivo"), async (req, res) => {
 });
 
 // ✅ Endpoint para borrar registros del año 2025 de una tabla
-app.delete("/delete-all/:tabla", protegerDatos, async (req, res) => {
+app.delete("/delete-all/:tabla", async (req, res) => {
   const tabla = req.params.tabla;
   
   // Validar que solo se pueda borrar de caja y ventas
@@ -852,7 +715,7 @@ app.delete("/delete-all/:tabla", protegerDatos, async (req, res) => {
 });
 
 // ✅ Endpoint para borrar registros de julio y agosto de cargos_auto
-app.delete("/delete-julio-agosto/:tabla", protegerDatos, async (req, res) => {
+app.delete("/delete-julio-agosto/:tabla", async (req, res) => {
   const tabla = req.params.tabla;
   
   // Validar que solo se pueda borrar de cargos_auto
@@ -1204,7 +1067,7 @@ if (tabla === "aclaraciones") {
 
 ["cargos_auto", "caja", "ventas", "aclaraciones"].forEach((tabla) => {
   // 🔒 Proteger endpoints con datos confidenciales
-  app.get(`/${tabla}`, protegerDatos, async (req, res) => {
+  app.get(`/${tabla}`, async (req, res) => {
     try {
       const { pagina = 1, limite = 1000, ...filtros } = req.query;
       const { query, values } = generarConsulta(tabla, filtros, pagina, limite);
@@ -2546,7 +2409,7 @@ app.get("/cargos_auto/procesadores", async (req, res) => {
   }
 });
 
-app.get("/aclaraciones/procesadores", protegerDatos, async (req, res) => {
+app.get("/aclaraciones/procesadores", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "procesador" FROM "aclaraciones" WHERE "procesador" IS NOT NULL ORDER BY "procesador"`
@@ -2557,7 +2420,7 @@ app.get("/aclaraciones/procesadores", protegerDatos, async (req, res) => {
   }
 });
 
-app.get("/aclaraciones/sucursales", protegerDatos, async (req, res) => {
+app.get("/aclaraciones/sucursales", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "sucursal" FROM "aclaraciones" WHERE "sucursal" IS NOT NULL ORDER BY "sucursal"`
@@ -2569,7 +2432,7 @@ app.get("/aclaraciones/sucursales", protegerDatos, async (req, res) => {
 });
 
 // Endpoint para obtener vendedoras desde la tabla ventas
-app.get("/aclaraciones/vendedoras", protegerDatos, async (req, res) => {
+app.get("/aclaraciones/vendedoras", async (req, res) => {
   try {
     console.log('🔍 Iniciando consulta de vendedoras...');
     
@@ -2602,7 +2465,7 @@ app.get("/aclaraciones/vendedoras", protegerDatos, async (req, res) => {
 });
 
 // Endpoint para obtener comentarios comunes desde aclaraciones
-app.get("/aclaraciones/comentarios-comunes", protegerDatos, async (req, res) => {
+app.get("/aclaraciones/comentarios-comunes", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT "comentarios", COUNT(*) as frecuencia
@@ -2622,7 +2485,7 @@ app.get("/aclaraciones/comentarios-comunes", protegerDatos, async (req, res) => 
 });
 
 // Endpoint para obtener opciones de captura CC desde aclaraciones
-app.get("/aclaraciones/captura-cc", protegerDatos, async (req, res) => {
+app.get("/aclaraciones/captura-cc", async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT DISTINCT "captura_cc" FROM "aclaraciones" 
@@ -2639,7 +2502,7 @@ app.get("/aclaraciones/captura-cc", protegerDatos, async (req, res) => {
 });
 
 // Endpoint para estadísticas generales del dashboard
-app.get("/estadisticas-generales", protegerDatos, async (req, res) => {
+app.get("/estadisticas-generales", async (req, res) => {
   try {
     const [aclaracionesResult, cargosResult, cajaResult] = await Promise.all([
       pool.query('SELECT COUNT(*) as total FROM "aclaraciones"'),
@@ -2729,7 +2592,7 @@ app.get("/aclaraciones/captura-cc", async (req, res) => {
 });
 
 // Endpoint para actualizar registros de aclaraciones
-app.put("/aclaraciones/actualizar", protegerDatos, async (req, res) => {
+app.put("/aclaraciones/actualizar", async (req, res) => {
   try {
     const { registros } = req.body;
     
@@ -3871,7 +3734,7 @@ app.get("/cobranza/resumen", async (req, res) => {
 });
 
 // 🔍 Endpoint para buscar clientes automáticamente por terminación de tarjeta, fecha y monto
-app.post("/cargos_auto/buscar-clientes", protegerDatos, async (req, res) => {
+app.post("/cargos_auto/buscar-clientes", async (req, res) => {
   try {
     const { terminacion_tarjeta, fecha_venta, monto } = req.body;
 
