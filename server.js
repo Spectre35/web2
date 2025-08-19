@@ -100,7 +100,10 @@ const formatearFechasEnObjeto = (obj) => {
 
 const { Pool } = pkg;
 const app = express();
-const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 por defecto
+const PORT = process.env.PORT || 3001;
+
+console.log('🚀 Iniciando servidor...');
+console.log('📦 Puerto configurado:', PORT);
 
 // CORS simplificado
 app.use((req, res, next) => {
@@ -182,30 +185,6 @@ app.use((req, res, next) => {
   
   // next();
 // });
-*/
-
-// OPTIONS MIDDLEWARE COMENTADO
-/*
-app.options('*', (req, res) => {
-  const origin = req.headers.origin;
-  console.log(`🚦 OPTIONS request for ${req.path} from ${origin || 'no-origin'}`);
-  
-  // Headers específicos para OPTIONS - más permisivo para localhost
-  if (origin && (origin.includes('onrender.com') || origin.includes('localhost'))) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  
-  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS,PATCH');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, X-HTTP-Method-Override');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400');
-  
-  res.status(200).end();
-});
-*/
-
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
