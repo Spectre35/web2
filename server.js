@@ -942,6 +942,112 @@ app.delete("/delete-julio-agosto/:tabla", async (req, res) => {
   }
 });
 
+// ✅ Endpoint para borrar registros del MES CORRIENTE de cargos_auto
+app.delete("/delete-mes-corriente/:tabla", async (req, res) => {
+  const tabla = req.params.tabla;
+  
+  // Validar que solo se pueda borrar de cargos_auto
+  if (tabla !== 'cargos_auto') {
+    return res.status(400).json({ 
+      error: "Solo se permite borrar registros del mes corriente de la tabla 'cargos_auto'" 
+    });
+  }
+  
+  try {
+    // Obtener fecha actual del sistema
+    const fechaActual = new Date();
+    const mesActual = fechaActual.getMonth() + 1; // getMonth() devuelve 0-11, agregamos 1
+    const añoActual = fechaActual.getFullYear();
+    const nombreMes = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][mesActual];
+    
+    console.log(`🗑️ [INICIO] Solicitud de borrado del mes corriente para tabla: ${tabla}`);
+    console.log(`📅 Fecha actual del sistema: ${fechaActual.toISOString()}`);
+    console.log(`📅 Mes corriente: ${nombreMes} (${mesActual}/${añoActual})`);
+    
+    // Para cargos_auto, la columna de fecha es 'Fecha'
+    const columnaFecha = 'Fecha';
+    console.log(`📅 Columna de fecha detectada: ${columnaFecha}`);
+    
+    // PROTECCIÓN 1: Verificar distribución por mes ANTES de borrar
+    const monthsResult = await pool.query(`
+      SELECT EXTRACT(MONTH FROM "${columnaFecha}") as mes, COUNT(*) as total
+      FROM "${tabla}"
+      WHERE EXTRACT(YEAR FROM "${columnaFecha}") = $1
+      GROUP BY EXTRACT(MONTH FROM "${columnaFecha}")
+      ORDER BY mes
+    `, [añoActual]);
+    
+    console.log(`📊 Distribución por mes en ${tabla} (año ${añoActual}):`);
+    monthsResult.rows.forEach(row => {
+      const nombre = ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                     'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][row.mes];
+      const esActual = row.mes == mesActual ? ' ← MES ACTUAL' : '';
+      console.log(`   - ${nombre}: ${row.total} registros${esActual}`);
+    });
+    
+    // PROTECCIÓN 2: Contar específicamente registros del mes corriente
+    const countResult = await pool.query(`
+      SELECT COUNT(*) FROM "${tabla}" 
+      WHERE EXTRACT(YEAR FROM "${columnaFecha}") = $1 
+      AND EXTRACT(MONTH FROM "${columnaFecha}") = $2
+    `, [añoActual, mesActual]);
+    const totalRegistrosMesActual = parseInt(countResult.rows[0].count);
+    
+    console.log(`🎯 Registros de ${nombreMes} ${añoActual} encontrados: ${totalRegistrosMesActual}`);
+    
+    if (totalRegistrosMesActual === 0) {
+      console.log(`⚠️ No hay registros de ${nombreMes} ${añoActual} para borrar en ${tabla}`);
+      return res.json({ 
+        message: `⚠️ No se encontraron registros de ${nombreMes} ${añoActual} en ${tabla}`,
+        registrosBorrados: 0,
+        mes: nombreMes,
+        año: añoActual,
+        tabla: tabla
+      });
+    }
+    
+    // PROTECCIÓN 3: Confirmar la operación si hay muchos registros
+    if (totalRegistrosMesActual > 10000) {
+      console.log(`⚠️ ADVERTENCIA: Se intentan borrar ${totalRegistrosMesActual} registros`);
+    }
+    
+    // PROTECCIÓN 4: Ejecutar borrado con parámetros seguros
+    const deleteResult = await pool.query(`
+      DELETE FROM "${tabla}" 
+      WHERE EXTRACT(YEAR FROM "${columnaFecha}") = $1 
+      AND EXTRACT(MONTH FROM "${columnaFecha}") = $2
+    `, [añoActual, mesActual]);
+    
+    console.log(`✅ BORRADO COMPLETADO: ${deleteResult.rowCount} registros de ${nombreMes} ${añoActual} borrados de ${tabla}`);
+    
+    // PROTECCIÓN 5: Verificar estado después del borrado
+    const afterResult = await pool.query(`
+      SELECT COUNT(*) as total FROM "${tabla}"
+    `);
+    console.log(`📊 Total de registros restantes en ${tabla}: ${afterResult.rows[0].total}`);
+    
+    res.json({ 
+      message: `✅ ${deleteResult.rowCount} registros de ${nombreMes} ${añoActual} borrados exitosamente de ${tabla}`,
+      registrosBorrados: deleteResult.rowCount,
+      mes: nombreMes,
+      mesNumero: mesActual,
+      año: añoActual,
+      tabla: tabla,
+      registrosRestantes: afterResult.rows[0].total,
+      fechaOperacion: fechaActual.toISOString()
+    });
+    
+  } catch (error) {
+    console.error(`❌ ERROR CRÍTICO en borrado del mes corriente de ${tabla}:`, error);
+    res.status(500).json({ 
+      error: `Error al borrar registros del mes corriente: ${error.message}`,
+      tabla: tabla,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // ✅ Calcular porcentaje y tiempo estimado
 function actualizarProgreso(inicio) {
   const tiempoTranscurrido = (Date.now() - inicio) / 1000;

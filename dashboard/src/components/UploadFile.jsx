@@ -75,6 +75,30 @@ export default function UploadFile({ tabla }) {
     }
   };
 
+  // Función para borrar registros del MES CORRIENTE (solo para cargos_auto)
+  const borrarMesCorriente = async () => {
+    const fechaActual = new Date();
+    const nombreMes = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 
+                       'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'][fechaActual.getMonth()];
+    const año = fechaActual.getFullYear();
+    
+    if (!confirm(`¿Estás seguro de que quieres borrar TODOS los registros de ${nombreMes.toUpperCase()} ${año} de ${nombreAmigable}?`)) {
+      return;
+    }
+    
+    setBorrando(true);
+    setMensaje("");
+    
+    try {
+      const res = await axios.delete(`${API_BASE_URL}/delete-mes-corriente/${tabla}`);
+      setMensaje(`✅ ${res.data.message || `Registros de ${nombreMes} ${año} borrados exitosamente`}`);
+    } catch (err) {
+      setMensaje(`❌ Error al borrar registros: ${err.response?.data?.error || err.message}`);
+    } finally {
+      setBorrando(false);
+    }
+  };
+
   // Función para manejar múltiples archivos (solo para caja)
   const onDropMultiple = useCallback(
     async (acceptedFiles) => {
@@ -136,7 +160,7 @@ export default function UploadFile({ tabla }) {
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
-        setMensaje(res.data.message || "✅ Archivo cargado exitosamente");
+        setMensaje(res.data);
       } catch (err) {
         setMensaje("❌ Error al subir el archivo");
       } finally {
@@ -172,13 +196,23 @@ export default function UploadFile({ tabla }) {
       
       {/* Botón para borrar julio y agosto (solo para cargos_auto) */}
       {tabla === 'cargos_auto' && (
-        <button
-          onClick={borrarJulioAgosto}
-          disabled={borrando}
-          className="mb-4 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-lg"
-        >
-          {borrando ? '🗑️ Borrando Jul/Ago...' : '🗑️ Borrar Julio y Agosto'}
-        </button>
+        <>
+          <button
+            onClick={borrarJulioAgosto}
+            disabled={borrando}
+            className="mb-2 bg-orange-600 hover:bg-orange-700 disabled:bg-orange-400 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-lg w-full"
+          >
+            {borrando ? '🗑️ Borrando Jul/Ago...' : '🗑️ Borrar Julio y Agosto'}
+          </button>
+          
+          <button
+            onClick={borrarMesCorriente}
+            disabled={borrando}
+            className="mb-4 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-4 py-2 rounded-lg font-semibold transition-all duration-300 shadow-lg w-full"
+          >
+            {borrando ? '🗑️ Borrando mes...' : `🗑️ Borrar ${new Date().toLocaleDateString('es-ES', { month: 'long' }).charAt(0).toUpperCase() + new Date().toLocaleDateString('es-ES', { month: 'long' }).slice(1)}`}
+          </button>
+        </>
       )}
       
       <div
