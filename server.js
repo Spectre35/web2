@@ -176,11 +176,36 @@ const { Pool } = pkg;
 const app = express();
 const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 por defecto
 
-// CORS simplificado
+// CORS configuración robusta para Render
+const corsOptions = {
+  origin: [
+    'https://cargosfraudes.onrender.com',
+    'http://localhost:5173',
+    'http://localhost:3000',
+    'http://localhost:4173',
+    '*'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'Origin', 'X-Requested-With']
+};
+
+app.use(cors(corsOptions));
+
+// Middleware de debugging para CORS
+app.use((req, res, next) => {
+  console.log(`🌐 ${req.method} ${req.path} from origin: ${req.headers.origin || 'no-origin'}`);
+  console.log(`📋 Headers: ${JSON.stringify(req.headers, null, 2)}`);
+  next();
+});
+
+// CORS adicional simplificado como fallback
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type,Accept');
+  res.header('Access-Control-Allow-Headers', 'Content-Type,Accept,Authorization,Origin,X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
   
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
