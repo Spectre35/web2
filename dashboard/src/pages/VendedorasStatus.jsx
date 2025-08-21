@@ -63,48 +63,29 @@ function ModalDetalleSucursales({ vendedora, isOpen, onClose }) {
   if (!isOpen) return null;
 
   return (
-    <div 
-      className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-[9999] p-4" 
-      style={{ 
-        position: 'fixed', 
-        top: 0, 
-        left: 0, 
-        width: '100vw', 
-        height: '100vh',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center'
-      }}
-      onClick={onClose}
-    >
+    <div className="modal-overlay" onClick={onClose}>
       <div 
-        className="bg-gray-900 rounded-xl shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden border border-gray-700 relative"
+        className="modal-container max-w-5xl"
         onClick={(e) => e.stopPropagation()}
-        style={{
-          maxHeight: '90vh',
-          overflowY: 'auto'
-        }}
       >
         {/* Header del Modal */}
-        <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-6 text-white">
-          <div className="flex justify-between items-center">
-            <div>
-              <h2 className="text-2xl font-bold">Detalle de Sucursales</h2>
-              <p className="text-blue-100 mt-1">
-                Vendedora: <span className="font-semibold">{vendedora?.nombre}</span>
-              </p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-white hover:text-gray-300 text-3xl font-bold w-10 h-10 flex items-center justify-center rounded-full hover:bg-white/20 transition-colors"
-            >
-              ×
-            </button>
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title text-2xl">Detalle de Sucursales</h2>
+            <p className="text-blue-200 mt-1">
+              Vendedora: <span className="font-semibold">{vendedora?.nombre}</span>
+            </p>
           </div>
+          <button
+            onClick={onClose}
+            className="modal-close-button"
+          >
+            ×
+          </button>
         </div>
 
         {/* Contenido del Modal */}
-        <div className="p-6 overflow-y-auto max-h-[60vh]">
+        <div className="modal-content max-h-[60vh] overflow-y-auto">
           {cargandoModal ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
@@ -202,15 +183,13 @@ function ModalDetalleSucursales({ vendedora, isOpen, onClose }) {
         </div>
 
         {/* Footer del Modal */}
-        <div className="bg-gray-800/50 p-4 border-t border-gray-700">
-          <div className="flex justify-end">
-            <button
-              onClick={onClose}
-              className="px-6 py-2 bg-gray-600 hover:bg-gray-500 text-white rounded-lg transition-colors font-medium"
-            >
-              Cerrar
-            </button>
-          </div>
+        <div className="modal-footer">
+          <button
+            onClick={onClose}
+            className="modal-button modal-button-secondary"
+          >
+            Cerrar
+          </button>
         </div>
       </div>
     </div>

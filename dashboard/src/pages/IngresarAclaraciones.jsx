@@ -2818,26 +2818,27 @@ export default function IngresarAclaraciones() {
 
         {/* Modal de selección de cliente */}
         {modalSeleccionCliente.visible && (
-          <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50">
-            <div className="bg-gray-800 p-6 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[80vh] overflow-y-auto border border-gray-600">
-              <div className="flex justify-between items-center mb-4">
-                <h2 className="text-xl font-bold text-white">
+          <div className="modal-overlay">
+            <div className="modal-container max-w-4xl">
+              <div className="modal-header">
+                <h2 className="modal-title">
                   Seleccionar Cliente
                 </h2>
                 <button
                   onClick={cerrarModalSeleccion}
-                  className="text-gray-400 hover:text-gray-200 text-2xl font-bold"
+                  className="modal-close-button"
                 >
                   ×
                 </button>
               </div>
               
-              <div className="mb-4 p-3 bg-gray-700 rounded border border-gray-600">
-                <p className="text-sm text-gray-200">
-                  <strong>Se encontraron {modalSeleccionCliente.clientes.length} clientes</strong> que coinciden con los criterios de búsqueda.
-                  {modalSeleccionCliente.tipoCoincidencia === "fecha_monto" && (
-                    <span className="block mt-2">
-                      <strong>Nota:</strong> No se encontraron coincidencias exactas con la tarjeta terminada en 
+              <div className="modal-content">
+                <div className="modal-alert modal-alert-info mb-4">
+                  <p className="text-sm">
+                    <strong>Se encontraron {modalSeleccionCliente.clientes.length} clientes</strong> que coinciden con los criterios de búsqueda.
+                    {modalSeleccionCliente.tipoCoincidencia === "fecha_monto" && (
+                      <span className="block mt-2">
+                        <strong>Nota:</strong> No se encontraron coincidencias exactas con la tarjeta terminada en 
                       <span className="font-mono bg-yellow-600 text-yellow-100 px-1 rounded">{modalSeleccionCliente.terminacionBuscada}</span>, 
                       por lo que se muestran todos los clientes que coinciden con la fecha y monto.
                     </span>
@@ -2857,7 +2858,7 @@ export default function IngresarAclaraciones() {
                 {modalSeleccionCliente.clientes.map((cliente, index) => (
                   <div
                     key={index}
-                    className="border border-gray-600 rounded-lg p-4 hover:bg-gray-700 cursor-pointer transition-colors bg-gray-750"
+                    className="border border-gray-600/50 rounded-lg p-4 hover:bg-gray-700/50 cursor-pointer transition-all duration-200 bg-gray-800/30 hover:shadow-lg"
                     onClick={() => seleccionarCliente(cliente)}
                   >
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -2912,11 +2913,12 @@ export default function IngresarAclaraciones() {
                   </div>
                 ))}
               </div>
+              </div>
 
-              <div className="mt-6 flex justify-end space-x-3">
+              <div className="modal-footer">
                 <button
                   onClick={cerrarModalSeleccion}
-                  className="px-4 py-2 bg-gray-600 text-gray-200 rounded hover:bg-gray-500 transition-colors border border-gray-500"
+                  className="modal-button modal-button-secondary"
                 >
                   Cancelar
                 </button>

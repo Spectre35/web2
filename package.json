@@ -15,16 +15,22 @@
   "description": "",
   "dependencies": {
     "axios": "^1.11.0",
+    "canvas": "^3.2.0",
     "cors": "^2.8.5",
     "dotenv": "^17.2.1",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
+    "form-data": "^4.0.4",
+    "jimp": "^1.6.0",
     "moment": "^2.30.1",
     "multer": "^2.0.2",
+    "pdf-poppler": "^0.2.1",
     "pg": "^8.16.3",
     "pg-query-stream": "^4.10.3",
     "puppeteer": "^24.16.0",
+    "sharp": "^0.34.3",
     "socket.io": "^4.8.1",
+    "tesseract.js": "^4.1.4",
     "xlsx": "^0.18.5"
   }
 }

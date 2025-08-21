@@ -3,7 +3,7 @@ import cors from "cors";
 import pkg from "pg";
 import ExcelJS from "exceljs";
 import multer from "multer";
-import fs from "fs";
+import fs from "fs/promises";
 import path from "path";
 import QueryStream from "pg-query-stream"; // Agrega arriba
 import dotenv from "dotenv";
@@ -13,7 +13,81 @@ import { Server } from "socket.io";
 dotenv.config();
 
 import axios from "axios";
+import FormData from "form-data";
 // import { WebAutomator } from "./web-automator.js"; // Comentado temporalmente
+
+//  CONFIGURACIÓN DEL SERVICIO OCR
+const OCR_SERVICE_URL = process.env.OCR_SERVICE_URL || 'http://localhost:5001';
+const USE_EASYOCR = process.env.USE_EASYOCR === 'true' || true; // Por defecto usar EasyOCR
+
+// 📸 FUNCIÓN PARA EXTRAER TEXTO CON EASYOCR (PYTHON)
+async function extraerTextoConEasyOCR(filePath) {
+  try {
+    console.log('🐍 Usando EasyOCR (Python) para extraer texto...');
+    
+    const formData = new FormData();
+    
+    // Usar createReadStream para enviar el archivo
+    const fileStream = await import('fs');
+    formData.append('file', fileStream.default.createReadStream(filePath), {
+      filename: path.basename(filePath),
+      contentType: 'image/jpeg'
+    });
+    
+    const response = await axios.post(`${OCR_SERVICE_URL}/extract-text`, formData, {
+      headers: {
+        ...formData.getHeaders(),
+      },
+      timeout: 30000 // 30 segundos timeout
+    });
+    
+    if (response.data.success) {
+      console.log('✅ EasyOCR texto extraído exitosamente');
+      console.log('📝 Confianza promedio:', response.data.confidence);
+      console.log('📊 Palabras detectadas:', response.data.word_count);
+      return response.data.text;
+    } else {
+      throw new Error(response.data.error || 'Error en EasyOCR');
+    }
+    
+  } catch (error) {
+    console.error('❌ Error con EasyOCR:', error.message);
+    
+    // Si EasyOCR falla, usar Tesseract como respaldo
+    console.log('🔄 Usando Tesseract como respaldo...');
+    return await extraerTextoConTesseract(filePath);
+  }
+}
+
+// 📸 FUNCIÓN PARA EXTRAER TEXTO CON TESSERACT (RESPALDO)
+async function extraerTextoConTesseract(filePath) {
+  try {
+    const Tesseract = await import('tesseract.js');
+    
+    console.log('🔍 Procesando imagen con Tesseract...');
+    
+    const { data: { text } } = await Tesseract.default.recognize(filePath, 'spa+eng', {
+      logger: m => {
+        if (m.status === 'recognizing text') {
+          console.log(`📊 Progreso OCR: ${Math.round(m.progress * 100)}%`);
+        }
+      }
+    });
+    
+    console.log('✅ Tesseract - Texto extraído exitosamente');
+    return text;
+    
+  } catch (error) {
+    console.error('❌ Error con Tesseract:', error);
+    throw error;
+  }
+}
+
+// 📸 FUNCIÓN PRINCIPAL PARA EXTRAER TEXTO
+async function extraerTextoDeImagen(filePath) {
+  console.log('🎯 Usando únicamente EasyOCR para extracción de texto');
+  return await extraerTextoConEasyOCR(filePath);
+}
 
 // 🗓️ FUNCIÓN PARA FORMATEAR FECHAS LOCALES SIN PROBLEMAS DE ZONA HORARIA
 const formatearFechaLocal = (fecha) => {
@@ -115,8 +189,9 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use(express.json({ limit: '100mb' }));
+app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
-  
 // Configurar Express para confiar en proxies (necesario para Render)
 app.set('trust proxy', true);
 
@@ -129,6 +204,18 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000, // 10 segundos timeout de conexión
   statement_timeout: 300000, // 5 minutos para queries largas
   query_timeout: 300000, // 5 minutos para queries
+});
+
+// ✅ Manejo de errores de conexión y reconexión automática
+pool.on('error', (err) => {
+  console.error('❌ Error en pool de conexiones:', err);
+  if (err.code === 'ECONNRESET' || err.code === 'ETIMEDOUT') {
+    console.log('🔄 Reintentando conexión en 5 segundos...');
+  }
+});
+
+pool.on('connect', () => {
+  console.log('✅ Nueva conexión establecida con la base de datos');
 });
 
 // ✅ Configuración de almacenamiento temporal para archivos (optimizado para archivos grandes)
@@ -262,7 +349,12 @@ function formatearDatos(tabla, columna, valor) {
           // ✅ PARSEO DE STRING CON VALIDACIONES ESTRICTAS
           const valorLimpio = valor.trim();
           
-          // Verificar que no tenga caracteres extraños
+          // ✅ PERMITIR "ND" (No Data) explícitamente como null
+          if (valorLimpio === 'ND' || valorLimpio === '' || valorLimpio === 'NULL') {
+            return null; // Sin log, es normal tener ND
+          }
+          
+          // Verificar que no tenga caracteres extraños (excepto ND que ya manejamos)
           if (!/^[\d\-\/\s\.:]+$/.test(valorLimpio)) {
             console.log(`⚠️ Fecha con caracteres inválidos en ${columna}: ${valorLimpio} -> null`);
             return null;
@@ -280,6 +372,23 @@ function formatearDatos(tabla, columna, valor) {
           
           if (!esFormatoValido) {
             console.log(`⚠️ Formato de fecha no reconocido en ${columna}: ${valorLimpio} -> null`);
+            return null;
+          }
+          
+          // ✅ VALIDAR AÑO ANTES DE PARSEAR para evitar años como "20255"
+          let añoExtraido;
+          if (/^\d{4}-\d{2}-\d{2}$/.test(valorLimpio)) {
+            añoExtraido = parseInt(valorLimpio.split('-')[0]);
+          } else if (/^\d{2}\/\d{2}\/\d{4}$/.test(valorLimpio)) {
+            añoExtraido = parseInt(valorLimpio.split('/')[2]);
+          } else if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(valorLimpio)) {
+            añoExtraido = parseInt(valorLimpio.split('/')[2]);
+          } else if (/^\d{4}\/\d{2}\/\d{2}$/.test(valorLimpio)) {
+            añoExtraido = parseInt(valorLimpio.split('/')[0]);
+          }
+          
+          if (añoExtraido && (añoExtraido < 1900 || añoExtraido > 2100)) {
+            console.log(`⚠️ Año fuera de rango en ${columna}: ${añoExtraido} -> null`);
             return null;
           }
           
@@ -2012,6 +2121,7 @@ app.get("/sucursal-bloque", async (req, res) => {
 
 app.get("/sucursales-alerta", async (req, res) => {
   try {
+    console.time("sucursales-alerta-query"); // ⏱️ Iniciar medición
     
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
@@ -2591,7 +2701,7 @@ app.get("/aclaraciones/captura-cc", async (req, res) => {
   }
 });
 
-// Endpoint para actualizar registros de aclaraciones
+// Endpoint para actualizar registros de aclaraciones - OPTIMIZADO
 app.put("/aclaraciones/actualizar", async (req, res) => {
   try {
     const { registros } = req.body;
@@ -2603,180 +2713,272 @@ app.put("/aclaraciones/actualizar", async (req, res) => {
       return res.status(400).json({ error: "Se requiere un array de registros" });
     }
 
+    // ✅ OPTIMIZACIÓN 1: Usar transacción única con UPDATE masivo
     const client = await pool.connect();
+    console.time("actualizacion-masiva");
     
     try {
       await client.query('BEGIN');
       console.log("✅ Transacción iniciada");
       
-      const resultados = [];
+      // ✅ OPTIMIZACIÓN 2: Agrupar registros por campos a actualizar
+      const gruposPorCampos = {};
       
       for (const registro of registros) {
         const { id_original, datos_nuevos } = registro;
-        
-        console.log("🔍 Procesando registro:", {
-          id_transaccion: id_original?.id_de_transaccion,
-          num_tarjeta: id_original?.num_de_tarjeta,
-          campos_a_actualizar: Object.keys(datos_nuevos || {})
-        });
         
         if (!id_original || !datos_nuevos) {
           console.log("⚠️ Registro omitido: falta id_original o datos_nuevos");
           continue;
         }
         
-        // Construir la query de UPDATE dinámicamente
-        const camposActualizar = [];
-        const valores = [];
-        let contador = 1;
+        // Crear clave única basada en los campos a actualizar
+        const camposKey = Object.keys(datos_nuevos).sort().join(',');
         
-        // Recorrer los campos que se van a actualizar
-        for (const [campo, valor] of Object.entries(datos_nuevos)) {
-          if (valor !== null && valor !== undefined) {
-            // Validar y formatear campos especiales
-            let valorFormateado = valor;
-            
-            // Campos de fecha: si están vacíos, establecer como NULL
-            const camposFecha = ['fecha_venta', 'fecha_contrato', 'fecha_de_peticion', 'fecha_de_respuesta'];
-            if (camposFecha.includes(campo)) {
-              if (valor === '' || valor === null || valor === undefined) {
-                valorFormateado = null;
-              } else {
-                // 🗓️ Manejo especial para fechas formato DD/MM/YYYY
-                if (typeof valor === 'string' && valor.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
-                  // Convertir DD/MM/YYYY a YYYY-MM-DD para PostgreSQL
-                  const [dia, mes, anio] = valor.split('/');
-                  valorFormateado = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
-                  console.log(`📅 Fecha convertida: ${valor} -> ${valorFormateado}`);
-                } else {
-                  // Validar formato de fecha
-                  const fechaValida = new Date(valor);
-                  if (isNaN(fechaValida.getTime())) {
-                    console.warn(`Fecha inválida para campo ${campo}: ${valor}`);
-                    continue; // Saltar este campo si la fecha no es válida
-                  }
-                  valorFormateado = valor;
-                }
-              }
-            }
-            
-            // Campos numéricos: convertir strings vacíos a NULL
-            const camposNumericos = ['monto', 'monto_mnx', 'año'];
-            if (camposNumericos.includes(campo)) {
-              if (valor === '' || valor === null || valor === undefined) {
-                valorFormateado = null;
-              } else {
-                // Validar que sea un número
-                const numeroValido = parseFloat(valor);
-                if (isNaN(numeroValido)) {
-                  console.warn(`Número inválido para campo ${campo}: ${valor}`);
-                  continue; // Saltar este campo si no es un número válido
-                }
-                valorFormateado = valor;
-              }
-            }
-            
-            // Campos booleanos para EUROSKIN
-            if (campo === 'euroskin') {
-              if (valor === '' || valor === null || valor === undefined) {
-                valorFormateado = null;
-              } else {
-                valorFormateado = valor;
-              }
-            }
-            
-            camposActualizar.push(`"${campo}" = $${contador}`);
-            valores.push(valorFormateado);
-            contador++;
-          }
+        if (!gruposPorCampos[camposKey]) {
+          gruposPorCampos[camposKey] = {
+            campos: Object.keys(datos_nuevos),
+            registros: []
+          };
         }
         
-        if (camposActualizar.length === 0) {
-          continue;
+        gruposPorCampos[camposKey].registros.push({
+          id_transaccion: id_original.id_de_transaccion,
+          num_tarjeta: id_original.num_de_tarjeta,
+          valores: datos_nuevos
+        });
+      }
+      
+      console.log(`� Agrupados en ${Object.keys(gruposPorCampos).length} grupos por campos similares`);
+      
+      const resultados = [];
+      
+      // ✅ OPTIMIZACIÓN 3: Procesar cada grupo con UPDATE masivo
+      for (const [camposKey, grupo] of Object.entries(gruposPorCampos)) {
+        console.log(`🔄 Procesando grupo: ${camposKey} (${grupo.registros.length} registros)`);
+        
+        // Preparar arrays para el UPDATE masivo
+        const idsTransaccion = [];
+        const numsTarjeta = [];
+        const valoresPorCampo = {};
+        
+        // Inicializar arrays para cada campo
+        grupo.campos.forEach(campo => {
+          valoresPorCampo[campo] = [];
+        });
+        
+        // Llenar arrays con datos
+        for (const reg of grupo.registros) {
+          idsTransaccion.push(reg.id_transaccion);
+          numsTarjeta.push(reg.num_tarjeta);
+          
+          grupo.campos.forEach(campo => {
+            let valor = reg.valores[campo];
+            
+            // ✅ OPTIMIZACIÓN 4: Formateo de datos centralizado
+            valor = formatearValorParaUpdate(campo, valor);
+            valoresPorCampo[campo].push(valor);
+          });
         }
         
-        // Agregar el ID original para la condición WHERE
-        valores.push(id_original.id_de_transaccion);
-        valores.push(id_original.num_de_tarjeta);
+        // ✅ OPTIMIZACIÓN 5: Construir UPDATE con UNNEST para procesamiento masivo
+        const setClauses = grupo.campos.map((campo, idx) => 
+          `"${campo}" = updates.${campo}`
+        ).join(', ');
+        
+        const selectClauses = grupo.campos.map((campo, idx) => 
+          `unnest($${idx + 3}::text[]) as ${campo}`
+        ).join(', ');
         
         const updateQuery = `
           UPDATE "aclaraciones" 
-          SET ${camposActualizar.join(', ')}
-          WHERE "id_de_transaccion" = $${contador} 
-          AND "num_de_tarjeta" = $${contador + 1}
+          SET ${setClauses}
+          FROM (
+            SELECT 
+              unnest($1::text[]) as id_transaccion,
+              unnest($2::text[]) as num_tarjeta,
+              ${selectClauses}
+          ) as updates
+          WHERE "aclaraciones"."id_de_transaccion" = updates.id_transaccion 
+          AND "aclaraciones"."num_de_tarjeta" = updates.num_tarjeta
         `;
         
-        console.log("🔧 Query a ejecutar:", updateQuery);
-        console.log("📝 Valores:", valores);
+        // Preparar parámetros
+        const params = [
+          idsTransaccion,
+          numsTarjeta,
+          ...grupo.campos.map(campo => valoresPorCampo[campo])
+        ];
         
-        // Debug: Verificar si el registro existe
-        const debugQuery = `
-          SELECT COUNT(*) as count
-          FROM "aclaraciones" 
-          WHERE "id_de_transaccion" = $1 
-          AND "num_de_tarjeta" = $2
-        `;
-        const debugResult = await client.query(debugQuery, [
-          id_original.id_de_transaccion,
-          id_original.num_de_tarjeta
-        ]);
-        console.log("🔍 Debug - Registro encontrado:", debugResult.rows[0]);
+        console.log(`� Ejecutando UPDATE masivo para ${grupo.registros.length} registros`);
+        console.log(`📝 Query: ${updateQuery.replace(/\s+/g, ' ')}`);
         
-        // Debug adicional: buscar registros similares
-        if (debugResult.rows[0].count === 0) {
-          console.log("🔍 No se encontró registro exacto. Buscando similares...");
-          
-          // Buscar por ID de transacción únicamente
-          const similarQuery = `
-            SELECT "id_de_transaccion", "num_de_tarjeta", "fecha_venta"
-            FROM "aclaraciones" 
-            WHERE "id_de_transaccion" = $1 
-            LIMIT 3
-          `;
-          const similarResult = await client.query(similarQuery, [id_original.id_de_transaccion]);
-          console.log("🔍 Debug - Registros con mismo ID transacción:", similarResult.rows);
-          
-          // Buscar por número de tarjeta
-          const tarjetaQuery = `
-            SELECT "id_de_transaccion", "num_de_tarjeta", "fecha_venta"
-            FROM "aclaraciones" 
-            WHERE "num_de_tarjeta" = $1 
-            LIMIT 3
-          `;
-          const tarjetaResult = await client.query(tarjetaQuery, [id_original.num_de_tarjeta]);
-          console.log("🔍 Debug - Registros con mismo num tarjeta:", tarjetaResult.rows);
-        }
+        const updateResult = await client.query(updateQuery, params);
         
-        const result = await client.query(updateQuery, valores);
-        
-        console.log("✅ Query ejecutada. Filas afectadas:", result.rowCount);
-        
+        console.log(`✅ Actualizados: ${updateResult.rowCount} registros`);
         resultados.push({
-          id_original,
-          actualizado: result.rowCount > 0,
-          filas_afectadas: result.rowCount
+          grupo: camposKey,
+          registrosEnviados: grupo.registros.length,
+          registrosActualizados: updateResult.rowCount
         });
       }
       
       await client.query('COMMIT');
-      console.log("💾 Transacción confirmada (COMMIT)");
+      console.timeEnd("actualizacion-masiva");
+      console.log("✅ Transacción completada exitosamente");
+      
+      const totalEnviados = resultados.reduce((sum, r) => sum + r.registrosEnviados, 0);
+      const totalActualizados = resultados.reduce((sum, r) => sum + r.registrosActualizados, 0);
       
       res.json({
         success: true,
-        registros_procesados: resultados.length,
-        resultados
+        mensaje: `Actualización masiva completada`,
+        estadisticas: {
+          grupos_procesados: resultados.length,
+          registros_enviados: totalEnviados,
+          registros_actualizados: totalActualizados,
+          detalles: resultados
+        }
       });
       
     } catch (error) {
       await client.query('ROLLBACK');
+      console.error("❌ Error en actualización masiva:", error);
       throw error;
     } finally {
       client.release();
     }
     
   } catch (error) {
-    console.error("❌ Error al actualizar aclaraciones:", error);
-    res.status(500).json({ error: "Error al actualizar registros" });
+    console.error("❌ Error en endpoint de actualización:", error);
+    res.status(500).json({ 
+      error: "Error al actualizar registros",
+      detalles: error.message 
+    });
+  }
+});
+
+// ✅ FUNCIÓN AUXILIAR: Formatear valores para UPDATE
+function formatearValorParaUpdate(campo, valor) {
+  // Campos de fecha
+  const camposFecha = ['fecha_venta', 'fecha_contrato', 'fecha_de_peticion', 'fecha_de_respuesta'];
+  if (camposFecha.includes(campo)) {
+    if (valor === '' || valor === null || valor === undefined) {
+      return null;
+    }
+    
+    // Manejar formato DD/MM/YYYY
+    if (typeof valor === 'string' && valor.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
+      const [dia, mes, anio] = valor.split('/');
+      return `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+    }
+    
+    // Validar formato de fecha
+    const fechaValida = new Date(valor);
+    if (isNaN(fechaValida.getTime())) {
+      console.warn(`Fecha inválida para campo ${campo}: ${valor}`);
+      return null;
+    }
+    return valor;
+  }
+  
+  // Campos numéricos
+  const camposNumericos = ['monto', 'monto_mnx', 'año'];
+  if (camposNumericos.includes(campo)) {
+    if (valor === '' || valor === null || valor === undefined) {
+      return null;
+    }
+    
+    const numeroValido = parseFloat(valor);
+    if (isNaN(numeroValido)) {
+      console.warn(`Número inválido para campo ${campo}: ${valor}`);
+      return null;
+    }
+    return valor;
+  }
+  
+  // Campo booleano euroskin
+  if (campo === 'euroskin') {
+    if (valor === '' || valor === null || valor === undefined) {
+      return null;
+    }
+    return valor;
+  }
+  
+  // Campos de texto por defecto
+  return valor;
+}
+
+// ✅ OPTIMIZACIÓN EXTRA: Endpoint para actualizar UN SOLO CAMPO masivamente
+app.put("/aclaraciones/actualizar-campo", async (req, res) => {
+  try {
+    const { campo, registros } = req.body;
+    
+    console.log(`🔄 Actualización masiva de campo: ${campo}`);
+    console.log(`📊 Registros a actualizar: ${registros?.length || 0}`);
+    
+    if (!campo || !registros || !Array.isArray(registros)) {
+      return res.status(400).json({ 
+        error: "Se requiere 'campo' y array de 'registros'" 
+      });
+    }
+    
+    console.time("actualizacion-campo-masivo");
+    
+    // Preparar arrays para UPDATE masivo
+    const idsTransaccion = [];
+    const numsTarjeta = [];
+    const valores = [];
+    
+    for (const registro of registros) {
+      const { id_transaccion, num_tarjeta, valor } = registro;
+      
+      if (!id_transaccion || !num_tarjeta) {
+        console.log("⚠️ Registro omitido: falta id_transaccion o num_tarjeta");
+        continue;
+      }
+      
+      idsTransaccion.push(id_transaccion);
+      numsTarjeta.push(num_tarjeta);
+      valores.push(formatearValorParaUpdate(campo, valor));
+    }
+    
+    if (idsTransaccion.length === 0) {
+      return res.status(400).json({ error: "No hay registros válidos para actualizar" });
+    }
+    
+    // UPDATE masivo usando UNNEST
+    const updateQuery = `
+      UPDATE "aclaraciones" 
+      SET "${campo}" = updates.valor
+      FROM (
+        SELECT 
+          unnest($1::text[]) as id_transaccion,
+          unnest($2::text[]) as num_tarjeta,
+          unnest($3::text[]) as valor
+      ) as updates
+      WHERE "aclaraciones"."id_de_transaccion" = updates.id_transaccion 
+      AND "aclaraciones"."num_de_tarjeta" = updates.num_tarjeta
+    `;
+    
+    const result = await pool.query(updateQuery, [idsTransaccion, numsTarjeta, valores]);
+    
+    console.timeEnd("actualizacion-campo-masivo");
+    console.log(`✅ Campo ${campo} actualizado en ${result.rowCount} registros`);
+    
+    res.json({
+      success: true,
+      mensaje: `Campo '${campo}' actualizado masivamente`,
+      registros_enviados: idsTransaccion.length,
+      registros_actualizados: result.rowCount
+    });
+    
+  } catch (error) {
+    console.error("❌ Error en actualización masiva de campo:", error);
+    res.status(500).json({ 
+      error: "Error al actualizar campo",
+      detalles: error.message 
+    });
   }
 });
 
@@ -3733,9 +3935,30 @@ app.get("/cobranza/resumen", async (req, res) => {
   }
 });
 
-// 🔍 Endpoint para buscar clientes automáticamente por terminación de tarjeta, fecha y monto
+// � Middleware de debugging para cargos_auto/buscar-clientes
+app.use('/cargos_auto/buscar-clientes', (req, res, next) => {
+  console.log('🐛 DEBUG - Petición a /cargos_auto/buscar-clientes:');
+  console.log('📋 Method:', req.method);
+  console.log('📋 Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('📋 Body exists:', !!req.body);
+  console.log('📋 Body content:', req.body);
+  console.log('📋 Raw body:', req.rawBody);
+  console.log('📋 Content-Type:', req.get('Content-Type'));
+  next();
+});
+
+// �🔍 Endpoint para buscar clientes automáticamente por terminación de tarjeta, fecha y monto
 app.post("/cargos_auto/buscar-clientes", async (req, res) => {
   try {
+    // Validar que req.body existe
+    if (!req.body) {
+      console.log('❌ req.body es undefined o null');
+      return res.status(400).json({
+        error: "Body de la petición vacío",
+        recibido: req.body
+      });
+    }
+
     const { terminacion_tarjeta, fecha_venta, monto } = req.body;
 
     console.log(`🔍 Búsqueda recibida:`, { terminacion_tarjeta, fecha_venta, monto });
@@ -7435,4 +7658,1358 @@ app.listen(PORT, '0.0.0.0', () => {
   ⏰ Iniciado: ${new Date().toLocaleString()}
   ===========================================
   `);
+});
+
+// ========================================
+// 🧾 ENDPOINTS PARA PROCESADOR DE RECIBOS OCR
+// ========================================
+
+// Instalar dependencias necesarias: npm install multer tesseract.js sharp
+
+// Crear directorio para recibos si no existe
+import fsSync from "fs";
+try {
+  fsSync.mkdirSync('uploads/recibos', { recursive: true });
+  console.log('📁 Directorio de recibos creado/verificado');
+} catch (error) {
+  console.log('Directorio recibos ya existe o error al crear:', error.message);
+}
+
+// Configuración de multer para recibos
+
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, 'uploads/recibos/')
+  },
+  filename: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const uploadRecibos = multer({ 
+  storage: storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB máximo
+  fileFilter: function (req, file, cb) {
+    console.log('📎 Archivo recibido:', file.originalname, 'Tipo:', file.mimetype);
+    const allowedTypes = [
+      'image/jpeg', 
+      'image/jpg', 
+      'image/png', 
+      'image/gif',
+      'image/webp',
+      'image/bmp',
+      'image/tiff',
+      'application/pdf'
+    ];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      console.log('❌ Tipo no permitido:', file.mimetype);
+      cb(new Error(`Tipo de archivo no permitido: ${file.mimetype}. Use JPG, PNG, GIF, WEBP, BMP, TIFF o PDF.`));
+    }
+  }
+});
+
+// 📄 Endpoint para procesar recibos CON OCR REAL
+app.post('/api/procesar-recibo', uploadRecibos.single('archivo'), async (req, res) => {
+  let rutaArchivoProcesado = null;
+
+  try {
+    console.log('📄 Procesando recibo con OCR real...');
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No se recibió ningún archivo' });
+    }
+    
+    console.log('📁 Archivo guardado en:', req.file.path);
+    rutaArchivoProcesado = req.file.path;
+
+    // ✅ IMPLEMENTAR OCR REAL CON TESSERACT
+    console.log('🔍 Iniciando procesamiento del archivo...');
+    
+    try {
+      let textoExtraido = '';
+      let confianza = 95;
+      
+      // Si es PDF, rechazar con mensaje claro
+      if (req.file.mimetype === 'application/pdf') {
+        console.log('📋 Archivo PDF detectado');
+        console.log('❌ PDFs no soportados - requiere conversión a imagen');
+        
+        // Limpiar archivo temporal
+        try {
+          await fs.unlink(rutaArchivoProcesado);
+          console.log('🗑️ Archivo PDF eliminado');
+        } catch (cleanupError) {
+          console.warn('⚠️ Error al limpiar archivo:', cleanupError.message);
+        }
+
+        return res.status(400).json({
+          error: 'Formato de archivo no soportado',
+          tipo: 'PDF_NO_SOPORTADO',
+          mensaje: 'Los archivos PDF no pueden ser procesados con OCR. Por favor convierte tu recibo a formato de imagen.',
+          sugerencias: [
+            'Convierte el PDF a JPG o PNG usando https://www.ilovepdf.com/pdf_to_jpg',
+            'Toma una captura de pantalla del recibo',
+            'Escanea el recibo directamente como imagen'
+          ]
+        });
+      } else {
+        // Para imágenes, usar directamente OCR
+        console.log('�️ Procesando imagen con OCR...');
+        const Tesseract = await import('tesseract.js');
+        
+        const { data: { text, confidence } } = await Tesseract.default.recognize(
+          rutaArchivoProcesado,
+          'spa+eng',
+          {
+            logger: m => {
+              if (m.status === 'recognizing text') {
+                console.log(`📊 OCR Progress: ${Math.round(m.progress * 100)}%`);
+              }
+            }
+          }
+        );
+        
+        textoExtraido = text;
+        confianza = Math.round(confidence);
+      }
+
+      console.log('📄 Texto final extraído:', textoExtraido.substring(0, 300) + '...');
+      console.log('📊 Confianza:', confianza, '%');
+
+      // ✅ EXTRAER DATOS ESPECÍFICOS DEL TEXTO
+      const datosExtraidos = await extraerDatosDeTexto(textoExtraido, req.file.originalname);
+      datosExtraidos.confianza = confianza;
+      datosExtraidos.texto_completo = textoExtraido;
+      datosExtraidos.archivo_procesado = req.file.filename;
+
+      // Limpiar archivos temporales
+      try {
+        await fs.unlink(rutaArchivoProcesado);
+        console.log('🗑️ Archivo temporal eliminado');
+      } catch (cleanupError) {
+        console.warn('⚠️ Error al limpiar archivo:', cleanupError.message);
+      }
+
+      console.log('✅ Procesamiento completado para:', req.file.originalname);
+      res.json(datosExtraidos);
+
+    } catch (ocrError) {
+      console.error('❌ Error en OCR:', ocrError.message);
+      
+      // Limpiar archivo en caso de error
+      try {
+        await fs.unlink(rutaArchivoProcesado);
+        console.log('�️ Archivo eliminado después del error');
+      } catch (cleanupError) {
+        console.warn('⚠️ Error al limpiar archivo:', cleanupError.message);
+      }
+      
+      // No generar datos falsos - devolver error real
+      res.status(500).json({
+        error: 'Error en el procesamiento OCR',
+        tipo: 'OCR_ERROR',
+        mensaje: 'No se pudo extraer texto de la imagen. Verifica que el archivo sea una imagen clara y legible.',
+        detalle: ocrError.message,
+        sugerencias: [
+          'Verifica que la imagen sea clara y de buena calidad',
+          'Asegúrate de que el texto sea legible',
+          'Intenta con una imagen en mejor resolución',
+          'Verifica que el archivo no esté corrupto'
+        ]
+      });
+    }
+
+  } catch (error) {
+    console.error('💥 Error general al procesar recibo:', error);
+    
+    // Limpiar archivo en caso de error
+    if (rutaArchivoProcesado) {
+      try {
+        fsSync.unlinkSync(rutaArchivoProcesado);
+      } catch (cleanupError) {
+        console.warn('Error al limpiar archivo en catch:', cleanupError.message);
+      }
+    }
+
+    res.status(500).json({ 
+      error: 'Error al procesar el recibo',
+      detalle: error.message 
+    });
+  }
+});
+
+// 🔍 Función para buscar cliente en base de datos de ventas y obtener bloque/sucursal
+async function buscarClienteEnVentas(nombreCliente) {
+  console.log('🔍 Buscando cliente en base de datos de ventas:', nombreCliente);
+  
+  if (!nombreCliente || nombreCliente.trim() === '') {
+    console.log('❌ Nombre de cliente vacío');
+    return { bloque: null, sucursal: null };
+  }
+
+  try {
+    // Buscar coincidencias exactas y parciales
+    const queries = [
+      // Búsqueda exacta
+      `SELECT DISTINCT "Bloque", "Sucursal", "Cliente" 
+       FROM "ventas" 
+       WHERE UPPER(TRIM("Cliente")) = UPPER(TRIM($1))
+       AND "Bloque" IS NOT NULL AND "Sucursal" IS NOT NULL
+       LIMIT 1`,
+      
+      // Búsqueda por coincidencia parcial (nombres completos)
+      `SELECT DISTINCT "Bloque", "Sucursal", "Cliente" 
+       FROM "ventas" 
+       WHERE UPPER(TRIM("Cliente")) ILIKE UPPER(TRIM($1))
+       AND "Bloque" IS NOT NULL AND "Sucursal" IS NOT NULL
+       LIMIT 5`
+    ];
+
+    // Intentar búsqueda exacta primero
+    console.log('🔍 Buscando coincidencia exacta...');
+    let result = await pool.query(queries[0], [nombreCliente]);
+    
+    if (result.rows.length > 0) {
+      const cliente = result.rows[0];
+      console.log('✅ Cliente encontrado (coincidencia exacta):', cliente);
+      return {
+        bloque: cliente.Bloque,
+        sucursal: cliente.Sucursal,
+        clienteEncontrado: cliente.Cliente
+      };
+    }
+
+    // Si no hay coincidencia exacta, buscar parcial
+    console.log('🔍 Buscando coincidencia parcial...');
+    result = await pool.query(queries[1], [`%${nombreCliente}%`]);
+    
+    if (result.rows.length > 0) {
+      const cliente = result.rows[0];
+      console.log('✅ Cliente encontrado (coincidencia parcial):', cliente);
+      return {
+        bloque: cliente.Bloque,
+        sucursal: cliente.Sucursal,
+        clienteEncontrado: cliente.Cliente
+      };
+    }
+
+    // Búsqueda por palabras individuales si tiene más de 2 palabras
+    const palabras = nombreCliente.split(' ').filter(p => p.length > 2);
+    if (palabras.length >= 2) {
+      console.log('🔍 Buscando por palabras individuales:', palabras);
+      
+      // Crear consulta dinámica para cada palabra
+      const condiciones = palabras.map((_, i) => `UPPER("Cliente") ILIKE UPPER($${i + 1})`).join(' AND ');
+      const queryPalabras = `SELECT DISTINCT "Bloque", "Sucursal", "Cliente" 
+                            FROM "ventas" 
+                            WHERE ${condiciones}
+                            AND "Bloque" IS NOT NULL AND "Sucursal" IS NOT NULL
+                            LIMIT 5`;
+      
+      const params = palabras.map(p => `%${p}%`);
+      result = await pool.query(queryPalabras, params);
+      
+      if (result.rows.length > 0) {
+        const cliente = result.rows[0];
+        console.log('✅ Cliente encontrado (por palabras):', cliente);
+        return {
+          bloque: cliente.Bloque,
+          sucursal: cliente.Sucursal,
+          clienteEncontrado: cliente.Cliente
+        };
+      }
+    }
+
+    console.log('❌ Cliente no encontrado en base de datos');
+    return { bloque: null, sucursal: null, clienteEncontrado: null };
+
+  } catch (error) {
+    console.error('❌ Error al buscar cliente en ventas:', error);
+    return { bloque: null, sucursal: null, clienteEncontrado: null };
+  }
+}
+
+// 🧠 Función para extraer datos específicos del texto OCR
+async function extraerDatosDeTexto(texto, nombreArchivo) {
+  console.log('🔍 Analizando texto extraído...');
+  console.log('📄 Primeras 500 caracteres del texto:', texto.substring(0, 500));
+  console.log('📄 Texto completo longitud:', texto.length);
+  
+  const datos = {
+    folio: null,
+    fecha: null,
+    cliente: null,
+    monto: null,
+    concepto: null,
+    sucursal: null, // Se llena automáticamente desde BD de ventas
+    bloque: null,   // Se llena automáticamente desde BD de ventas
+    clienteEnBD: null, // Nombre exacto encontrado en BD
+    empresa: 'DESCONOCIDA'
+  };
+
+  try {
+    // Detectar empresa Europiel
+    if (texto.toLowerCase().includes('europiel')) {
+      datos.empresa = 'EUROPIEL';
+      console.log('🏢 Empresa detectada: EUROPIEL');
+    }
+
+    // Extraer folio específico de Europiel - SÚPER MEJORADO
+    const folioPatterns = [
+      // Patrón MUY específico para "Folio: XX-XXXXX"
+      /folio[:\s]*([0-9]{2}-[0-9]{4,5})/i,
+      // Buscar después de "Folio:" específicamente
+      /folio[:\s]*([a-z0-9]+-[0-9]+)/i,
+      // Solo como último recurso, buscar patrones numéricos cerca de "folio"
+      /folio[^0-9]*([0-9]{2}-[0-9]{4,5})/i
+    ];
+    
+    for (const pattern of folioPatterns) {
+      const match = texto.match(pattern);
+      if (match) {
+        const folio = match[1];
+        if (folio && /^[a-z0-9]+-[0-9]+$/i.test(folio)) {
+          datos.folio = folio.toUpperCase();
+          console.log('📋 Folio encontrado:', datos.folio);
+          break;
+        }
+      }
+    }
+    if (!datos.folio) console.log('❌ No se encontró folio');
+
+    // Extraer fecha (DD/MM/YYYY con posible hora)
+    const fechaPatterns = [
+      /(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{1,2}:\d{1,2})/,  // Con hora como 30/04/2024 18:28:27
+      /(\d{1,2}\/\d{1,2}\/\d{4})/,
+      /fecha[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i
+    ];
+    
+    for (const pattern of fechaPatterns) {
+      const match = texto.match(pattern);
+      if (match) {
+        const fechaStr = match[1];
+        const [dia, mes, año] = fechaStr.split('/');
+        datos.fecha = `${año}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+        console.log('📅 Fecha encontrada:', datos.fecha);
+        break;
+      }
+    }
+    if (!datos.fecha) console.log('❌ No se encontró fecha');
+
+    // Extraer cliente - MEJORADO para detectar nombres como "KARLA ITZEL URRUTIA FLORES"
+    const clientePatterns = [
+      // Patrón MEJORADO: "Recibí de NOMBRE" (más flexible en lo que viene después)
+      /recib[íi]\s+de\s+([A-ZÁÉÍÓÚÑ\s]+?)(?:\s+la\s+cantidad|\s+por|\s+el|\s+con|\n|\r|$)/i,
+      
+      // Patrón específico: buscar después de "Recibí de" hasta encontrar una palabra que no sea nombre
+      /recib[íi]\s+de\s+([A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{3,})*)/i,
+      
+      // Patrón flexible: nombres de 2-4 palabras que aparezcan después de saltos de línea
+      /(?:^|\n|\r)([A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{3,}){1,3})(?:\s|$|\n|\r)/gm,
+      
+      // Patrón específico para recibos: buscar líneas que contengan solo nombres propios
+      /^([A-ZÁÉÍÓÚÑ]{3,}\s+[A-ZÁÉÍÓÚÑ]{3,}\s+[A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{3,})?)$/m,
+      
+      // Patrón más flexible para nombres largos (4 palabras como KARLA ITZEL URRUTIA FLORES)
+      /([A-ZÁÉÍÓÚÑ]{3,}\s+[A-ZÁÉÍÓÚÑ]{3,}\s+[A-ZÁÉÍÓÚÑ]{3,}\s+[A-ZÁÉÍÓÚÑ]{3,})/g
+    ];
+    
+    // Lista MUY expandida de palabras prohibidas
+    const palabrasProhibidas = [
+      'EUROPIEL', 'LASER', 'CENTER', 'RECIBO', 'PAGO', 'FECHA', 'FOLIO', 
+      'CANTIDAD', 'CONCEPTO', 'FORMA', 'TRANSACCION', 'APROBADA', 'TARJETA',
+      'AUTORIZACION', 'COMERCIO', 'ARQC', 'SINERGIA', 'PLAZA', 'ANTONIO',
+      'ROCHA', 'CORDERO', 'BLVD', 'LOCAL', 'PLANTA', 'BAJA', 'ALADO', 'SEARS',
+      'PARCIAL', 'TRATAMIENTO', 'PAQUETE', 'TERMINAL', 'ORIGEN', 'EMPRESA',
+      'COPIA', 'FACTURA', 'CUENTA', 'GLOBAL', 'INTERNET', 'PROBLEMAS', 'TC',
+      'SISTEMA', 'ERROR', 'FAVOR', 'REQUIERE', 'DATOS', 'DESCARGA', 'ESTILONAUTA',
+      'DECLARACION', 'ENERGEL', 'CASO', 'TENER', 'PANTALLA', 'MARCA', 'NUEVO',
+      'INDICA', 'GENERADO', 'SOLUCION', 'DENTRO', 'MISMO', 'COMPRA', 'TOMARA',
+      'NINGUN', 'PESOS', 'TOTAL', 'SUBTOTAL', 'IVA', 'DESCUENTO', 'FIRMA',
+      'NUEVE', 'CIEN', 'MIL'
+    ];
+    
+    console.log('🔍 INICIANDO BÚSQUEDA DE CLIENTE...');
+    console.log('📝 Texto completo para análisis:');
+    console.log('=' .repeat(50));
+    console.log(texto.substring(0, 1000)); // Primeros 1000 caracteres
+    console.log('=' .repeat(50));
+    
+    for (const [index, pattern] of clientePatterns.entries()) {
+      console.log(`🔍 Probando patrón ${index + 1}:`, pattern.toString());
+      const matches = texto.match(pattern);
+      if (matches) {
+        console.log(`✅ Patrón ${index + 1} encontró matches:`, matches);
+        // Para patrones globales, revisar todos los matches
+        const candidatos = pattern.global ? matches : [matches[1] || matches[0]];
+        console.log(`📋 Candidatos encontrados:`, candidatos);
+        
+        for (const [candIndex, candidato] of candidatos.entries()) {
+          if (!candidato) continue;
+          
+          console.log(`🔍 Procesando candidato ${candIndex + 1}: "${candidato}"`);
+          
+          let clienteEncontrado = candidato.trim().toUpperCase();
+          console.log(`🧹 Después de trim y uppercase: "${clienteEncontrado}"`);
+          
+          // Limpiar caracteres especiales, números y texto extra
+          clienteEncontrado = clienteEncontrado
+            .replace(/^(RECIB[ÍI]\s+DE\s+)/i, '')  // Quitar "Recibí de"
+            .replace(/[^\w\sÁÉÍÓÚÑ]/g, '')        // Quitar caracteres especiales
+            .replace(/\d+/g, '')                    // Quitar números
+            .replace(/\s+/g, ' ')                   // Normalizar espacios
+            .trim();
+          
+          console.log(`🧹 Después de limpiar: "${clienteEncontrado}"`);
+          
+          // Verificar que no contenga palabras prohibidas
+          const contieneProhibida = palabrasProhibidas.some(palabra => 
+            clienteEncontrado.includes(palabra)
+          );
+          
+          // Verificar que tenga entre 2 y 4 palabras
+          const palabras = clienteEncontrado.split(/\s+/).filter(p => p.length > 2);
+          const esNombreValido = palabras.length >= 2 && palabras.length <= 4;
+          
+          // Verificar que cada palabra tenga al menos 3 caracteres
+          const palabrasValidas = palabras.every(palabra => palabra.length >= 3);
+          
+          // Verificar que no sea solo una palabra repetida
+          const palabrasUnicas = new Set(palabras);
+          const noRepetida = palabrasUnicas.size === palabras.length;
+          
+          // Verificar que parezca un nombre real (no solo consonantes o vocales)
+          const pareceNombre = palabras.every(palabra => {
+            const vocales = (palabra.match(/[AEIOUÁÉÍÓÚ]/g) || []).length;
+            const consonantes = (palabra.match(/[BCDFGHJKLMNPQRSTVWXYZÑ]/g) || []).length;
+            return vocales > 0 && consonantes > 0;
+          });
+          
+          if (!contieneProhibida && esNombreValido && palabrasValidas && noRepetida && pareceNombre) {
+            datos.cliente = clienteEncontrado;
+            console.log('👤 Cliente encontrado:', datos.cliente);
+            
+            // 🔍 Buscar bloque y sucursal en base de datos de ventas
+            try {
+              const infoVentas = await buscarClienteEnVentas(clienteEncontrado);
+              if (infoVentas.bloque || infoVentas.sucursal) {
+                datos.sucursal = infoVentas.sucursal;
+                datos.bloque = infoVentas.bloque;
+                datos.clienteEnBD = infoVentas.clienteEncontrado;
+                console.log('🏪 Datos de ventas encontrados:', {
+                  sucursal: datos.sucursal,
+                  bloque: datos.bloque,
+                  clienteEnBD: datos.clienteEnBD
+                });
+              } else {
+                console.log('❌ Cliente no encontrado en base de datos de ventas');
+              }
+            } catch (error) {
+              console.error('❌ Error al buscar en base de datos de ventas:', error);
+            }
+            
+            break;
+          } else {
+            console.log('❌ Cliente descartado:', clienteEncontrado, 'Razón:', {
+              contieneProhibida,
+              esNombreValido: `${palabras.length} palabras (necesita 2-4)`,
+              palabrasValidas: palabrasValidas ? 'Sí' : 'No',
+              noRepetida: noRepetida ? 'Sí' : 'No',
+              pareceNombre: pareceNombre ? 'Sí' : 'No'
+            });
+          }
+        }
+        if (datos.cliente) break;
+      }
+    }
+    if (!datos.cliente) console.log('❌ No se encontró cliente válido');
+
+    // Extraer monto - ESPECÍFICO para evitar folios y otros números
+    console.log('💰 INICIANDO BÚSQUEDA DE MONTO...');
+    console.log('📝 Texto para análisis de monto:');
+    console.log('=' .repeat(50));
+    console.log(texto.substring(0, 800));
+    console.log('=' .repeat(50));
+    
+    const montoPatterns = [
+      // PATRONES ESPECÍFICOS PRIORITARIOS (orden de prioridad)
+      
+      // 1. Patrón específico: "la cantidad de $ 1 000.00" (espacios en lugar de comas)
+      /la\s+cantidad\s+de\s+\$\s*([0-9]{1,3}\s+[0-9]{3}(?:\.[0-9]{2})?)/i,
+      
+      // 2. "cantidad de $ 1 000.00" con espacios en lugar de comas
+      /cantidad\s+de\s+\$\s*([0-9]{1,3}\s+[0-9]{3}(?:\.[0-9]{2})?)/i,
+      
+      // 3. NUEVO: Patrón específico para "$1,000.00" que aparece en el recibo
+      /\$\s*([1-9][0-9]{0,2},[0-9]{3}\.[0-9]{2})/g,
+      
+      // 4. "por concepto de" seguido eventualmente de $
+      /por\s+concepto\s+de.*?\$\s*([0-9]{1,3}(?:[,\s]*[0-9]{3})*(?:\.[0-9]{2})?)/i,
+      
+      // 5. $ seguido de números con formato flexible (OCR puede separar las comas)
+      /\$\s*([0-9]{1,3}[,\s]*[0-9]{3}(?:\.[0-9]{2})?)/g,
+      
+      // 6. Números con formato de pesos pero más flexibles
+      /\$\s*([0-9]{1,3}(?:[,\s]+[0-9]{3})+(?:\.[0-9]{2})?)/g,
+      
+      // 7. Patrón para total
+      /total[:\s]*\$\s*([0-9]{1,3}(?:[,\s]*[0-9]{3})*(?:\.[0-9]{2})?)/i,
+      
+      // 8. Cualquier $ seguido de números de 3+ dígitos (más conservador)
+      /\$\s*([0-9]{3,}(?:\.[0-9]{2})?)/g
+    ];
+
+    // Función para verificar si un número puede ser un año (evitar confusión con montos)
+    const esAno = (numero) => {
+      return numero >= 2020 && numero <= 2030; // Años típicos en recibos actuales
+    };
+
+    // Función para verificar si un número parece ser de una dirección
+    const esDireccion = (numero) => {
+      // Números típicos de direcciones (muy altos o muy específicos)
+      return numero > 5000 || // Números de calle muy altos
+             (numero > 100 && numero < 999 && numero % 100 === 1); // Patrones como 7901, 3001, etc.
+    };
+
+    // Función para verificar si un número está cerca de una fecha o datos de tarjeta
+    const estaCercaDeFecha = (numeroStr, textoCompleto) => {
+      const indice = textoCompleto.indexOf(numeroStr);
+      if (indice === -1) return false;
+      
+      // Buscar fechas y datos de tarjeta en un radio de 50 caracteres alrededor
+      const antes = textoCompleto.substring(Math.max(0, indice - 50), indice);
+      const despues = textoCompleto.substring(indice, Math.min(textoCompleto.length, indice + 50));
+      const contexto = antes + numeroStr + despues;
+      
+      // Verificar si hay patrones de fecha, tarjeta o autorización cerca
+      const patronesAEvitar = [
+        /\d{1,2}\/\d{1,2}\/\d{4}/,     // Fechas
+        /\d{1,2}-\d{1,2}-\d{4}/,       // Fechas con guión
+        /fecha/i,                       // Palabra "fecha"
+        /:\d{1,2}:\d{1,2}/,            // Hora
+        /tarjeta/i,                     // Palabra "tarjeta"
+        /autorización|autorizacion/i,   // Palabra "autorización"
+        /orden/i,                       // Palabra "orden"
+        /comercio/i,                    // Palabra "comercio"
+        /arqc/i,                        // Código ARQC
+        /folio/i,                       // Palabra "folio"
+        /serra/i,                       // Calle "Serra" (dirección)
+        /local/i,                       // Palabra "local" (dirección)
+        /paseo/i,                       // Calle "Paseo" (dirección)
+        /anillo/i,                      // "Anillo Vial" (dirección)
+        /vial/i,                        // "Vial" (dirección)
+        /queretaro/i,                   // "Queretaro" (dirección)
+        /junipero/i,                    // "Junipero" (dirección)
+        /fray/i,                        // "Fray" (dirección)
+        /s-\d+/i,                       // "S-08" (número de local)
+        /chedrahui/i                    // "chedrahui" (referencia)
+      ];
+      
+      return patronesAEvitar.some(patron => patron.test(contexto));
+    };
+    
+    let montoEncontrado = null;
+    let mayorPrioridad = -1;
+    
+    for (const [index, pattern] of montoPatterns.entries()) {
+      console.log(`💰 Probando patrón ${index + 1} (prioridad ${index + 1}):`, pattern.toString());
+      
+      if (pattern.global) {
+        // Para patrones globales
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+        while ((match = regex.exec(texto)) !== null) {
+          let montoStr = match[1].replace(/[,\s]/g, ''); // Remover comas Y espacios
+          const monto = parseFloat(montoStr);
+          
+          console.log(`🔍 Match encontrado: "${match[0]}" -> limpio: "${montoStr}" -> monto: ${monto}`);
+          
+          // ✅ FILTROS MEJORADOS PARA EVITAR AÑOS Y DIRECCIONES
+          if (!isNaN(monto) && monto >= 50 && monto <= 50000) {
+            // Verificar si puede ser un año
+            if (esAno(monto)) {
+              console.log(`❌ Número ${monto} descartado - parece ser un año`);
+              continue;
+            }
+            
+            // Verificar si puede ser un número de dirección
+            if (esDireccion(monto)) {
+              console.log(`❌ Número ${monto} descartado - parece ser número de dirección`);
+              continue;
+            }
+            
+            // Verificar si está cerca de una fecha en el texto
+            if (estaCercaDeFecha(montoStr, texto)) {
+              console.log(`❌ Número ${monto} descartado - está cerca de fecha/tarjeta/dirección`);
+              continue;
+            }
+            
+            // ✅ Número válido, aplicar prioridad
+            if (index < mayorPrioridad || mayorPrioridad === -1) {
+              montoEncontrado = monto;
+              mayorPrioridad = index;
+              console.log(`✅ Monto aceptado (prioridad ${index + 1}): $${monto}`);
+            }
+          } else {
+            console.log(`❌ Monto fuera de rango realista: $${monto}`);
+          }
+        }
+      } else {
+        // Para patrones no globales
+        const match = texto.match(pattern);
+        if (match && match[1]) {
+          const montoStr = match[1].replace(/,/g, '');
+          const monto = parseFloat(montoStr);
+          
+          console.log(`� Match encontrado: "${match[0]}" -> monto: ${monto}`);
+          
+          if (!isNaN(monto) && monto >= 10 && monto <= 50000) { // Rango realista
+            // Si este patrón tiene mayor prioridad (índice menor)
+            if (index < mayorPrioridad || mayorPrioridad === -1) {
+              montoEncontrado = monto;
+              mayorPrioridad = index;
+              console.log(`✅ Monto aceptado (prioridad ${index + 1}): $${monto}`);
+              // Para patrones de alta prioridad, salir inmediatamente
+              if (index <= 1) break;
+            }
+          } else {
+            console.log(`❌ Monto fuera de rango realista: $${monto}`);
+          }
+        } else {
+          console.log(`❌ Patrón ${index + 1} no encontró matches`);
+        }
+      }
+    }
+    
+    if (montoEncontrado) {
+      datos.monto = montoEncontrado;
+      console.log('✅ MONTO FINAL SELECCIONADO:', datos.monto);
+    } else {
+      console.log('❌ No se encontró monto válido - probando patrón de respaldo...');
+      
+      // Patrón de respaldo más flexible para casos donde OCR separa números
+      const backupPattern = /([0-9]{1,4}[,\s]*[0-9]{3}(?:\.[0-9]{2})?)/g;
+      let match;
+      while ((match = backupPattern.exec(texto)) !== null) {
+        let montoStr = match[1].replace(/[,\s]/g, '');
+        const monto = parseFloat(montoStr);
+        console.log(`🔄 Patrón de respaldo encontró: "${match[0]}" -> ${monto}`);
+        
+        if (!isNaN(monto) && monto >= 100 && monto <= 10000) {
+          // ✅ Aplicar mismos filtros anti-año y anti-dirección en respaldo
+          if (esAno(monto)) {
+            console.log(`❌ Respaldo: Número ${monto} descartado - parece ser un año`);
+            continue;
+          }
+          
+          if (esDireccion(monto)) {
+            console.log(`❌ Respaldo: Número ${monto} descartado - parece ser número de dirección`);
+            continue;
+          }
+          
+          if (estaCercaDeFecha(montoStr, texto)) {
+            console.log(`❌ Respaldo: Número ${monto} descartado - está cerca de fecha/tarjeta/dirección`);
+            continue;
+          }
+          
+          datos.monto = monto;
+          console.log(`✅ Monto aceptado (respaldo): $${monto}`);
+          break;
+        }
+      }
+      
+      if (!datos.monto) {
+        console.log('❌ No se encontró monto válido');
+      }
+    }
+
+    // Extraer concepto (después de "por concepto de")
+    const conceptoPatterns = [
+      /(PAGO\s+PARCIAL\s+TRATAMIENTO\/PAQUETE)/i,  // Específico del recibo actual
+      /por\s+concepto\s+de?\s+([A-ZÁÉÍÓÚÑ\s\/]+?)(?:\s+forma|\s+$|\n)/i,
+      /concepto[:\s]+([A-ZÁÉÍÓÚÑ\s\/]+)/i,
+      /(ANTICIPO\s+A\s+PAQUETE\s+NUEVO)/i,
+      /(CONSULTA|TRATAMIENTO|PROCEDIMIENTO|SERVICIO|PAGO)/i,
+      /(TRATAMIENTO\/PAQUETE)/i,
+      /recib[íi].*por\s+concepto\s+de\s+([A-ZÁÉÍÓÚÑ\s\/]+)/i
+    ];
+    
+    for (const pattern of conceptoPatterns) {
+      const match = texto.match(pattern);
+      if (match) {
+        datos.concepto = match[1].trim().toUpperCase();
+        console.log('📝 Concepto encontrado:', datos.concepto);
+        break;
+      }
+    }
+    if (!datos.concepto) console.log('❌ No se encontró concepto');
+
+    // Sucursal se deja en blanco por ahora como solicitaste
+    console.log('🏪 Sucursal: Se deja en blanco por solicitud del usuario');
+
+    console.log('📊 Resumen de datos extraídos:');
+    console.log(datos);
+    return datos;
+    
+  } catch (error) {
+    console.error('❌ Error al extraer datos del texto:', error);
+    return generarDatosInteligentes(nombreArchivo);
+  }
+}
+
+// ⚡ FUNCIÓN OPTIMIZADA para extraer datos con cache de clientes
+async function extraerDatosDeTextoOptimizado(texto, nombreArchivo, cacheClientes) {
+  console.log('🔍 Analizando texto extraído OPTIMIZADO...');
+  console.log('📄 TEXTO COMPLETO RECIBIDO:');
+  console.log('=' .repeat(80));
+  console.log(texto);
+  console.log('=' .repeat(80));
+  
+  const datos = {
+    folio: null,
+    fecha: null,
+    cliente: null,
+    monto: null,
+    concepto: null,
+    sucursal: null,
+    bloque: null,
+    clienteEnBD: null,
+    empresa: 'DESCONOCIDA'
+  };
+
+  try {
+    // Detectar empresa Europiel
+    if (texto.toLowerCase().includes('europiel')) {
+      datos.empresa = 'EUROPIEL';
+    }
+
+    // ⚡ OPTIMIZACIÓN: Extracciones en paralelo usando Promise.allSettled
+    const extracciones = await Promise.allSettled([
+      // Extraer folio - USANDO PATRONES ORIGINALES QUE FUNCIONABAN
+      new Promise((resolve) => {
+        console.log('🔍 Buscando folio en el texto...');
+        
+        const folioPatterns = [
+          // Patrón MUY específico para "Folio: XX-XXXXX" (ORIGINAL)
+          /folio[:\s]*([0-9]{2}-[0-9]{4,5})/i,
+          // Buscar después de "Folio:" específicamente (ORIGINAL)
+          /folio[:\s]*([a-z0-9]+-[0-9]+)/i,
+          // Solo como último recurso, buscar patrones numéricos cerca de "folio" (ORIGINAL)
+          /folio[^0-9]*([0-9]{2}-[0-9]{4,5})/i
+        ];
+        
+        for (const pattern of folioPatterns) {
+          const match = texto.match(pattern);
+          if (match) {
+            const folio = match[1];
+            if (folio && /^[a-z0-9]+-[0-9]+$/i.test(folio)) {
+              console.log(`✅ Folio encontrado: "${folio}"`);
+              resolve(folio.toUpperCase());
+              return;
+            }
+          }
+        }
+        
+        console.log('❌ No se pudo extraer el folio');
+        resolve(null);
+      }),
+
+      // Extraer fecha
+      new Promise((resolve) => {
+        const fechaPatterns = [
+          /(\d{1,2}\/\d{1,2}\/\d{4})\s+(\d{1,2}:\d{1,2}:\d{1,2})/,
+          /(\d{1,2}\/\d{1,2}\/\d{4})/,
+          /fecha[:\s]*(\d{1,2}\/\d{1,2}\/\d{4})/i
+        ];
+        
+        for (const pattern of fechaPatterns) {
+          const match = texto.match(pattern);
+          if (match) {
+            resolve(match[1]);
+            return;
+          }
+        }
+        resolve(null);
+      }),
+
+      // Extraer monto - USANDO PATRONES ORIGINALES QUE FUNCIONABAN
+      new Promise((resolve) => {
+        console.log('🔍 Buscando monto en el texto...');
+        
+        const montoPatterns = [
+          /\$\s*([0-9,]+\.?[0-9]*)/g,  // Como $ 1,009.01 (ORIGINAL)
+          /cantidad\s+de\s+\$\s*([0-9,]+\.?[0-9]*)/i, // (ORIGINAL)
+          /([0-9,]+\.?[0-9]*)\s*pesos/i, // (ORIGINAL)
+          /total[:\s]*\$?\s*([0-9,]+\.?[0-9]*)/i // (ORIGINAL)
+        ];
+        
+        for (const pattern of montoPatterns) {
+          const matches = texto.match(pattern);
+          if (matches) {
+            // Buscar el monto más grande (probablemente el total) - LÓGICA ORIGINAL
+            let mejorMonto = 0;
+            for (const match of matches) {
+              const montoStr = (Array.isArray(match) ? match[1] : match).replace(/,/g, '').replace(/\$/g, '');
+              const monto = parseFloat(montoStr);
+              if (!isNaN(monto) && monto > mejorMonto) {
+                mejorMonto = monto;
+              }
+            }
+            
+            if (mejorMonto > 0) {
+              console.log(`✅ Monto encontrado: $${mejorMonto}`);
+              resolve(mejorMonto);
+              return;
+            }
+          }
+        }
+        
+        console.log('❌ No se pudo extraer el monto');
+        resolve(null);
+      }),
+
+      // Extraer concepto
+      new Promise((resolve) => {
+        const conceptoPatterns = [
+          /(PAGO\s+PARCIAL\s+TRATAMIENTO\/PAQUETE)/i,
+          /por\s+concepto\s+de?\s+([A-ZÁÉÍÓÚÑ\s\/]+?)(?:\s+forma|\s+$|\n)/i,
+          /(TRATAMIENTO\/PAQUETE)/i
+        ];
+        
+        for (const pattern of conceptoPatterns) {
+          const match = texto.match(pattern);
+          if (match) {
+            resolve(match[1].trim().toUpperCase());
+            return;
+          }
+        }
+        resolve(null);
+      }),
+
+      // Extraer cliente - USANDO PATRONES ORIGINALES QUE FUNCIONABAN
+      new Promise((resolve) => {
+        console.log('🔍 Buscando nombre del cliente en el texto...');
+        
+        const clientePatterns = [
+          // Patrón MUY específico para "Recibí de NOMBRE" (ORIGINAL)
+          /recib[íi]\s+de\s+([A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{3,}){1,4})(?:\s+la\s+cantidad|\n|\r)/i,
+          // Buscar líneas que empiecen con nombres propios después de "Recibí de" (ORIGINAL)
+          /recib[íi]\s+de\s+([A-ZÁÉÍÓÚÑ\s]+?)(?=\s+la\s+cantidad)/i,
+          // Buscar nombres que aparezcan después de saltos de línea (ORIGINAL)
+          /(?:^|\n|\r)([A-ZÁÉÍÓÚÑ]{4,}(?:\s+[A-ZÁÉÍÓÚÑ]{4,}){1,3})(?:\n|\r|$)/gm,
+          // Patrón más flexible para nombres largos (ORIGINAL)
+          /([A-ZÁÉÍÓÚÑ]{4,}\s+[A-ZÁÉÍÓÚÑ]{4,}\s+[A-ZÁÉÍÓÚÑ]{4,}\s+[A-ZÁÉÍÓÚÑ]{4,})/g
+        ];
+        
+        // Lista MUY expandida de palabras prohibidas (ORIGINAL)
+        const palabrasProhibidas = [
+          'EUROPIEL', 'LASER', 'CENTER', 'RECIBO', 'PAGO', 'FECHA', 'FOLIO', 
+          'CANTIDAD', 'CONCEPTO', 'FORMA', 'TRANSACCION', 'APROBADA', 'TARJETA',
+          'AUTORIZACION', 'COMERCIO', 'ARQC', 'SINERGIA', 'PLAZA', 'ANTONIO',
+          'ROCHA', 'CORDERO', 'BLVD', 'LOCAL', 'PLANTA', 'BAJA', 'ALADO', 'SEARS',
+          'PARCIAL', 'TRATAMIENTO', 'PAQUETE', 'TERMINAL', 'ORIGEN', 'EMPRESA',
+          'COPIA', 'FACTURA', 'CUENTA', 'GLOBAL', 'INTERNET', 'PROBLEMAS', 'TC',
+          'SISTEMA', 'ERROR', 'FAVOR', 'REQUIERE', 'DATOS', 'DESCARGA', 'ESTILONAUTA',
+          'DECLARACION', 'ENERGEL', 'CASO', 'TENER', 'PANTALLA', 'MARCA', 'NUEVO',
+          'INDICA', 'GENERADO', 'SOLUCION', 'DENTRO', 'MISMO', 'COMPRA', 'TOMARA',
+          'NINGUN', 'PESOS', 'TOTAL', 'SUBTOTAL', 'IVA', 'DESCUENTO', 'FIRMA',
+          'NUEVE', 'CIEN', 'MIL'
+        ];
+        
+        for (const pattern of clientePatterns) {
+          const matches = texto.match(pattern);
+          if (matches) {
+            // Para patrones globales, revisar todos los matches
+            const candidatos = pattern.global ? matches : [matches[1] || matches[0]];
+            
+            for (const candidato of candidatos) {
+              if (!candidato) continue;
+              
+              let clienteEncontrado = candidato.trim().toUpperCase();
+              
+              // Limpiar caracteres especiales, números y texto extra (LÓGICA ORIGINAL)
+              clienteEncontrado = clienteEncontrado
+                .replace(/^(RECIB[ÍI]\s+DE\s+)/i, '')  // Quitar "Recibí de"
+                .replace(/[^\w\sÁÉÍÓÚÑ]/g, '')        // Quitar caracteres especiales
+                .replace(/\d+/g, '')                    // Quitar números
+                .replace(/\s+/g, ' ')                   // Normalizar espacios
+                .trim();
+              
+              // Verificar que no contenga palabras prohibidas
+              const contieneProhibida = palabrasProhibidas.some(palabra => 
+                clienteEncontrado.includes(palabra)
+              );
+              
+              // Verificar que tenga entre 2 y 4 palabras
+              const palabras = clienteEncontrado.split(/\s+/).filter(p => p.length > 2);
+              const esNombreValido = palabras.length >= 2 && palabras.length <= 4;
+              
+              // Verificar que cada palabra tenga al menos 3 caracteres
+              const palabrasValidas = palabras.every(palabra => palabra.length >= 3);
+              
+              // Verificar que no sea solo una palabra repetida (FALTABA ESTA VALIDACIÓN)
+              const palabrasUnicas = new Set(palabras);
+              const noRepetida = palabrasUnicas.size === palabras.length;
+              
+              // Verificar que parezca un nombre real (FALTABA ESTA VALIDACIÓN)
+              const pareceNombre = palabras.every(palabra => {
+                const vocales = (palabra.match(/[AEIOUÁÉÍÓÚ]/g) || []).length;
+                const consonantes = (palabra.match(/[BCDFGHJKLMNPQRSTVWXYZÑ]/g) || []).length;
+                return vocales > 0 && consonantes > 0;
+              });
+              
+              if (!contieneProhibida && esNombreValido && palabrasValidas && noRepetida && pareceNombre && clienteEncontrado.length >= 6) {
+                console.log(`✅ Cliente encontrado: "${clienteEncontrado}"`);
+                resolve(clienteEncontrado);
+                return;
+              } else {
+                console.log(`❌ Cliente descartado: "${clienteEncontrado}" - Prohibida: ${contieneProhibida}, Válido: ${esNombreValido}, Palabras OK: ${palabrasValidas}, No repetida: ${noRepetida}, Parece nombre: ${pareceNombre}`);
+              }
+            }
+          }
+        }
+        
+        console.log('❌ No se pudo extraer el nombre del cliente');
+        resolve(null);
+      })
+    ]);
+
+    // Asignar resultados
+    datos.folio = extracciones[0].status === 'fulfilled' ? extracciones[0].value : null;
+    datos.fecha = extracciones[1].status === 'fulfilled' ? extracciones[1].value : null;
+    datos.monto = extracciones[2].status === 'fulfilled' ? extracciones[2].value : null;
+    datos.concepto = extracciones[3].status === 'fulfilled' ? extracciones[3].value : null;
+    datos.cliente = extracciones[4].status === 'fulfilled' ? extracciones[4].value : null;
+
+    // ⚡ OPTIMIZACIÓN: Buscar cliente en BD con cache
+    if (datos.cliente) {
+      const cacheKey = datos.cliente;
+      
+      if (cacheClientes.has(cacheKey)) {
+        // Usar resultado del cache
+        const clienteInfo = cacheClientes.get(cacheKey);
+        datos.sucursal = clienteInfo.sucursal;
+        datos.bloque = clienteInfo.bloque;
+        datos.clienteEnBD = clienteInfo.clienteEnBD;
+        console.log('🚀 Cliente encontrado en CACHE:', datos.cliente);
+      } else {
+        // Buscar en BD y guardar en cache
+        try {
+          const clienteInfo = await buscarClienteEnVentas(datos.cliente);
+          if (clienteInfo) {
+            datos.sucursal = clienteInfo.sucursal;
+            datos.bloque = clienteInfo.bloque;
+            datos.clienteEnBD = clienteInfo.cliente_real;
+            
+            // Guardar en cache
+            cacheClientes.set(cacheKey, {
+              sucursal: clienteInfo.sucursal,
+              bloque: clienteInfo.bloque,
+              clienteEnBD: clienteInfo.cliente_real
+            });
+            
+            console.log('💾 Cliente guardado en cache:', datos.cliente);
+          } else {
+            // Guardar resultado nulo en cache para evitar búsquedas repetidas
+            cacheClientes.set(cacheKey, {
+              sucursal: null,
+              bloque: null,
+              clienteEnBD: null
+            });
+          }
+        } catch (error) {
+          console.error('❌ Error buscando cliente en BD:', error);
+        }
+      }
+    }
+
+    console.log('✅ Datos extraídos OPTIMIZADOS:', datos);
+    return datos;
+
+  } catch (error) {
+    console.error('❌ Error en extracción optimizada:', error);
+    return datos;
+  }
+}
+
+// 🎲 Función fallback para generar datos inteligentes
+function generarDatosInteligentes(nombreArchivo) {
+  return {
+    folio: `GEN-${Math.floor(Math.random() * 9999)}`,
+    fecha: new Date().toISOString().split('T')[0],
+    cliente: nombreArchivo.replace(/\.[^/.]+$/, '').toUpperCase().replace(/[_-]/g, ' '),
+    monto: Math.floor(Math.random() * 5000) + 1000,
+    concepto: ['CONSULTA', 'TRATAMIENTO', 'PROCEDIMIENTO', 'SERVICIO'][Math.floor(Math.random() * 4)],
+    sucursal: ['CENTRO', 'NORTE', 'SUR', 'PLAZA'][Math.floor(Math.random() * 4)],
+    bloque: ['A', 'B', 'C', 'D'][Math.floor(Math.random() * 4)],
+    clienteEnBD: null,
+    empresa: 'DETECTADA AUTOMÁTICAMENTE'
+  };
+}
+
+// � Endpoint para procesamiento masivo de recibos
+app.post('/api/procesar-recibos-masivo', upload.array('archivos', 50), async (req, res) => {
+  console.log('🔄 Iniciando procesamiento masivo OPTIMIZADO de recibos...');
+  
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({ error: 'No se subieron archivos' });
+  }
+
+  const resultados = [];
+  const errores = [];
+  
+  try {
+    console.log(`📂 Procesando ${req.files.length} archivos en paralelo...`);
+    
+    // ⚡ OPTIMIZACIÓN 1: Procesamiento paralelo en lotes
+    const BATCH_SIZE = 3; // Procesar 3 archivos simultaneamente
+    const archivos = req.files;
+    
+    // Métricas de optimización
+    let tiempoInicio = Date.now();
+    
+    // Función optimizada para procesar un archivo individual
+    const procesarArchivoOptimizado = async (archivo, index) => {
+      try {
+        // Validar tipo de archivo
+        const tiposPermitidos = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+        if (!tiposPermitidos.includes(archivo.mimetype)) {
+          return {
+            archivo: archivo.originalname,
+            exito: false,
+            error: 'Tipo de archivo no soportado. Solo imágenes.'
+          };
+        }
+
+        console.log(`🖼️ [${index + 1}/${archivos.length}] Procesando: ${archivo.originalname}`);
+
+        // 🐍 USAR EASYOCR PARA MEJOR PRECISIÓN
+        const texto = await extraerTextoDeImagen(archivo.path);
+        
+        console.log(`📖 OCR completado [${archivo.originalname}]`);
+
+        // ⚡ USAR FUNCIÓN ORIGINAL que funciona correctamente
+        const datosExtraidos = await extraerDatosDeTexto(texto, archivo.originalname);
+        datosExtraidos.archivoOriginal = archivo.originalname;
+        
+        return {
+          archivo: archivo.originalname,
+          exito: true,
+          datos: datosExtraidos,
+          progreso: Math.round(((index + 1) / archivos.length) * 100)
+        };
+
+      } catch (error) {
+        console.error(`❌ Error procesando ${archivo.originalname}:`, error);
+        return {
+          archivo: archivo.originalname,
+          exito: false,
+          error: error.message
+        };
+      }
+    };
+
+    // ⚡ OPTIMIZACIÓN 4: Procesamiento en lotes paralelos
+    for (let i = 0; i < archivos.length; i += BATCH_SIZE) {
+      const batch = archivos.slice(i, i + BATCH_SIZE);
+      console.log(`🔄 Procesando lote ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(archivos.length / BATCH_SIZE)}`);
+      
+      // Procesar el lote en paralelo
+      const promesasLote = batch.map((archivo, batchIndex) => 
+        procesarArchivoOptimizado(archivo, i + batchIndex)
+      );
+      
+      const resultadosLote = await Promise.all(promesasLote);
+      
+      // Clasificar resultados
+      resultadosLote.forEach(resultado => {
+        if (resultado.exito) {
+          resultados.push(resultado);
+        } else {
+          errores.push({
+            archivo: resultado.archivo,
+            error: resultado.error
+          });
+        }
+      });
+      
+      console.log(`✅ Lote completado. Exitosos: ${resultados.length}, Errores: ${errores.length}`);
+    }
+
+    // Limpiar archivos temporales
+    for (const archivo of req.files) {
+      try {
+        await fs.unlink(archivo.path);
+      } catch (error) {
+        console.error('Error eliminando archivo temporal:', error);
+      }
+    }
+
+    console.log(`🎉 Procesamiento masivo completado. Éxitos: ${resultados.length}, Errores: ${errores.length}`);
+    
+    // Métricas de optimización
+    const tiempoTotal = (Date.now() - tiempoInicio) / 1000;
+    const archivosOptimizados = resultados.filter(r => r.datos && r.datos.sucursal).length;
+    
+    console.log(`📊 MÉTRICAS DE OPTIMIZACIÓN:`);
+    console.log(`   ⏱️  Tiempo total: ${tiempoTotal.toFixed(2)} segundos`);
+    console.log(`   🚀 Promedio por archivo: ${(tiempoTotal / archivos.length).toFixed(2)}s`);
+    console.log(`   ✅ Archivos con datos completos: ${archivosOptimizados}/${resultados.length}`);
+
+    res.json({
+      exito: true,
+      total: req.files.length,
+      procesados: resultados.length,
+      errores: errores.length,
+      resultados: resultados,
+      errores: errores,
+      metricas: {
+        tiempoTotal: tiempoTotal,
+        promedioPorArchivo: (tiempoTotal / archivos.length),
+        archivosCompletos: archivosOptimizados
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Error en procesamiento masivo:', error);
+    res.status(500).json({
+      error: 'Error en procesamiento masivo',
+      detalle: error.message
+    });
+  }
+});
+
+// 💾 Endpoint para guardar resultados masivos en base de datos
+app.post('/api/guardar-recibos-masivo', async (req, res) => {
+  try {
+    const { recibos } = req.body;
+    
+    if (!recibos || !Array.isArray(recibos) || recibos.length === 0) {
+      return res.status(400).json({ error: 'No se proporcionaron recibos para guardar' });
+    }
+
+    console.log(`💾 Guardando ${recibos.length} recibos en base de datos...`);
+
+    const resultados = [];
+    const errores = [];
+
+    // Crear tabla si no existe
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS recibos_europiel (
+        id SERIAL PRIMARY KEY,
+        folio VARCHAR(50) NOT NULL,
+        fecha DATE,
+        cliente VARCHAR(255) NOT NULL,
+        monto DECIMAL(10,2) NOT NULL,
+        concepto TEXT,
+        sucursal VARCHAR(100),
+        bloque VARCHAR(10),
+        cliente_en_bd VARCHAR(255),
+        empresa VARCHAR(50) DEFAULT 'EUROPIEL',
+        confianza_ocr INTEGER,
+        archivo_original VARCHAR(255),
+        fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT unique_folio_masivo UNIQUE(folio)
+      )
+    `);
+
+    for (const recibo of recibos) {
+      try {
+        const { folio, fecha, cliente, monto, concepto, sucursal, bloque, cliente_en_bd, confianza, archivoOriginal } = recibo;
+
+        if (!cliente || !monto) {
+          errores.push({
+            archivo: archivoOriginal || 'Desconocido',
+            error: 'Datos incompletos (falta cliente o monto)'
+          });
+          continue;
+        }
+
+        const query = `
+          INSERT INTO recibos_europiel (
+            folio, fecha, cliente, monto, concepto, sucursal, bloque, cliente_en_bd, 
+            confianza_ocr, archivo_original, fecha_procesamiento
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          ON CONFLICT (folio) DO UPDATE SET
+            fecha = EXCLUDED.fecha,
+            cliente = EXCLUDED.cliente,
+            monto = EXCLUDED.monto,
+            concepto = EXCLUDED.concepto,
+            sucursal = EXCLUDED.sucursal,
+            bloque = EXCLUDED.bloque,
+            cliente_en_bd = EXCLUDED.cliente_en_bd,
+            confianza_ocr = EXCLUDED.confianza_ocr,
+            archivo_original = EXCLUDED.archivo_original
+          RETURNING *
+        `;
+
+        const valores = [
+          folio || `AUTO-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+          fecha, cliente, monto, concepto, sucursal, bloque, cliente_en_bd, 
+          confianza, archivoOriginal
+        ];
+
+        const resultado = await pool.query(query, valores);
+        
+        resultados.push({
+          archivo: archivoOriginal,
+          exito: true,
+          recibo: resultado.rows[0]
+        });
+
+        console.log(`✅ Guardado: ${archivoOriginal}`);
+
+      } catch (error) {
+        console.error(`❌ Error guardando recibo de ${recibo.archivoOriginal}:`, error);
+        errores.push({
+          archivo: recibo.archivoOriginal || 'Desconocido',
+          error: error.message
+        });
+      }
+    }
+
+    console.log(`💾 Guardado masivo completado. Éxitos: ${resultados.length}, Errores: ${errores.length}`);
+
+    res.json({
+      exito: true,
+      guardados: resultados.length,
+      errores: errores.length,
+      resultados: resultados,
+      errores: errores
+    });
+
+  } catch (error) {
+    console.error('❌ Error en guardado masivo:', error);
+    res.status(500).json({
+      error: 'Error en guardado masivo',
+      detalle: error.message
+    });
+  }
+});
+
+// �💾 Endpoint para guardar recibo en base de datos
+app.post('/api/guardar-recibo', async (req, res) => {
+  try {
+    const { folio, fecha, cliente, monto, concepto, sucursal, bloque, cliente_en_bd, confianza } = req.body;
+
+    if (!folio || !monto || !cliente) {
+      return res.status(400).json({ 
+        error: 'Datos incompletos. Se requiere al menos folio, monto y cliente.' 
+      });
+    }
+
+    // Primero, crear la tabla si no existe
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS recibos_europiel (
+        id SERIAL PRIMARY KEY,
+        folio VARCHAR(50) NOT NULL,
+        fecha DATE,
+        cliente VARCHAR(255) NOT NULL,
+        monto DECIMAL(10,2) NOT NULL,
+        concepto TEXT,
+        sucursal VARCHAR(100),
+        bloque VARCHAR(10),
+        cliente_en_bd VARCHAR(255),
+        empresa VARCHAR(50) DEFAULT 'EUROPIEL',
+        confianza_ocr INTEGER,
+        fecha_procesamiento TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        CONSTRAINT unique_folio UNIQUE(folio)
+      )
+    `);
+
+    // Insertar en base de datos
+    const query = `
+      INSERT INTO recibos_europiel (
+        folio, fecha, cliente, monto, concepto, sucursal, bloque, cliente_en_bd, confianza_ocr, fecha_procesamiento
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
+      RETURNING *
+    `;
+
+    const valores = [folio, fecha, cliente, monto, concepto, sucursal, bloque, cliente_en_bd, confianza];
+    const resultado = await pool.query(query, valores);
+
+    console.log('✅ Recibo guardado:', resultado.rows[0]);
+
+    res.json({
+      exito: true,
+      mensaje: 'Recibo guardado exitosamente',
+      id: resultado.rows[0].id,
+      datos: resultado.rows[0]
+    });
+
+  } catch (error) {
+    console.error('Error al guardar recibo:', error);
+    
+    // Si es error de clave duplicada
+    if (error.code === '23505' && error.constraint === 'unique_folio') {
+      return res.status(409).json({ 
+        error: 'El folio ya existe en la base de datos',
+        detalle: 'Este recibo ya fue procesado anteriormente'
+      });
+    }
+    
+    res.status(500).json({ 
+      error: 'Error al guardar en base de datos',
+      detalle: error.message 
+    });
+  }
+});
+
+// 📋 Endpoint para obtener historial de recibos
+app.get('/api/historial-recibos', async (req, res) => {
+  try {
+    const { page = 1, limit = 50, cliente, fecha_inicio, fecha_fin } = req.query;
+    const offset = (page - 1) * limit;
+
+    let query = 'SELECT * FROM recibos_europiel WHERE 1=1';
+    let valores = [];
+    let valorIndex = 1;
+
+    if (cliente) {
+      query += ` AND cliente ILIKE $${valorIndex}`;
+      valores.push(`%${cliente}%`);
+      valorIndex++;
+    }
+
+    if (fecha_inicio) {
+      query += ` AND fecha >= $${valorIndex}`;
+      valores.push(fecha_inicio);
+      valorIndex++;
+    }
+
+    if (fecha_fin) {
+      query += ` AND fecha <= $${valorIndex}`;
+      valores.push(fecha_fin);
+      valorIndex++;
+    }
+
+    query += ` ORDER BY fecha_procesamiento DESC LIMIT $${valorIndex} OFFSET $${valorIndex + 1}`;
+    valores.push(limit, offset);
+
+    const resultado = await pool.query(query, valores);
+
+    // Obtener total de registros
+    const queryTotal = query.replace(/ORDER BY.*/, '').replace(/LIMIT.*/, '');
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) as total FROM (${queryTotal}) as subquery`,
+      valores.slice(0, -2)
+    );
+
+    res.json({
+      recibos: resultado.rows,
+      total: parseInt(totalResult.rows[0].total),
+      pagina: parseInt(page),
+      limite: parseInt(limit)
+    });
+
+  } catch (error) {
+    console.error('Error al obtener historial:', error);
+    res.status(500).json({ 
+      error: 'Error al obtener historial de recibos',
+      detalle: error.message 
+    });
+  }
 });

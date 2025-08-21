@@ -2,6 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./index.css"; // ✅ MUY IMPORTANTE
+import "./styles/modal-dark.css"; // ✅ Estilos para modales oscuros
 import { verificarIPAutorizada } from "./utils/ipSecurity.js";
 import { keepAliveService } from "./utils/keepAlive.js";
 import { API_BASE_URL } from "./config.js";

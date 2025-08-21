@@ -23,6 +23,10 @@ const sidebarLinks = [
   // { to: "/procesador-distribuido", label: "🚀 Procesador Distribuido", section: "buscadores" },
   // { to: "/gestor-apis", label: "🔧 Gestor de APIs", section: "buscadores" },
   
+  // Herramientas OCR
+  { to: "/procesador-recibos", label: "🧾 Procesador de Recibos OCR", section: "herramientas" },
+  { to: "/procesador-recibos-masivo", label: "⚡ Procesador Masivo OCR", section: "herramientas" },
+  
   // Colaboración
   { to: "/onlyoffice", label: "📊 Hojas Colaborativas", section: "colaboracion" },
   
@@ -131,6 +135,30 @@ export default function Sidebar() {
               <span className="truncate">{link.label.substring(link.label.indexOf(' ') + 1)}</span>
               {location.pathname === link.to && (
                 <div className="ml-auto w-2 h-2 bg-blue-400 rounded-full"></div>
+              )}
+            </Link>
+          ))}
+        </div>
+
+        {/* Sección de Herramientas */}
+        <div className="mb-6">
+          <div className="px-3 mb-3">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Herramientas</span>
+          </div>
+          {sidebarLinks.filter(link => link.section === 'herramientas').map(link => (
+            <Link
+              key={link.to}
+              to={link.to}
+              className={`group flex items-center w-full p-3 rounded-xl text-sm font-medium transition-all duration-200 mb-2
+                ${location.pathname === link.to 
+                  ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 border border-green-500/30 shadow-lg shadow-green-500/10' 
+                  : 'text-gray-300 hover:bg-gray-800/50 hover:text-white border border-transparent hover:border-gray-600/30'
+                }`}
+            >
+              <span className="text-lg mr-3">{link.label.split(' ')[0]}</span>
+              <span className="truncate">{link.label.substring(link.label.indexOf(' ') + 1)}</span>
+              {location.pathname === link.to && (
+                <div className="ml-auto w-2 h-2 bg-green-400 rounded-full"></div>
               )}
             </Link>
           ))}

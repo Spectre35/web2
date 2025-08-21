@@ -1,10 +1,27 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import * as XLSX from "xlsx";
 import { formatearFechasEnObjeto, formatearFecha, convertirFechaParaInput, convertirFechaDesdeInput } from "../utils/dateUtils";
 import { API_BASE_URL } from "../config.js";
 
-// Componente para desplegables en modo edición
+// ✅ Hook de debouncing para optimizar actualizaciones
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
+// ✅ Componente optimizado para desplegables en modo edición con memo
 const SelectEditor = React.memo(({ value, onChange, options, className = "" }) => {
   return (
     <select
@@ -14,9 +31,70 @@ const SelectEditor = React.memo(({ value, onChange, options, className = "" }) =
     >
       <option value="">-</option>
       {options.map(opt => (
-        <option key={opt} value={opt}>{opt.length > 20 ? opt.substring(0, 20) + '...' : opt}</option> // Truncar opciones largas
+        <option key={opt} value={opt}>
+          {opt.length > 20 ? opt.substring(0, 20) + '...' : opt}
+        </option>
       ))}
     </select>
+  );
+});
+
+// ✅ Componente optimizado para celdas editables con memo
+const EditableCell = React.memo(({ 
+  value, 
+  onChange, 
+  tipo = "text",
+  opciones = [],
+  className = "" 
+}) => {
+  const [valorLocal, setValorLocal] = useState(value || "");
+  const debouncedValue = useDebounce(valorLocal, 300); // 300ms de debounce
+  
+  // Sincronizar valor externo con local
+  useEffect(() => {
+    setValorLocal(value || "");
+  }, [value]);
+  
+  // Enviar cambio debounced al padre
+  useEffect(() => {
+    if (debouncedValue !== value) {
+      onChange(debouncedValue);
+    }
+  }, [debouncedValue, onChange, value]);
+  
+  const handleChange = useCallback((nuevoValor) => {
+    setValorLocal(nuevoValor);
+  }, []);
+  
+  if (tipo === "select" && opciones.length > 0) {
+    return (
+      <SelectEditor
+        value={valorLocal}
+        onChange={handleChange}
+        options={opciones}
+        className={className}
+      />
+    );
+  }
+  
+  if (tipo === "date") {
+    return (
+      <input
+        type="date"
+        className={`w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6 ${className}`}
+        value={valorLocal}
+        onChange={(e) => handleChange(e.target.value)}
+      />
+    );
+  }
+  
+  return (
+    <input
+      type={tipo}
+      className={`w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6 ${className}`}
+      value={valorLocal}
+      onChange={(e) => handleChange(e.target.value)}
+    />
   );
 });
 
@@ -84,6 +162,16 @@ export default function Aclaraciones() {
   const [errorPasswordEdicion, setErrorPasswordEdicion] = useState("");
   const [datosEditados, setDatosEditados] = useState({});
   const [guardandoCambios, setGuardandoCambios] = useState(false);
+  const [progresoGuardado, setProgresoGuardado] = useState({ actual: 0, total: 0 });
+  
+  // Estados para la paginación
+  const [paginaActual, setPaginaActual] = useState(1);
+  const [filasPorPagina, setFilasPorPagina] = useState(50);
+
+  // Debug: Monitorear cambios en paginación
+  useEffect(() => {
+    console.log(`🔍 Estado paginación: página=${paginaActual}, filasPorPagina=${filasPorPagina}, totalDatos=${datos.length}`);
+  }, [paginaActual, filasPorPagina, datos.length]);
   
   // Estados para desplegables del modo edición
   const [bloques, setBloques] = useState([]);
@@ -183,6 +271,7 @@ export default function Aclaraciones() {
       
       setDatos((data.datos || []).map(formatearFechasEnObjeto));
       setTotal(data.total || 0);
+      setPaginaActual(1); // ✅ Resetear paginación de tabla al obtener nuevos datos
 
       // Obtener última fecha
       const fechaResponse = await fetch(`${API_BASE_URL}/aclaraciones/ultima-fecha`);
@@ -256,9 +345,10 @@ export default function Aclaraciones() {
     setValoresUnicos(nuevosValores);
   }, [datos, columnas]);
 
-  useEffect(() => {
-    calcularValoresUnicos();
-  }, [calcularValoresUnicos]);
+  // ✅ Arreglado: Eliminar useEffect que causa bucle infinito
+  // useEffect(() => {
+  //   calcularValoresUnicos();
+  // }, [calcularValoresUnicos]);
 
   const aplicarFiltro = (columna, valor) => {
     setFiltrosColumnas(prev => ({
@@ -349,190 +439,284 @@ export default function Aclaraciones() {
     setDatosEditados({});
   };
 
-  const actualizarCampo = (filaIndex, campo, valor) => {
-    setDatosEditados(prev => {
-      const nuevosEditados = {
-        ...prev,
-        [filaIndex]: {
-          ...prev[filaIndex],
-          [campo]: valor
-        }
-      };
+  // ✅ OPTIMIZACIÓN: Función ultra-rápida para escritura con memoización
+  const actualizarCampo = useCallback((filaIndex, campo, valor) => {
+    setDatosEditados(prev => ({
+      ...prev,
+      [filaIndex]: {
+        ...prev[filaIndex],
+        [campo]: valor
+      }
+    }));
+  }, []);
 
-      // 💰 CONVERSIÓN AUTOMÁTICA DE MONTO A MXN
-      if (campo === 'monto' && valor && !isNaN(valor)) {
+  // ✅ FUNCIÓN MEMOIZADA PARA APLICAR CONVERSIONES (se ejecuta solo al guardar)
+  const aplicarConversiones = useCallback((datosEditados) => {
+    const datosConConversiones = { ...datosEditados };
+    
+    // Tipos de cambio centralizados
+    const tiposCambio = {
+      "COL": 0.004573,
+      "HON": 0.71,
+      "ESP1": 21.82,
+      "ESP2": 21.82,
+      "BRA": 3.36,
+      "USA1": 18.75
+    };
+    
+    Object.keys(datosConConversiones).forEach(filaIndex => {
+      const cambiosEnFila = datosConConversiones[filaIndex];
+      
+      // Si se cambió el monto, calcular monto_mnx automáticamente
+      if (cambiosEnFila.monto && !isNaN(cambiosEnFila.monto)) {
         const filaOriginal = datos[parseInt(filaIndex)];
         const bloque = filaOriginal?.bloque || '';
+        const montoOriginal = parseFloat(cambiosEnFila.monto);
         
-        // DEBUG: Ver qué está pasando con los datos
-        console.log('🔍 DEBUG Conversión:');
-        console.log('- filaIndex:', filaIndex);
-        console.log('- filaOriginal:', filaOriginal);
-        console.log('- bloque detectado:', bloque);
-        console.log('- valor a convertir:', valor);
-        
-        // Tipos de cambio basados en el backend (sincronizados)
-        const tiposCambio = {
-          "COL": 0.004573,
-          "HON": 0.71,
-          "ESP1": 21.82,
-          "ESP2": 21.82,
-          "BRA": 3.36,
-          "USA1": 18.75
-        };
-
         let montoMnx = null;
-        const montoOriginal = parseFloat(valor);
         
-        console.log('- montoOriginal parseado:', montoOriginal);
-        console.log('- tipoCambio disponible para', bloque, ':', tiposCambio[bloque]);
-        
-        if (montoOriginal !== null && !isNaN(montoOriginal)) {
-          if (bloque === "MEX" || bloque.includes("SIN") || bloque.includes("MTY")) {
-            // Si es México, el monto ya está en MXN
-            montoMnx = montoOriginal;
-            console.log('- Es MEX, no se convierte:', montoMnx);
-          } else if (tiposCambio[bloque]) {
-            // Convertir usando el tipo de cambio del bloque
-            const tipoCambio = tiposCambio[bloque];
-            montoMnx = montoOriginal * tipoCambio;
-            console.log(`- Conversión: ${montoOriginal} × ${tipoCambio} = ${montoMnx}`);
-          } else {
-            // Si no hay tipo de cambio para el bloque, intentar detectar por país
-            console.log('⚠️ No se encontró tipo de cambio para bloque:', bloque);
-            console.log('- Intentando detectar país por otros campos...');
-            
-            // Buscar país en otros campos de la fila
-            const filaCompleta = JSON.stringify(filaOriginal).toLowerCase();
-            if (filaCompleta.includes('colombia') || filaCompleta.includes('col')) {
-              montoMnx = montoOriginal * 0.004573;
-              console.log('- Detectado Colombia por contenido, aplicando 0.0045');
-            } else {
-              // Por defecto, asumir que es peso mexicano
-              montoMnx = montoOriginal;
-              console.log('- Sin detección, asumiendo MXN');
-            }
-          }
-          
-          // Redondear a 2 decimales
-          montoMnx = Math.round(montoMnx * 100) / 100;
-          
-          // Actualizar automáticamente el monto_mnx
-          nuevosEditados[filaIndex].monto_mnx = montoMnx;
-          
-          // Mostrar notificación
-          const tipoCambioFinal = tiposCambio[bloque] || (montoMnx / montoOriginal);
-          setNotificacionConversion(`💰 ${valor} ${bloque || 'AUTO'} × ${tipoCambioFinal.toFixed(4)} = $${montoMnx} MXN`);
-          setTimeout(() => setNotificacionConversion(""), 3000);
-          
-          console.log(`💰 Conversión final: ${valor} ${bloque || 'AUTO'} -> $${montoMnx} MXN`);
+        if (bloque === "MEX" || bloque.includes("SIN") || bloque.includes("MTY")) {
+          // México - ya está en MXN
+          montoMnx = montoOriginal;
+        } else if (tiposCambio[bloque]) {
+          // Conversión por bloque
+          montoMnx = montoOriginal * tiposCambio[bloque];
         } else {
-          console.log('❌ Valor no válido para conversión:', valor);
+          // Detectar por contenido o asumir MXN
+          const filaCompleta = JSON.stringify(filaOriginal).toLowerCase();
+          if (filaCompleta.includes('colombia') || filaCompleta.includes('col')) {
+            montoMnx = montoOriginal * 0.004573;
+          } else {
+            montoMnx = montoOriginal;
+          }
+        }
+        
+        // Aplicar conversión automática solo si no se editó manualmente monto_mnx
+        if (!cambiosEnFila.monto_mnx) {
+          datosConConversiones[filaIndex].monto_mnx = Math.round(montoMnx * 100) / 100;
+          console.log(`💰 Conversión aplicada: ${cambiosEnFila.monto} ${bloque} -> $${datosConConversiones[filaIndex].monto_mnx} MXN`);
         }
       }
-
-      return nuevosEditados;
     });
+    
+    return datosConConversiones;
+  }, [datos]);
+
+  // Funciones de paginación para la tabla
+  const datosPaginacion = useMemo(() => {
+    const totalPaginasTabla = Math.ceil(datos.length / filasPorPagina);
+    const indiceInicio = (paginaActual - 1) * filasPorPagina;
+    const indiceFin = indiceInicio + filasPorPagina;
+    const datosPaginados = datos.slice(indiceInicio, indiceFin);
+    
+    console.log(`🔄 Paginación calculada: página ${paginaActual}/${totalPaginasTabla}, mostrando ${indiceInicio+1}-${Math.min(indiceFin, datos.length)} de ${datos.length}`);
+    
+    return {
+      totalPaginasTabla,
+      indiceInicio,
+      indiceFin,
+      datosPaginados
+    };
+  }, [datos, paginaActual, filasPorPagina]);
+
+  const { totalPaginasTabla, indiceInicio, indiceFin, datosPaginados } = datosPaginacion;
+
+  const irAPagina = (numeroPagina) => {
+    const nuevaPagina = Math.max(1, Math.min(numeroPagina, totalPaginasTabla));
+    console.log(`📄 Navegando de página ${paginaActual} a ${nuevaPagina}`);
+    setPaginaActual(nuevaPagina);
   };
 
+  const cambiarFilasPorPagina = (nuevasFilas) => {
+    console.log(`📊 Cambiando filas por página de ${filasPorPagina} a ${nuevasFilas}`);
+    setFilasPorPagina(nuevasFilas);
+    setPaginaActual(1); // Resetear a primera página
+  };
+
+  // 🚀 PREPARACIÓN: Hook para scroll virtual (cuando tengas datasets muy grandes)
+  const useVirtualScroll = (items, containerHeight = 400, itemHeight = 32) => {
+    const [scrollTop, setScrollTop] = useState(0);
+    const startIndex = Math.floor(scrollTop / itemHeight);
+    const endIndex = Math.min(startIndex + Math.ceil(containerHeight / itemHeight) + 1, items.length);
+    const visibleItems = items.slice(startIndex, endIndex);
+    
+    return {
+      containerStyle: { height: containerHeight, overflow: 'auto' },
+      totalHeight: items.length * itemHeight,
+      offsetY: startIndex * itemHeight,
+      visibleItems,
+      onScroll: (e) => setScrollTop(e.target.scrollTop)
+    };
+  };
+
+  // ✅ FUNCIÓN OPTIMIZADA: Guardar cambios con batching inteligente
   const guardarCambios = async () => {
     setGuardandoCambios(true);
+    
     try {
-      // Debug inicial
-      console.log("🔍 Estado actual:");
-      console.log("- datos.length:", datos.length);
-      console.log("- datosEditados:", datosEditados);
-      console.log("- Primer elemento de datos:", datos[0]);
+      console.time("guardar-cambios");
+      console.log("🔍 Iniciando guardado optimizado...");
       
-      // Preparar los registros para enviar al backend
-      const registrosParaActualizar = [];
+      // ✅ APLICAR CONVERSIONES AUTOMÁTICAS antes de procesar
+      console.log("💰 Aplicando conversiones automáticas...");
+      const datosConConversiones = aplicarConversiones(datosEditados);
+      console.log("✅ Conversiones aplicadas:", datosConConversiones);
       
-      Object.keys(datosEditados).forEach(filaIndex => {
-        console.log("🔍 Procesando índice:", filaIndex, "parseInt:", parseInt(filaIndex));
+      // Mostrar notificación de conversiones aplicadas
+      const conversionesAplicadas = Object.keys(datosConConversiones).filter(filaIndex => 
+        datosConConversiones[filaIndex].monto && datosConConversiones[filaIndex].monto_mnx
+      ).length;
+      
+      if (conversionesAplicadas > 0) {
+        setNotificacionConversion(`💰 ${conversionesAplicadas} conversiones automáticas aplicadas`);
+        setTimeout(() => setNotificacionConversion(""), 3000);
+      }
+      
+      // ✅ OPTIMIZACIÓN 1: Agrupar cambios por campo para usar endpoint específico
+      const cambiosPorCampo = {};
+      const cambiosMultiples = [];
+      
+      Object.keys(datosConConversiones).forEach(filaIndex => {
         const filaOriginal = datos[parseInt(filaIndex)];
-        const datosCambiados = datosEditados[filaIndex];
+        const datosCambiados = datosConConversiones[filaIndex];
         
-        // Verificar que la fila original existe
         if (!filaOriginal) {
           console.error("❌ Fila original no encontrada para índice:", filaIndex);
-          console.error("❌ datos.length:", datos.length);
-          console.error("❌ índices disponibles:", datos.map((_, i) => i));
           return;
         }
         
-        // Verificar si realmente hay cambios
+        // Verificar que hay cambios reales
         const hayCambios = Object.keys(datosCambiados).some(campo => 
           datosCambiados[campo] !== filaOriginal[campo]
         );
         
-        if (hayCambios) {
-          // Identificar el registro con debug
-          console.log("🔍 Fila original completa:", filaOriginal);
-          console.log("🔍 Campos disponibles:", Object.keys(filaOriginal));
+        if (!hayCambios) return;
+        
+        // Identificación del registro
+        const identificacion = {
+          id_transaccion: filaOriginal.id_de_transaccion,
+          num_tarjeta: filaOriginal.num_de_tarjeta
+        };
+        
+        if (!identificacion.id_transaccion) {
+          console.error("❌ No se puede identificar registro:", filaOriginal);
+          return;
+        }
+        
+        const camposModificados = Object.keys(datosCambiados);
+        
+        // ✅ Si solo se modificó UN campo, usar endpoint optimizado
+        if (camposModificados.length === 1) {
+          const campo = camposModificados[0];
           
-          // Verificar que tenemos los campos necesarios para identificación
-          if (!filaOriginal.id_de_transaccion) {
-            console.error("❌ No se encontró id_de_transaccion en:", filaOriginal);
-            alert("Error: No se puede identificar el registro para actualizar");
-            return;
+          if (!cambiosPorCampo[campo]) {
+            cambiosPorCampo[campo] = [];
           }
           
-          registrosParaActualizar.push({
-            id_original: {
-              id_de_transaccion: filaOriginal.id_de_transaccion,
-              num_de_tarjeta: filaOriginal.num_de_tarjeta
-              // Removemos fecha_venta del identificador
-            },
-            datos_nuevos: {}
+          cambiosPorCampo[campo].push({
+            ...identificacion,
+            valor: datosCambiados[campo]
           });
-          
-          console.log("🔍 ID enviado:", {
-            id_de_transaccion: filaOriginal.id_de_transaccion,
-            num_de_tarjeta: filaOriginal.num_de_tarjeta
-          });
-          
-          // Convertir los nombres de campos - ya vienen en minúsculas desde la BD
-          Object.keys(datosCambiados).forEach(campoFrontend => {
-            // Los campos ya están en minúsculas, solo necesitamos pasarlos directamente
-            registrosParaActualizar[registrosParaActualizar.length - 1].datos_nuevos[campoFrontend] = datosCambiados[campoFrontend];
+        } else {
+          // ✅ Múltiples campos -> usar endpoint general
+          cambiosMultiples.push({
+            id_original: identificacion,
+            datos_nuevos: datosCambiados
           });
         }
       });
       
-      if (registrosParaActualizar.length === 0) {
+      console.log(`� Análisis de cambios:`, {
+        camposUnicos: Object.keys(cambiosPorCampo).length,
+        registrosMulticampo: cambiosMultiples.length
+      });
+      
+      const promesas = [];
+      
+      // ✅ OPTIMIZACIÓN 2: Procesar campos únicos con endpoint masivo
+      for (const [campo, registros] of Object.entries(cambiosPorCampo)) {
+        console.log(`🚀 Enviando ${registros.length} cambios para campo: ${campo}`);
+        
+        const promesa = fetch(`${API_BASE_URL}/aclaraciones/actualizar-campo`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ campo, registros })
+        }).then(response => {
+          if (!response.ok) throw new Error(`Error en campo ${campo}: ${response.status}`);
+          return response.json();
+        }).then(resultado => ({
+          tipo: 'campo_unico',
+          campo,
+          ...resultado
+        }));
+        
+        promesas.push(promesa);
+      }
+      
+      // ✅ OPTIMIZACIÓN 3: Procesar cambios múltiples en paralelo
+      if (cambiosMultiples.length > 0) {
+        console.log(`🚀 Enviando ${cambiosMultiples.length} cambios multicampo`);
+        
+        const promesa = fetch(`${API_BASE_URL}/aclaraciones/actualizar`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ registros: cambiosMultiples })
+        }).then(response => {
+          if (!response.ok) throw new Error(`Error en multicampo: ${response.status}`);
+          return response.json();
+        }).then(resultado => ({
+          tipo: 'multicampo',
+          ...resultado
+        }));
+        
+        promesas.push(promesa);
+      }
+      
+      if (promesas.length === 0) {
         alert("❌ No hay cambios para guardar");
         setModoEdicion(false);
         setDatosEditados({});
         return;
       }
-
-      // Llamada al endpoint de actualización
-      const response = await fetch(`${API_BASE_URL}/aclaraciones/actualizar`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          registros: registrosParaActualizar
-        })
-      });
-
-      if (!response.ok) {
-        throw new Error(`Error HTTP: ${response.status}`);
-      }
-
-      const resultado = await response.json();
       
-      if (resultado.success) {
-        // Recargar los datos desde el servidor después de guardar
+      // ✅ OPTIMIZACIÓN 4: Ejecutar todas las actualizaciones con progreso
+      setProgresoGuardado({ actual: 0, total: promesas.length });
+      
+      const resultados = [];
+      for (let i = 0; i < promesas.length; i++) {
+        setProgresoGuardado({ actual: i + 1, total: promesas.length });
+        const resultado = await promesas[i];
+        resultados.push(resultado);
+      }
+      
+      console.timeEnd("guardar-cambios");
+      
+      // Calcular estadísticas
+      const stats = resultados.reduce((acc, resultado) => {
+        acc.registrosActualizados += resultado.registros_actualizados || 0;
+        acc.operaciones += 1;
+        if (resultado.tipo === 'campo_unico') {
+          acc.camposUnicos += 1;
+        } else {
+          acc.multicampo += 1;
+        }
+        return acc;
+      }, { registrosActualizados: 0, operaciones: 0, camposUnicos: 0, multicampo: 0 });
+      
+      console.log("📊 Resultados:", { resultados, stats });
+      
+      // ✅ OPTIMIZACIÓN 5: Recargar solo si hubo cambios exitosos
+      if (stats.registrosActualizados > 0) {
         await obtenerDatos();
-        
         setModoEdicion(false);
         setDatosEditados({});
         
-        alert(`✅ Cambios guardados exitosamente!\n${resultado.registros_procesados} registros actualizados`);
+        alert(`✅ Guardado optimizado exitoso!\n` +
+              `• ${stats.registrosActualizados} registros actualizados\n` +
+              `• ${stats.operaciones} operaciones ejecutadas\n` +
+              `• ${stats.camposUnicos} campos únicos + ${stats.multicampo} multicampo`);
       } else {
-        throw new Error("La respuesta del servidor indica un error");
+        throw new Error("No se actualizaron registros");
       }
       
     } catch (error) {
@@ -569,9 +753,21 @@ export default function Aclaraciones() {
               <button 
                 onClick={guardarCambios}
                 disabled={guardandoCambios}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition font-semibold disabled:bg-gray-600"
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded transition font-semibold disabled:bg-gray-600 relative"
               >
-                {guardandoCambios ? "� Guardando..." : "💾 Guardar Cambios"}
+                {guardandoCambios ? (
+                  <div className="flex items-center space-x-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                    <span>
+                      💾 Guardando... 
+                      {progresoGuardado.total > 0 && (
+                        <span className="ml-1">
+                          ({progresoGuardado.actual}/{progresoGuardado.total})
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                ) : "💾 Guardar Cambios"}
               </button>
               <button 
                 onClick={cancelarEdicion}
@@ -856,71 +1052,76 @@ export default function Aclaraciones() {
       ) : (
         <div className="bg-gray-800/50 rounded-lg overflow-hidden backdrop-blur-sm">
           <div className="overflow-x-auto" style={{ transform: 'scale(0.75)', transformOrigin: 'top left', width: '133.33%' }}>
-            <table className="w-full text-xs"> {/* Texto más pequeño */}
+            <table className="w-full text-xs">
               <thead className="bg-gray-700">
                 <tr>
                   {columnas.map((col) => (
-                    <th key={col} className={`px-2 py-2 text-left text-white font-semibold border-b border-gray-600 text-xs ${col === 'cliente' ? 'whitespace-nowrap' : 'whitespace-nowrap'}`}> {/* Padding reducido y texto pequeño */}
+                    <th key={col} className={`px-2 py-2 text-left text-white font-semibold border-b border-gray-600 text-xs ${col === 'cliente' ? 'whitespace-nowrap' : 'whitespace-nowrap'}`}>
                       {col === 'cliente' 
-                        ? col.replace(/_/g, " ") // Mostrar cliente completo
-                        : col.replace(/_/g, " ").substring(0, 15) // Truncar otros títulos
+                        ? col.replace(/_/g, " ")
+                        : col.replace(/_/g, " ").substring(0, 15)
                       }
                     </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {datos.map((row, idx) => (
-                  <tr key={idx} className={idx % 2 === 0 ? "bg-gray-900/30" : "bg-gray-800/30"}>
+                {datosPaginados.map((row, idx) => {
+                  // Calcular el índice real en la lista completa
+                  const indiceReal = indiceInicio + idx;
+                  // Usar ID único si existe, sino usar índice real
+                  const keyUnica = row.id || row.ID || `row-${indiceReal}`;
+                  return (
+                  <tr key={keyUnica} className={idx % 2 === 0 ? "bg-gray-900/30" : "bg-gray-800/30"}>
                     {columnas.map((col) => (
-                      <td key={col} className="px-2 py-1 text-gray-200 border-b border-gray-700 text-xs min-w-0"> {/* Padding y texto reducido */}
+                      <td key={col} className="px-2 py-1 text-gray-200 border-b border-gray-700 text-xs min-w-0">
                         {modoEdicion ? (
                           col === 'procesador' && procesadores.length > 0 ? (
                             <SelectEditor
-                              value={datosEditados[idx]?.[col] || row[col] || ""}
-                              onChange={(value) => actualizarCampo(idx, col, value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col] || ""}
+                              onChange={(value) => actualizarCampo(indiceReal, col, value)}
                               options={procesadores}
-                              className="text-xs h-6" // Altura reducida
+                              className="text-xs h-6"
                             />
                           ) : col === 'sucursal' && sucursales.length > 0 ? (
                             <SelectEditor
-                              value={datosEditados[idx]?.[col] || row[col] || ""}
-                              onChange={(value) => actualizarCampo(idx, col, value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col] || ""}
+                              onChange={(value) => actualizarCampo(indiceReal, col, value)}
                               options={sucursales}
                               className="text-xs h-6"
                             />
                           ) : col === 'bloque' && bloques.length > 0 ? (
                             <SelectEditor
-                              value={datosEditados[idx]?.[col] || row[col] || ""}
-                              onChange={(value) => actualizarCampo(idx, col, value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col] || ""}
+                              onChange={(value) => actualizarCampo(indiceReal, col, value)}
                               options={bloques}
                               className="min-w-[120px] text-xs h-6"
                             />
                           ) : col === 'vendedora' && vendedoras.length > 0 ? (
                             <SelectEditor
-                              value={datosEditados[idx]?.[col] || row[col] || ""}
-                              onChange={(value) => actualizarCampo(idx, col, value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col] || ""}
+                              onChange={(value) => actualizarCampo(indiceReal, col, value)}
                               options={vendedoras}
                               className="text-xs h-6"
                             />
                           ) : col === 'comentarios' && comentariosComunes.length > 0 ? (
                             <SelectEditor
-                              value={datosEditados[idx]?.[col] || row[col] || ""}
-                              onChange={(value) => actualizarCampo(idx, col, value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col] || ""}
+                              onChange={(value) => actualizarCampo(indiceReal, col, value)}
                               options={comentariosComunes}
-                              className="min-w-[150px] text-xs h-6" // Ancho reducido
+                              className="min-w-[150px] text-xs h-6"
                             />
                           ) : col === 'captura_cc' && capturaCC.length > 0 ? (
                             <SelectEditor
-                              value={datosEditados[idx]?.[col] || row[col] || ""}
-                              onChange={(value) => actualizarCampo(idx, col, value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col] || ""}
+                              onChange={(value) => actualizarCampo(indiceReal, col, value)}
                               options={capturaCC}
                               className="text-xs h-6"
                             />
                           ) : col === 'euroskin' ? (
                             <select
-                              value={datosEditados[idx]?.[col] || row[col] || ""}
-                              onChange={(e) => actualizarCampo(idx, col, e.target.value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col] || ""}
+                              onChange={(e) => actualizarCampo(indiceReal, col, e.target.value)}
                               className="w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
                             >
                               <option value="">-</option>
@@ -930,11 +1131,11 @@ export default function Aclaraciones() {
                           ) : (col.includes('fecha') || col.includes('fecha_')) ? (
                             <input
                               type="date"
-                              value={convertirFechaParaInput(datosEditados[idx]?.[col] || row[col]?.toString() || "")}
+                              value={convertirFechaParaInput(datosEditados[indiceReal]?.[col] || row[col]?.toString() || "")}
                               onChange={(e) => {
                                 // Convertir de YYYY-MM-DD a DD/MM/YYYY al guardar
                                 const fechaFormateada = convertirFechaDesdeInput(e.target.value);
-                                actualizarCampo(idx, col, fechaFormateada);
+                                actualizarCampo(indiceReal, col, fechaFormateada);
                               }}
                               className="w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
                               title="Formato: DD/MM/YYYY"
@@ -943,8 +1144,8 @@ export default function Aclaraciones() {
                             <input
                               type="number"
                               step="0.01"
-                              value={datosEditados[idx]?.[col] || row[col]?.toString() || ""}
-                              onChange={(e) => actualizarCampo(idx, col, e.target.value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col]?.toString() || ""}
+                              onChange={(e) => actualizarCampo(indiceReal, col, e.target.value)}
                               className="min-w-[140px] bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
                               placeholder="Monto original"
                               title="Al editar este campo, se calculará automáticamente el monto en MXN"
@@ -954,25 +1155,25 @@ export default function Aclaraciones() {
                               <input
                                 type="number"
                                 step="0.01"
-                                value={datosEditados[idx]?.[col] || row[col]?.toString() || ""}
-                                onChange={(e) => actualizarCampo(idx, col, e.target.value)}
+                                value={datosEditados[indiceReal]?.[col] || row[col]?.toString() || ""}
+                                onChange={(e) => actualizarCampo(indiceReal, col, e.target.value)}
                                 className={`w-full px-1 py-0 rounded border focus:outline-none text-xs h-6 ${
-                                  datosEditados[idx]?.monto_mnx ? 
+                                  datosEditados[indiceReal]?.monto_mnx ? 
                                   'bg-green-700/50 text-green-100 border-green-500 focus:border-green-400' : 
                                   'bg-gray-700 text-white border-gray-600 focus:border-blue-500'
                                 }`}
                                 placeholder="Auto-calculado"
-                                title={datosEditados[idx]?.monto_mnx ? 'Convertido automáticamente desde el monto original' : 'Monto en pesos mexicanos'}
+                                title={datosEditados[indiceReal]?.monto_mnx ? 'Convertido automáticamente desde el monto original' : 'Monto en pesos mexicanos'}
                               />
-                              {datosEditados[idx]?.monto_mnx && (
+                              {datosEditados[indiceReal]?.monto_mnx && (
                                 <span className="absolute -top-1 -right-1 text-green-400 text-xs">🔄</span>
                               )}
                             </div>
                           ) : (
                             <input
                               type="text"
-                              value={datosEditados[idx]?.[col] || row[col]?.toString() || ""}
-                              onChange={(e) => actualizarCampo(idx, col, e.target.value)}
+                              value={datosEditados[indiceReal]?.[col] || row[col]?.toString() || ""}
+                              onChange={(e) => actualizarCampo(indiceReal, col, e.target.value)}
                               className="w-full bg-gray-700 text-white px-1 py-0 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-xs h-6"
                             />
                           )
@@ -994,14 +1195,101 @@ export default function Aclaraciones() {
                       </td>
                     ))}
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* Paginación */}
+      {/* Controles de paginación de tabla */}
+      {datos.length > 0 && (
+        <div className="flex justify-between items-center mt-3 p-3 bg-gray-900/50 rounded">
+          <div className="flex items-center gap-4">
+            <div className="text-gray-300 text-sm">
+              Mostrando {indiceInicio + 1}-{Math.min(indiceFin, datos.length)} de {datos.length} registros
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-gray-300 text-sm">Filas por página:</span>
+              <select
+                value={filasPorPagina}
+                onChange={(e) => cambiarFilasPorPagina(parseInt(e.target.value))}
+                className="bg-gray-700 text-white px-2 py-1 rounded border border-gray-600 focus:border-blue-500 focus:outline-none text-sm"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => irAPagina(1)}
+              disabled={paginaActual === 1}
+              className="px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition disabled:bg-gray-800 disabled:cursor-not-allowed text-xs"
+            >
+              ⏮️
+            </button>
+            <button
+              onClick={() => irAPagina(paginaActual - 1)}
+              disabled={paginaActual === 1}
+              className="px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition disabled:bg-gray-800 disabled:cursor-not-allowed text-xs"
+            >
+              ⬅️
+            </button>
+            
+            <div className="flex items-center gap-1">
+              {/* Mostrar páginas cercanas */}
+              {Array.from({ length: Math.min(5, totalPaginasTabla) }, (_, i) => {
+                let numeroPagina;
+                if (totalPaginasTabla <= 5) {
+                  numeroPagina = i + 1;
+                } else if (paginaActual <= 3) {
+                  numeroPagina = i + 1;
+                } else if (paginaActual > totalPaginasTabla - 3) {
+                  numeroPagina = totalPaginasTabla - 4 + i;
+                } else {
+                  numeroPagina = paginaActual - 2 + i;
+                }
+                
+                return (
+                  <button
+                    key={numeroPagina}
+                    onClick={() => irAPagina(numeroPagina)}
+                    className={`px-2 py-1 rounded text-xs transition ${
+                      numeroPagina === paginaActual
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+                    }`}
+                  >
+                    {numeroPagina}
+                  </button>
+                );
+              })}
+            </div>
+            
+            <button
+              onClick={() => irAPagina(paginaActual + 1)}
+              disabled={paginaActual === totalPaginasTabla}
+              className="px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition disabled:bg-gray-800 disabled:cursor-not-allowed text-xs"
+            >
+              ➡️
+            </button>
+            <button
+              onClick={() => irAPagina(totalPaginasTabla)}
+              disabled={paginaActual === totalPaginasTabla}
+              className="px-2 py-1 bg-gray-700 text-white rounded hover:bg-gray-600 transition disabled:bg-gray-800 disabled:cursor-not-allowed text-xs"
+            >
+              ⏭️
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Paginación de consulta API */}
       <div className="flex justify-between items-center mt-3">
         <div className="text-gray-300 text-sm">
           Pág {pagina}/{totalPaginas} • {total.toLocaleString()} reg • {datos.length}/{limite}

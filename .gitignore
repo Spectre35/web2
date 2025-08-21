@@ -44,6 +44,10 @@ Thumbs.db
 uploads/*
 !uploads/.gitkeep
 
+# Entorno virtual de Python OCR
+ocr_env/
+ocr_env_new/
+
 # Logs
 logs/
 *.log

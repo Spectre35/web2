@@ -27,6 +27,8 @@ const BuscadorBin = lazy(() => import("./pages/BuscadorBin"));
 const ProcesadorBinsMasivo = lazy(() => import("./pages/ProcesadorBinsMasivo"));
 const ProcesadorDistribuido = lazy(() => import("./pages/ProcesadorDistribuido"));
 const GestorAPIs = lazy(() => import("./pages/GestorAPIs"));
+const ProcesadorRecibos = lazy(() => import("./pages/ProcesadorRecibos"));
+const ProcesadorRecibosMasivo = lazy(() => import("./pages/ProcesadorRecibosMasivo"));
 import DashboardLayout from "./layouts/DashboardLayout";
 
 function App() {
@@ -54,6 +56,8 @@ function App() {
             <Route path="/procesador-bins-masivo" element={<ProcesadorBinsMasivo />} />
             <Route path="/procesador-distribuido" element={<ProcesadorDistribuido />} />
             <Route path="/gestor-apis" element={<GestorAPIs />} />
+            <Route path="/procesador-recibos" element={<ProcesadorRecibos />} />
+            <Route path="/procesador-recibos-masivo" element={<ProcesadorRecibosMasivo />} />
           </Route>
         </Routes>
       </Suspense>
