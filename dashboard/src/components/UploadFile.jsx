@@ -160,9 +160,10 @@ export default function UploadFile({ tabla }) {
           formData,
           { headers: { "Content-Type": "multipart/form-data" } }
         );
-        setMensaje(res.data);
+        // Extraer solo el mensaje del objeto de respuesta
+        setMensaje(res.data.message || res.data.success || "✅ Archivo subido exitosamente");
       } catch (err) {
-        setMensaje("❌ Error al subir el archivo");
+        setMensaje(`❌ Error al subir el archivo: ${err.response?.data?.error || err.message}`);
       } finally {
         setSubiendo(false);
         setProgreso(0);
