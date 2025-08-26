@@ -29,126 +29,35 @@ export default function DashboardAclaraciones() {
   const [anios, setAnios] = useState([]);
   const [bloques, setBloques] = useState([]);
   const [vistaActual, setVistaActual] = useState('resumen'); // 'resumen', 'graficos', 'tablas'
-  const [ordenProcesadores, setOrdenProcesadores] = useState({ campo: '', direccion: 'desc' }); // Estado para ordenamiento
   const [meses] = useState([
     "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"
   ]);
 
+  // 💱 ESTADOS PARA MODAL DE CONVERSIÓN DE MONEDA
+  const [modalConversion, setModalConversion] = useState(false);
+  const [anioConversion, setAnioConversion] = useState("");
+  const [procesandoConversion, setProcesandoConversion] = useState(false);
+  const [progresoConversion, setProgresoConversion] = useState({ procesados: 0, total: 0 });
+  const [resultadoConversion, setResultadoConversion] = useState(null);
+
+
   // Cargar opciones de filtros
   useEffect(() => {
-    console.log('🔄 Cargando filtros para Dashboard Aclaraciones...');
-    console.log('🌐 API Base URL:', API_BASE_URL);
-    
-    // Cargar años
-    axios.get(`${API_BASE_URL}/anios`)
-      .then(r => {
-        console.log('✅ Años cargados:', r.data);
-        setAnios(r.data.map(a => a.toString()));
-      })
-      .catch(e => {
-        console.error('❌ Error cargando años:', e);
-        console.error('📋 Detalles del error:', e.response?.data || e.message);
-        // Valores por defecto si falla la carga
-        setAnios(['2024', '2025']);
-      });
-    
-    // Cargar bloques
-    axios.get(`${API_BASE_URL}/aclaraciones/bloques`)
-      .then(r => {
-        console.log('✅ Bloques cargados:', r.data);
-        setBloques(r.data);
-      })
-      .catch(e => {
-        console.error('❌ Error cargando bloques:', e);
-        console.error('📋 Detalles del error:', e.response?.data || e.message);
-        // Valores por defecto si falla la carga
-        setBloques(['COL1', 'COL2', 'CHI', 'ESP1', 'ESP2', 'BRA', 'USA1']);
-      });
+    axios.get(`${API_BASE_URL}/aclaraciones/anios`).then(r => setAnios(r.data.map(a => a.toString()))).catch(() => {});
+    axios.get(`${API_BASE_URL}/aclaraciones/bloques`).then(r => setBloques(r.data)).catch(() => {});
   }, []);
 
   // Cargar dashboard
   useEffect(() => {
-    console.log('📊 Cargando dashboard de aclaraciones...');
-    console.log('🔍 Filtros aplicados:', { anio, bloque, mes });
-    
     setLoading(true);
     setError("");
-    
     axios.get(`${API_BASE_URL}/aclaraciones/dashboard`, {
       params: { anio, bloque, mes }
     })
-      .then(r => {
-        console.log('✅ Dashboard cargado exitosamente');
-        setResumen(r.data);
-      })
-      .catch(e => {
-        console.error('❌ Error cargando dashboard:', e);
-        console.error('📋 Response data:', e?.response?.data);
-        console.error('📋 Status:', e?.response?.status);
-        
-        const errorMsg = e?.response?.data?.error || 
-                        e?.response?.data?.message || 
-                        e?.message || 
-                        "Error al cargar datos del dashboard";
-        setError(errorMsg);
-      })
+      .then(r => setResumen(r.data))
+      .catch(e => setError(e?.response?.data?.error || "Error al cargar datos"))
       .finally(() => setLoading(false));
   }, [anio, bloque, mes]);
-
-  // Función para probar conectividad (debugging temporal)
-  const testConectividad = async () => {
-    console.log('🧪 Probando conectividad...');
-    try {
-      const response = await axios.get(`${API_BASE_URL}/test-aclaraciones`);
-      console.log('✅ Conectividad OK:', response.data);
-      alert('✅ Conectividad OK: ' + JSON.stringify(response.data, null, 2));
-    } catch (error) {
-      console.error('❌ Error de conectividad:', error);
-      alert('❌ Error: ' + (error.response?.data?.message || error.message));
-    }
-  };
-
-  // Función para manejar el ordenamiento de las tablas de procesadores
-  const handleOrdenar = (campo) => {
-    const nuevaDireccion = 
-      ordenProcesadores.campo === campo && ordenProcesadores.direccion === 'desc' 
-        ? 'asc' 
-        : 'desc';
-    
-    setOrdenProcesadores({ campo, direccion: nuevaDireccion });
-  };
-
-  // Función para ordenar los datos de procesadores
-  const ordenarDatosProcesadores = (datos) => {
-    if (!ordenProcesadores.campo) return datos;
-
-    return [...datos].sort((a, b) => {
-      let valorA = a[ordenProcesadores.campo];
-      let valorB = b[ordenProcesadores.campo];
-
-      // Para el campo procesador (texto), usar comparación de strings
-      if (ordenProcesadores.campo === 'procesador') {
-        valorA = valorA.toString().toLowerCase();
-        valorB = valorB.toString().toLowerCase();
-        
-        if (ordenProcesadores.direccion === 'asc') {
-          return valorA.localeCompare(valorB);
-        } else {
-          return valorB.localeCompare(valorA);
-        }
-      }
-
-      // Para campos numéricos
-      valorA = parseFloat(valorA) || 0;
-      valorB = parseFloat(valorB) || 0;
-
-      if (ordenProcesadores.direccion === 'asc') {
-        return valorA - valorB;
-      } else {
-        return valorB - valorA;
-      }
-    });
-  };
 
   // Preparar datos para gráficas
   const prepararDatosGraficas = () => {
@@ -202,50 +111,43 @@ export default function DashboardAclaraciones() {
       }
     ];
 
-    // 📊 NUEVO: Datos para gráfica de aclaraciones por procesador
-    const procesadorDataBase = resumen.aclaracionesPorProcesador?.map(item => ({
-      procesador: item.procesador,
-      enProceso: parseInt(item.enProceso) || 0,
-      ganadas: parseInt(item.ganadas) || 0,
-      perdidas: parseInt(item.perdidas) || 0,
-      total: parseInt(item.total) || 0,
-      montoTotal: parseFloat(item.monto_total) || 0,
-      montoGanado: parseFloat(item.monto_ganado) || 0,
-      montoPerdido: parseFloat(item.monto_perdido) || 0,
-      montoEnProceso: parseFloat(item.monto_en_proceso) || 0
-    })) || [];
-
-    // Aplicar ordenamiento a los datos de procesadores
-    const procesadorData = ordenarDatosProcesadores(procesadorDataBase);
-
-    return { lineData, pieData, barData, areaData, metricsData, procesadorData };
+    return { lineData, pieData, barData, areaData, metricsData };
   };
 
-  const { lineData, pieData, barData, areaData, metricsData, procesadorData } = prepararDatosGraficas();
+  // 💱 FUNCIÓN PARA CONVERTIR MONEDA
+  const convertirMoneda = async () => {
+    if (!anioConversion) {
+      alert("Por favor selecciona un año");
+      return;
+    }
 
-  // Componente para encabezados de tabla ordenables
-  const EncabezadoOrdenable = ({ campo, children, className = "", align = "text-left" }) => {
-    const estaOrdenado = ordenProcesadores.campo === campo;
-    const direccion = ordenProcesadores.direccion;
-    
-    return (
-      <th 
-        className={`px-3 py-2 font-medium cursor-pointer hover:bg-gray-700/30 transition-colors ${align} ${className}`}
-        onClick={() => handleOrdenar(campo)}
-      >
-        <div className="flex items-center gap-1 justify-center">
-          <span>{children}</span>
-          <span className="text-xs opacity-70">
-            {estaOrdenado ? (
-              direccion === 'desc' ? '▼' : '▲'
-            ) : (
-              '⇅'
-            )}
-          </span>
-        </div>
-      </th>
-    );
+    if (!confirm(`¿Estás seguro de convertir todas las aclaraciones del año ${anioConversion} a moneda MXN? Esta acción actualizará la columna monto_mnx en la base de datos.`)) {
+      return;
+    }
+
+    setProcesandoConversion(true);
+    setProgresoConversion({ procesados: 0, total: 0 });
+    setResultadoConversion(null);
+
+    try {
+      const response = await axios.post(`${API_BASE_URL}/aclaraciones/convertir-moneda`, {
+        anio: anioConversion
+      });
+
+      setResultadoConversion(response.data);
+      setProgresoConversion({ 
+        procesados: response.data.registrosActualizados, 
+        total: response.data.registrosEncontrados 
+      });
+    } catch (error) {
+      console.error('Error al convertir moneda:', error);
+      alert('Error al convertir moneda: ' + (error.response?.data?.error || error.message));
+    } finally {
+      setProcesandoConversion(false);
+    }
   };
+
+  const { lineData, pieData, barData, areaData, metricsData } = prepararDatosGraficas();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
@@ -262,15 +164,6 @@ export default function DashboardAclaraciones() {
             </p>
           </div>
           <div className="flex gap-3 items-center">
-            {/* Botón de testing temporal */}
-            <button
-              onClick={testConectividad}
-              className="px-3 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg text-sm font-medium transition-all"
-              title="Probar conectividad con backend"
-            >
-              🧪 Test
-            </button>
-            
             {/* Toggle de vistas */}
             <div className="bg-gray-800/50 rounded-xl p-1 flex gap-1">
               <button
@@ -304,6 +197,14 @@ export default function DashboardAclaraciones() {
                 📋 Tablas
               </button>
             </div>
+            
+            {/* 💱 Botón de Conversión de Moneda */}
+            <button
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white shadow-lg transition-all flex items-center gap-2"
+              onClick={() => setModalConversion(true)}
+            >
+              💱 Convertir Moneda
+            </button>
           </div>
         </div>
 
@@ -342,15 +243,6 @@ export default function DashboardAclaraciones() {
                 <option value="">Todos los meses</option>
                 {meses.map(m => <option key={m} value={m}>{m}</option>)}
               </select>
-            </div>
-          </div>
-          
-          {/* Información de debugging temporal */}
-          <div className="mt-4 p-3 bg-gray-900/60 rounded-lg border border-gray-600/30 text-xs text-gray-400">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              <div>📡 API: {API_BASE_URL}</div>
-              <div>📊 Años cargados: {anios.length > 0 ? anios.join(', ') : 'Ninguno'}</div>
-              <div>🏢 Bloques cargados: {bloques.length > 0 ? bloques.slice(0, 3).join(', ') + (bloques.length > 3 ? '...' : '') : 'Ninguno'}</div>
             </div>
           </div>
         </div>
@@ -569,132 +461,6 @@ export default function DashboardAclaraciones() {
                           <Bar dataKey="cantidad" fill="#8B5CF6" radius={[4, 4, 0, 0]} />
                         </BarChart>
                       </ResponsiveContainer>
-                    </div>
-                  </div>
-                </div>
-
-                {/* 📊 NUEVA GRÁFICA: Aclaraciones por Procesador */}
-                <div className="bg-gray-800/40 backdrop-blur-sm border border-gray-700/50 rounded-xl p-6 shadow-lg">
-                  <h3 className="text-xl font-semibold text-gray-100 mb-4">💳 Aclaraciones por Procesador</h3>
-                  <div className="h-80">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={procesadorData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                        <XAxis dataKey="procesador" stroke="#D1D5DB" fontSize={12} />
-                        <YAxis stroke="#D1D5DB" />
-                        <Tooltip 
-                          contentStyle={{ 
-                            backgroundColor: '#1F2937', 
-                            border: '1px solid #374151',
-                            borderRadius: '8px',
-                            color: '#F9FAFB'
-                          }}
-                          formatter={(value, name) => [
-                            value,
-                            name === 'enProceso' ? 'En Proceso' :
-                            name === 'ganadas' ? 'Ganadas' :
-                            name === 'perdidas' ? 'Perdidas' : name
-                          ]}
-                        />
-                        <Legend 
-                          wrapperStyle={{ color: '#D1D5DB' }}
-                          formatter={(value) => 
-                            value === 'enProceso' ? 'En Proceso' :
-                            value === 'ganadas' ? 'Ganadas' :
-                            value === 'perdidas' ? 'Perdidas' : value
-                          }
-                        />
-                        <Bar dataKey="enProceso" stackId="a" fill="#FCD34D" name="enProceso" radius={[0, 0, 0, 0]} />
-                        <Bar dataKey="ganadas" stackId="a" fill="#10B981" name="ganadas" radius={[0, 0, 0, 0]} />
-                        <Bar dataKey="perdidas" stackId="a" fill="#F87171" name="perdidas" radius={[4, 4, 0, 0]} />
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                  
-                  {/* Tabla resumen debajo de la gráfica */}
-                  <div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* Tabla de Cantidades */}
-                    <div>
-                      <h4 className="text-lg font-semibold text-gray-200 mb-3 flex items-center">
-                        <span className="mr-2">📊</span>
-                        Cantidades por Estado
-                      </h4>
-                      <div className="overflow-x-auto bg-gray-900/30 rounded-lg">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-gray-700 bg-gray-800/50">
-                              <EncabezadoOrdenable campo="procesador" className="text-gray-300">
-                                Procesador
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="enProceso" className="text-yellow-400" align="text-center">
-                                En Proceso
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="ganadas" className="text-green-400" align="text-center">
-                                Ganadas
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="perdidas" className="text-red-400" align="text-center">
-                                Perdidas
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="total" className="text-blue-400" align="text-center">
-                                Total
-                              </EncabezadoOrdenable>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {procesadorData.map((proc, index) => (
-                              <tr key={`cantidades-${proc.procesador}`} className={`${index % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-700/40 transition-colors`}>
-                                <td className="px-3 py-2 font-medium text-gray-200">{proc.procesador}</td>
-                                <td className="px-3 py-2 text-center text-yellow-400 font-medium">{proc.enProceso.toLocaleString()}</td>
-                                <td className="px-3 py-2 text-center text-green-400 font-medium">{proc.ganadas.toLocaleString()}</td>
-                                <td className="px-3 py-2 text-center text-red-400 font-medium">{proc.perdidas.toLocaleString()}</td>
-                                <td className="px-3 py-2 text-center text-blue-400 font-bold">{proc.total.toLocaleString()}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    {/* Tabla de Montos */}
-                    <div>
-                      <h4 className="text-lg font-semibold text-gray-200 mb-3 flex items-center">
-                        <span className="mr-2">💰</span>
-                        Montos por Estado
-                      </h4>
-                      <div className="overflow-x-auto bg-gray-900/30 rounded-lg">
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="border-b border-gray-700 bg-gray-800/50">
-                              <EncabezadoOrdenable campo="procesador" className="text-gray-300">
-                                Procesador
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="montoEnProceso" className="text-yellow-400" align="text-center">
-                                En Proceso
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="montoGanado" className="text-green-400" align="text-center">
-                                Ganado
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="montoPerdido" className="text-red-400" align="text-center">
-                                Perdido
-                              </EncabezadoOrdenable>
-                              <EncabezadoOrdenable campo="montoTotal" className="text-blue-400" align="text-center">
-                                Total
-                              </EncabezadoOrdenable>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {procesadorData.map((proc, index) => (
-                              <tr key={`montos-${proc.procesador}`} className={`${index % 2 === 0 ? 'bg-gray-800/20' : 'bg-gray-700/20'} hover:bg-gray-700/40 transition-colors`}>
-                                <td className="px-3 py-2 font-medium text-gray-200">{proc.procesador}</td>
-                                <td className="px-3 py-2 text-center text-yellow-400 font-medium">{formatCurrency(proc.montoEnProceso)}</td>
-                                <td className="px-3 py-2 text-center text-green-400 font-medium">{formatCurrency(proc.montoGanado)}</td>
-                                <td className="px-3 py-2 text-center text-red-400 font-medium">{formatCurrency(proc.montoPerdido)}</td>
-                                <td className="px-3 py-2 text-center text-blue-400 font-bold">{formatCurrency(proc.montoTotal)}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
                     </div>
                   </div>
                 </div>
@@ -1208,6 +974,111 @@ export default function DashboardAclaraciones() {
           </div>
         )}
       </div>
+
+      {/* 💱 MODAL DE CONVERSIÓN DE MONEDA */}
+      {modalConversion && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="bg-gray-800 rounded-xl p-6 max-w-md w-full mx-4 border border-gray-600">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-xl font-bold text-white flex items-center gap-2">
+                💱 Convertir Moneda a MXN
+              </h3>
+              <button
+                onClick={() => setModalConversion(false)}
+                className="text-gray-400 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Seleccionar Año para Conversión
+                </label>
+                <select
+                  value={anioConversion}
+                  onChange={(e) => setAnioConversion(e.target.value)}
+                  className="w-full border border-gray-600 bg-gray-700 text-gray-100 p-3 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                  disabled={procesandoConversion}
+                >
+                  <option value="">Selecciona un año</option>
+                  {anios.map(a => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-lg p-4">
+                <p className="text-blue-300 text-sm">
+                  <strong>ℹ️ Información:</strong><br/>
+                  Esta acción convertirá todos los montos de aclaraciones del año seleccionado a pesos mexicanos (MXN) basándose en el bloque y guardará el resultado en la columna <code>monto_mnx</code>.
+                </p>
+              </div>
+
+              {procesandoConversion && (
+                <div className="bg-gray-700/50 rounded-lg p-4">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-green-400"></div>
+                    <span className="text-gray-300">Procesando conversiones...</span>
+                  </div>
+                  {progresoConversion.total > 0 && (
+                    <div className="text-sm text-gray-400">
+                      Procesados: {progresoConversion.procesados} de {progresoConversion.total}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {resultadoConversion && (
+                <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4">
+                  <h4 className="text-green-300 font-semibold mb-2">✅ Conversión Completada</h4>
+                  <div className="text-sm text-gray-300 space-y-1">
+                    <p>• Registros encontrados: <span className="text-green-400">{resultadoConversion.registrosEncontrados}</span></p>
+                    <p>• Registros actualizados: <span className="text-green-400">{resultadoConversion.registrosActualizados}</span></p>
+                    {resultadoConversion.detallesPorBloque && (
+                      <div className="mt-2">
+                        <p className="font-medium">Detalles por bloque:</p>
+                        {Object.entries(resultadoConversion.detallesPorBloque).map(([bloque, datos]) => (
+                          <p key={bloque} className="ml-2 text-xs">
+                            {bloque}: {datos.registros} registros - Factor: {datos.factor}
+                          </p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setModalConversion(false)}
+                  className="flex-1 px-4 py-2 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-colors"
+                  disabled={procesandoConversion}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={convertirMoneda}
+                  className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors flex items-center justify-center gap-2"
+                  disabled={procesandoConversion || !anioConversion}
+                >
+                  {procesandoConversion ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                      Procesando...
+                    </>
+                  ) : (
+                    <>
+                      💱 Convertir
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

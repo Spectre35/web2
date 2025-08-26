@@ -181,6 +181,7 @@ const corsOptions = {
   origin: [
     'https://cargosfraudes.onrender.com',
     'http://localhost:5173',
+    'http://localhost:5174',
     'http://localhost:3000',
     'http://localhost:4173',
     '*'
@@ -2808,6 +2809,56 @@ app.get("/aclaraciones/bloques", async (req, res) => {
   }
 });
 
+// Endpoint para obtener años de la tabla aclaraciones
+app.get("/aclaraciones/anios", async (req, res) => {
+  try {
+    console.log('📅 Consultando años disponibles en tabla aclaraciones...');
+    
+    // Primero verificar si la tabla aclaraciones existe y tiene datos
+    const checkTable = await pool.query(`
+      SELECT COUNT(*) as total, 
+             MIN("fecha_de_peticion") as fecha_min, 
+             MAX("fecha_de_peticion") as fecha_max 
+      FROM "aclaraciones" 
+      WHERE "fecha_de_peticion" IS NOT NULL
+    `);
+    
+    console.log('📊 Estadísticas de tabla aclaraciones:', checkTable.rows[0]);
+    
+    if (checkTable.rows[0].total === '0') {
+      console.log('⚠️ No hay registros en tabla aclaraciones con fecha_de_peticion válida');
+      return res.json([2024, 2025]); // Valores por defecto
+    }
+    
+    const result = await pool.query(`
+      SELECT DISTINCT EXTRACT(YEAR FROM "fecha_de_peticion") AS anio 
+      FROM "aclaraciones" 
+      WHERE "fecha_de_peticion" IS NOT NULL 
+      ORDER BY anio DESC
+    `);
+    
+    const anios = result.rows
+      .map(r => Number(r.anio))
+      .filter(anio => anio && anio > 2000 && anio <= 2030); // Filtrar años válidos
+    
+    console.log('✅ Años encontrados en aclaraciones:', anios);
+    
+    // Si no hay años válidos, devolver años por defecto
+    if (anios.length === 0) {
+      console.log('⚠️ No se encontraron años válidos en aclaraciones, usando valores por defecto');
+      return res.json([2024, 2025]);
+    }
+    
+    res.json(anios);
+  } catch (error) {
+    console.error('❌ Error al obtener años de aclaraciones:', error);
+    console.error('📋 Stack trace:', error.stack);
+    
+    // En caso de error, devolver años por defecto para que la app funcione
+    res.json([2024, 2025]);
+  }
+});
+
 // Endpoint para obtener comentarios únicos desde la tabla aclaraciones
 app.get("/aclaraciones/comentarios", async (req, res) => {
   try {
@@ -3986,6 +4037,118 @@ app.post("/aclaraciones/buscar-clientes-sinergia-lote", async (req, res) => {
   }
 });
 
+// 💱 Endpoint para convertir moneda en aclaraciones por año
+app.post("/aclaraciones/convertir-moneda", async (req, res) => {
+  try {
+    const { anio } = req.body;
+    
+    console.log(`💱 Iniciando conversión de moneda para año: ${anio}`);
+    
+    if (!anio) {
+      return res.status(400).json({ error: "Se requiere especificar el año" });
+    }
+
+    const client = await pool.connect();
+    
+    try {
+      // 1. Obtener todas las aclaraciones del año especificado
+      const consultaAclaraciones = `
+        SELECT 
+          "procesador", "bloque", "monto", "año", 
+          CASE 
+            WHEN "id_de_transaccion" IS NOT NULL THEN "id_de_transaccion"::text
+            ELSE COALESCE("autorizacion", 'sin_id')
+          END as id_registro
+        FROM "aclaraciones" 
+        WHERE "año"::text = $1 
+        AND "monto" IS NOT NULL 
+        AND "bloque" IS NOT NULL
+      `;
+      
+      const aclaraciones = await client.query(consultaAclaraciones, [anio]);
+      
+      console.log(`📊 Encontradas ${aclaraciones.rows.length} aclaraciones para convertir`);
+      
+      if (aclaraciones.rows.length === 0) {
+        await client.release();
+        return res.json({
+          registrosEncontrados: 0,
+          registrosActualizados: 0,
+          mensaje: `No se encontraron aclaraciones para el año ${anio}`
+        });
+      }
+
+      // 2. Procesar conversiones por lotes
+      let registrosActualizados = 0;
+      const detallesPorBloque = {};
+      
+      for (const aclaracion of aclaraciones.rows) {
+        const { bloque, monto, id_registro } = aclaracion;
+        
+        // Obtener moneda del bloque
+        const monedaInfo = BLOQUE_PAIS_MONEDA[bloque];
+        const moneda = monedaInfo?.moneda || "MXN";
+        const factor = TIPO_CAMBIO[moneda] || 1;
+        
+        // Calcular monto en MXN
+        const montoOriginal = parseFloat(monto) || 0;
+        const montoMXN = montoOriginal * factor;
+        
+        // Actualizar registro
+        const updateQuery = `
+          UPDATE "aclaraciones" 
+          SET "monto_mnx" = $1
+          WHERE "año"::text = $2 
+          AND "bloque" = $3
+          AND (
+            ("id_de_transaccion" IS NOT NULL AND "id_de_transaccion"::text = $4) OR
+            ("id_de_transaccion" IS NULL AND COALESCE("autorizacion", 'sin_id') = $4)
+          )
+        `;
+        
+        const updateResult = await client.query(updateQuery, [montoMXN, anio, bloque, id_registro]);
+        
+        if (updateResult.rowCount > 0) {
+          registrosActualizados++;
+          
+          // Guardar detalles por bloque
+          if (!detallesPorBloque[bloque]) {
+            detallesPorBloque[bloque] = {
+              registros: 0,
+              moneda: moneda,
+              factor: factor,
+              pais: monedaInfo?.pais || "Desconocido"
+            };
+          }
+          detallesPorBloque[bloque].registros++;
+        }
+      }
+      
+      await client.release();
+      
+      console.log(`✅ Conversión completada: ${registrosActualizados}/${aclaraciones.rows.length} registros actualizados`);
+      
+      res.json({
+        exito: true,
+        registrosEncontrados: aclaraciones.rows.length,
+        registrosActualizados: registrosActualizados,
+        detallesPorBloque: detallesPorBloque,
+        mensaje: `Conversión completada exitosamente para el año ${anio}`
+      });
+
+    } catch (error) {
+      await client.release();
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('❌ Error al convertir moneda:', error);
+    res.status(500).json({ 
+      error: "Error al convertir moneda", 
+      detalle: error.message 
+    });
+  }
+});
 
 app.get("/cobranza/estatus", async (req, res) => {
   try {
