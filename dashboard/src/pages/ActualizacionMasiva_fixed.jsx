@@ -28,17 +28,22 @@ const ActualizacionMasiva = () => {
   };
 
   const verificarTransacciones = async () => {
+    console.log('🔍 [FRONTEND] === INICIO verificarTransacciones ===');
     setIsLoading(true);
     
     try {
       const transacciones = procesarDatos(datosTabla);
+      console.log('📊 [FRONTEND] Transacciones procesadas:', transacciones.length);
+      console.log('🔍 [FRONTEND] Datos procesados:', transacciones.slice(0, 3)); // Mostrar primeras 3
       
       if (transacciones.length === 0) {
+        console.error('❌ [FRONTEND] Sin transacciones válidas');
         alert('No se pudieron procesar los datos. Asegúrate de usar el formato correcto.');
         setIsLoading(false);
         return;
       }
 
+      console.log('📤 [FRONTEND] Enviando petición a:', '/api/actualizaciones/verificar-transacciones');
       const response = await fetch('/api/actualizaciones/verificar-transacciones', {
         method: 'POST',
         headers: {
@@ -47,32 +52,52 @@ const ActualizacionMasiva = () => {
         body: JSON.stringify({ transacciones })
       });
 
+      console.log('📥 [FRONTEND] Status respuesta:', response.status);
+      console.log('🔍 [FRONTEND] Headers respuesta:', Object.fromEntries(response.headers.entries()));
+      
+      if (!response.ok) {
+        console.error('❌ [FRONTEND] Response no OK:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('❌ [FRONTEND] Error text:', errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const resultado = await response.json();
+      console.log('📋 [FRONTEND] Resultado completo:', resultado);
       
       if (resultado.success) {
+        console.log('✅ [FRONTEND] Verificación exitosa');
         setVerificaciones(resultado.data);
         setPaso(2);
       } else {
+        console.error('❌ [FRONTEND] Error en resultado:', resultado.message);
         alert('Error verificando transacciones: ' + resultado.message);
       }
       
     } catch (error) {
-      console.error('Error verificando transacciones:', error);
-      alert('Error verificando transacciones');
+      console.error('💥 [FRONTEND] ERROR CRÍTICO verificarTransacciones:');
+      console.error('   - Mensaje:', error.message);
+      console.error('   - Stack:', error.stack);
+      console.error('   - Tipo:', error.constructor.name);
+      alert('Error verificando transacciones: ' + error.message);
     } finally {
+      console.log('🏁 [FRONTEND] Finalizando verificarTransacciones');
       setIsLoading(false);
     }
   };
 
   const ejecutarActualizacion = async () => {
-    console.log('🚀 Iniciando ejecutarActualizacion...');
+    console.log('🚀 [FRONTEND] === INICIO ejecutarActualizacion ===');
     setIsLoading(true);
     
     try {
       const transacciones = procesarDatos(datosTabla);
-      console.log('📊 Transacciones a enviar:', transacciones);
+      console.log('📊 [FRONTEND] Transacciones para actualizar:', transacciones.length);
+      console.log('🔍 [FRONTEND] Transacciones a enviar:', transacciones);
 
-      console.log('📤 Enviando petición a /api/actualizaciones/actualizar-captura-cc');
+      console.log('📤 [FRONTEND] Enviando petición a /api/actualizaciones/actualizar-captura-cc');
+      console.log('⏰ [FRONTEND] Timestamp inicio:', new Date().toISOString());
+      
       const response = await fetch('/api/actualizaciones/actualizar-captura-cc', {
         method: 'POST',
         headers: {
@@ -81,21 +106,40 @@ const ActualizacionMasiva = () => {
         body: JSON.stringify({ transacciones })
       });
 
-      console.log('📥 Respuesta recibida:', response.status);
+      console.log('📥 [FRONTEND] Respuesta recibida - Status:', response.status);
+      console.log('⏰ [FRONTEND] Timestamp respuesta:', new Date().toISOString());
+      console.log('🔍 [FRONTEND] Headers respuesta:', Object.fromEntries(response.headers.entries()));
+      
+      if (!response.ok) {
+        console.error('❌ [FRONTEND] Response no OK:', response.status, response.statusText);
+        const errorText = await response.text();
+        console.error('❌ [FRONTEND] Error text completo:', errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+
       const resultado = await response.json();
-      console.log('📋 Resultado:', resultado);
+      console.log('📋 [FRONTEND] Resultado completo:', resultado);
       
       if (resultado.success) {
+        console.log('✅ [FRONTEND] Actualización exitosa');
+        console.log('📊 [FRONTEND] Actualizaciones:', resultado.data.actualizacionesExitosas);
         setResultadoActualizacion(resultado.data);
         setPaso(3);
       } else {
+        console.error('❌ [FRONTEND] Error en actualización:', resultado.message);
+        console.error('❌ [FRONTEND] Error completo:', resultado);
         alert('Error en la actualización: ' + resultado.message);
       }
       
     } catch (error) {
-      console.error('Error ejecutando actualización:', error);
-      alert('Error ejecutando actualización');
+      console.error('💥 [FRONTEND] ERROR CRÍTICO ejecutarActualizacion:');
+      console.error('   - Mensaje:', error.message);
+      console.error('   - Stack:', error.stack);
+      console.error('   - Tipo:', error.constructor.name);
+      console.error('   - Timestamp error:', new Date().toISOString());
+      alert('Error ejecutando actualización: ' + error.message);
     } finally {
+      console.log('🏁 [FRONTEND] Finalizando ejecutarActualizacion');
       setIsLoading(false);
     }
   };
