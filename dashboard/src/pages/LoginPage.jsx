@@ -116,7 +116,7 @@ export default function LoginPage() {
             🔒 Acceso seguro con autenticación JWT
           </p>
           <p className="text-gray-600 text-xs mt-1">
-            ⚠️ TESTING: La sesión expira en 10 segundos
+            La sesión expira en 12 horas
           </p>
         </div>
       </div>

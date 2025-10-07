@@ -135,7 +135,7 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 po
 // 🔐 CONFIGURACIÓN DE AUTENTICACIÓN
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_para_jwt_2025';
 const AUTH_PASSWORD = 'veda0610##'; // Contraseña general para acceso
-const JWT_EXPIRATION = '10s'; // ⚠️ TESTING: Duración de sesión: 10 segundos para pruebas
+const JWT_EXPIRATION = '12h'; // Duración de sesión: 12 horas
 
 // ❌ CORS ELIMINADO COMPLETAMENTE
 

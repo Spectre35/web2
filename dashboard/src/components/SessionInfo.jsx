@@ -33,7 +33,7 @@ const SessionInfo = () => {
     };
 
     updateTimer();
-    const interval = setInterval(updateTimer, 1000); // Actualizar cada segundo para testing
+    const interval = setInterval(updateTimer, 60000); // Actualizar cada minuto
 
     return () => clearInterval(interval);
   }, [token]);

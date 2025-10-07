@@ -1,4 +1,19 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, u        // Si el token está cerca de expirar (5 minutos antes) o ya expiró
+        if (currentTime >= expirationTime - 300000) {
+          console.log('⏰ Token expirado o por expirar, cerrando sesión');
+          handleTokenExpiration();
+        }
+      } catch (error) {
+        console.error('Error verificando expiración del token:', error);
+        handleTokenExpiration();
+      }
+    };
+
+    // Verificar inmediatamente
+    checkTokenExpiration();
+    
+    // Verificar cada minuto
+    const interval = setInterval(checkTokenExpiration, 60000);m 'react';
 
 const AuthContext = createContext();
 
@@ -63,8 +78,8 @@ export const AuthProvider = ({ children }) => {
         const expirationTime = payload.exp * 1000;
         const currentTime = Date.now();
         
-        // Si el token está cerca de expirar (1 segundo antes) o ya expiró - TESTING
-        if (currentTime >= expirationTime - 1000) {
+        // Si el token está cerca de expirar (5 minutos antes) o ya expiró
+        if (currentTime >= expirationTime - 300000) {
           console.log('⏰ Token expirado o por expirar, cerrando sesión');
           handleTokenExpiration();
         }
@@ -77,8 +92,8 @@ export const AuthProvider = ({ children }) => {
     // Verificar inmediatamente
     checkTokenExpiration();
     
-    // Verificar cada segundo durante testing
-    const interval = setInterval(checkTokenExpiration, 1000);
+    // Verificar cada minuto
+    const interval = setInterval(checkTokenExpiration, 60000);
     
     return () => clearInterval(interval);
   }, [token, handleTokenExpiration]);
