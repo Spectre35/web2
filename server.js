@@ -140,28 +140,48 @@ const JWT_EXPIRATION = '12h'; // Duración de sesión: 12 horas
 
 // � CONFIGURACIÓN CORS DEFINITIVA CON LIBRERÍA OFICIAL
 const corsOptions = {
-  origin: true, // ✅ ACEPTA CUALQUIER ORIGIN
+  origin: [
+    'https://cargosfraudes.onrender.com', // ✅ Frontend principal
+    'https://buscadores.onrender.com',    // ✅ Backend self-reference
+    'http://localhost:5173',              // ✅ Desarrollo local
+    'http://localhost:3000'               // ✅ Desarrollo local alternativo
+  ],
   credentials: true,
-  optionsSuccessStatus: 200
+  optionsSuccessStatus: 200,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'Access-Control-Allow-Origin'],
+  exposedHeaders: ['set-cookie']
 };
 
 // Aplicar CORS ultra permisivo
 app.use(cors(corsOptions));
 
-// 🚨 MIDDLEWARE ADICIONAL CORS DE EMERGENCIA
+// 🚨 MIDDLEWARE ADICIONAL CORS DE EMERGENCIA CON LOGGING
 app.use((req, res, next) => {
-  // Aplicar headers CORS manualmente como respaldo
-  res.header('Access-Control-Allow-Origin', '*');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
+  const origin = req.headers.origin;
   
-  console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  console.log('🌐 CORS DEBUG:');
+  console.log('   - Method:', req.method);
+  console.log('   - Path:', req.path);
+  console.log('   - Origin:', origin);
+  console.log('   - User-Agent:', req.headers['user-agent']?.substring(0, 50));
+  
+  // Aplicar headers CORS manualmente como respaldo
+  if (origin) {
+    res.header('Access-Control-Allow-Origin', origin);
+  } else {
+    res.header('Access-Control-Allow-Origin', '*');
+  }
+  
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-requested-with, Access-Control-Allow-Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Max-Age', '86400'); // Cache preflight for 24 hours
   
   // Responder inmediatamente a OPTIONS
   if (req.method === 'OPTIONS') {
-    console.log(`🚨 OPTIONS manejado manualmente para: ${req.path}`);
-    return res.status(200).end();
+    console.log('✅ OPTIONS preflight manejado para:', req.path);
+    return res.status(204).end();
   }
   
   next();
