@@ -1,0 +1,26 @@
+name: Keep Services Alive
+
+on:
+  schedule:
+    # Ejecutar cada 10 minutos durante horas laborales (UTC)
+    - cron: '*/10 6-22 * * *'  # Cada 10 min de 6 AM a 10 PM UTC
+  workflow_dispatch: # Permite ejecución manual
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Ping Backend
+        run: |
+          echo "🏓 Haciendo ping al backend..."
+          curl -f https://buscadores.onrender.com/health-check || echo "Backend no responde"
+          
+      - name: Ping Frontend  
+        run: |
+          echo "🏓 Haciendo ping al frontend..."
+          curl -f https://cargosfraudes.onrender.com || echo "Frontend no responde"
+          
+      - name: Log Status
+        run: |
+          echo "✅ Keep-alive completado en $(date)"

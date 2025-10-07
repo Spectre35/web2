@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema OCR Inteligente</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg            const copyToClipboard = () => {
+                console.log('📋 Intentando copiar al portapapeles, results:', results);
+                if (results?.correctedText || results?.originalText) {
+                    const textToCopy = results.correctedText || results.originalText;
+                    console.log('📋 Texto a copiar:', textToCopy.substring(0, 100) + '...');
+                    navigator.clipboard.writeText(textToCopy);
+                    alert('Texto copiado al portapapeles');
+                } else {
+                    console.error('❌ No hay texto disponible para copiar');
+                    alert('No hay texto disponible para copiar');
+                }
+            };
+
+            const downloadText = () => {
+                console.log('📥 Intentando descargar texto, results:', results);
+                if (results?.correctedText || results?.originalText) {
+                    const textToDownload = results.correctedText || results.originalText;
+                    console.log('📥 Texto a descargar:', textToDownload.substring(0, 100) + '...');
+                    const blob = new Blob([textToDownload], { type: 'text/plain' });
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ocr-result-${Date.now()}.txt`;
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                } else {
+                    console.error('❌ No hay texto disponible para descargar');
+                    alert('No hay texto disponible para descargar');
+                }
+            };umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react-dropzone@14.2.3/dist/index.umd.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+        
+        .main-content {
+            padding: 40px;
+        }
+        
+        .upload-zone {
+            border: 3px dashed #667eea;
+            border-radius: 15px;
+            padding: 60px 40px;
+            text-align: center;
+            background: #f8f9ff;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .upload-zone:hover, .upload-zone.drag-active {
+            border-color: #764ba2;
+            background: #f0f2ff;
+            transform: translateY(-2px);
+        }
+        
+        .upload-icon {
+            font-size: 4rem;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        
+        .upload-text {
+            font-size: 1.3rem;
+            color: #333;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+        
+        .upload-subtext {
+            color: #666;
+            font-size: 1rem;
+        }
+        
+        .results-section {
+            margin-top: 40px;
+            display: none;
+        }
+        
+        .results-section.active {
+            display: block;
+        }
+        
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .results-title {
+            font-size: 1.5rem;
+            color: #333;
+            font-weight: 600;
+        }
+        
+        .confidence-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+        }
+        
+        .extracted-text {
+            background: #f8f9ff;
+            border: 1px solid #e0e4ff;
+            border-radius: 10px;
+            padding: 25px;
+            font-family: 'Courier New', monospace;
+            font-size: 1rem;
+            line-height: 1.6;
+            color: #333;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: #f0f2ff;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+        }
+        
+        .loading.active {
+            display: block;
+        }
+        
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .error {
+            background: #ffe6e6;
+            color: #d63031;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            display: none;
+        }
+        
+        .error.active {
+            display: block;
+        }
+        
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .stat-card {
+            background: #f8f9ff;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid #e0e4ff;
+        }
+        
+        .stat-number {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 0.9rem;
+        }
+        
+        /* Estilos para múltiples recibos */
+        .multiple-receipts-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .receipt-card {
+            background: #f8f9ff;
+            border: 1px solid #e0e4ff;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .receipt-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #e0e4ff;
+        }
+        
+        .receipt-header h4 {
+            margin: 0;
+            color: #667eea;
+        }
+        
+        .extracted-data {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .extracted-data h5 {
+            margin: 0 0 10px 0;
+            color: #555;
+        }
+        
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        
+        .data-item {
+            padding: 8px;
+            background: #f5f7ff;
+            border-radius: 5px;
+            border-left: 3px solid #667eea;
+        }
+        
+        .database-status {
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 0.9rem;
+            margin: 10px 0;
+        }
+        
+        .database-status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .database-status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .receipt-text-details {
+            margin-top: 15px;
+        }
+        
+        .receipt-text-details summary {
+            cursor: pointer;
+            padding: 10px;
+            background: #e8ecff;
+            border-radius: 5px;
+            margin-bottom: 10px;
+        }
+        
+        .receipt-text-details summary:hover {
+            background: #d5dcff;
+        }
+        
+        .summary-section {
+            margin: 30px 0 20px 0;
+            padding: 20px;
+            background: #f0f3ff;
+            border-radius: 10px;
+        }
+        
+        .summary-section h4 {
+            margin: 0 0 15px 0;
+            color: #667eea;
+        }
+        
+        .summary-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }
+        
+        .stat-item {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            border-left: 3px solid #667eea;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useCallback, useEffect } = React;
+        const { useDropzone } = window.ReactDropzone;
+
+        function OCRSystem() {
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [results, setResults] = useState(null);
+            const [error, setError] = useState(null);
+            const [stats, setStats] = useState(null);
+
+            // Debug y cargar datos iniciales
+            useEffect(() => {
+                console.log('🚀 Sistema OCR inicializado');
+                loadStats();
+                
+                // Log de debugging global
+                window.ocrDebug = {
+                    results,
+                    error,
+                    stats,
+                    isProcessing
+                };
+                
+                console.log('🔍 Estado actual:', { results, error, stats, isProcessing });
+            }, [results, error, stats, isProcessing]);
+
+            const onDrop = useCallback(async (acceptedFiles) => {
+                if (acceptedFiles.length === 0) return;
+
+                const file = acceptedFiles[0];
+                setIsProcessing(true);
+                setError(null);
+                setResults(null);
+
+                try {
+                    const formData = new FormData();
+                    formData.append('file', file);
+
+                    const response = await fetch('/api/ocr/upload', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        throw new Error(`Error ${response.status}: ${response.statusText}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    console.log('🔍 Respuesta del servidor:', result);
+                    
+                    // Verificar si son múltiples recibos
+                    if (result.success && result.multipleReceipts && result.data) {
+                        console.log('🎯 Múltiples recibos detectados:', result.totalReceipts);
+                        
+                        // Procesar datos de múltiples recibos
+                        const multipleReceiptsData = {
+                            isMultiple: true,
+                            totalReceipts: result.totalReceipts,
+                            message: result.message || `Se detectaron ${result.totalReceipts} recibos`,
+                            receipts: result.data.map((receipt, index) => ({
+                                receiptNumber: index + 1,
+                                documentId: receipt.documentId || null,
+                                resultId: receipt.resultId || null,
+                                originalText: receipt.originalText || '',
+                                correctedText: receipt.correctedText || receipt.originalText || '',
+                                confidence: receipt.confidence || 0,
+                                processingTime: receipt.processingTime || 0,
+                                filename: receipt.filename || `Recibo ${index + 1}`,
+                                classification: receipt.classification || {},
+                                databaseInsertion: receipt.databaseInsertion || null
+                            })),
+                            summary: result.summary || {},
+                            totalProcessingTime: result.totalProcessingTime || 0
+                        };
+                        
+                        console.log('📊 Datos de múltiples recibos validados:', multipleReceiptsData);
+                        setResults(multipleReceiptsData);
+                        
+                    } else if (result.success && result.data) {
+                        console.log('✅ Datos válidos recibidos (recibo único):', result.data);
+                        
+                        // Validar que todas las propiedades requeridas existan
+                        const validatedData = {
+                            isMultiple: false,
+                            documentId: result.data.documentId || null,
+                            resultId: result.data.resultId || null,
+                            originalText: result.data.originalText || '',
+                            correctedText: result.data.correctedText || result.data.originalText || '',
+                            processingTime: result.data.processingTime || 0,
+                            appliedCorrections: result.data.appliedCorrections || [],
+                            improvementScore: result.data.improvementScore || 0,
+                            boundingBoxes: result.data.boundingBoxes || {},
+                            filename: result.data.filename || 'Sin nombre'
+                        };
+                        
+                        console.log('📊 Datos validados:', validatedData);
+                        setResults(validatedData);
+                    } else {
+                        console.error('❌ Respuesta sin datos válidos:', result);
+                        throw new Error('Respuesta del servidor sin datos válidos');
+                    }
+                    
+                    // Cargar estadísticas actualizadas
+                    loadStats();
+                    
+                } catch (err) {
+                    console.error('Error procesando archivo:', err);
+                    setError(err.message || 'Error procesando el archivo');
+                } finally {
+                    setIsProcessing(false);
+                }
+            }, []);
+
+            const loadStats = async () => {
+                try {
+                    const response = await fetch('/api/ocr/stats');
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.success && result.data) {
+                            setStats(result.data);
+                        }
+                    }
+                } catch (err) {
+                    console.error('Error cargando estadísticas:', err);
+                }
+            };
+
+            const copyToClipboard = () => {
+                if (results?.extractedText) {
+                    navigator.clipboard.writeText(results.extractedText);
+                    alert('Texto copiado al portapapeles');
+                }
+            };
+
+            const downloadText = () => {
+                if (results?.extractedText) {
+                    const blob = new Blob([results.extractedText], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `ocr-result-${Date.now()}.txt`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+            };
+
+            const { getRootProps, getInputProps, isDragActive } = useDropzone({
+                onDrop,
+                accept: {
+                    'image/*': ['.jpeg', '.jpg', '.png', '.bmp', '.tiff', '.webp'],
+                    'application/pdf': ['.pdf']
+                },
+                maxSize: 10 * 1024 * 1024, // 10MB
+                multiple: false
+            });
+
+            // Cargar estadísticas al iniciar
+            React.useEffect(() => {
+                loadStats();
+            }, []);
+
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>🔍 Sistema OCR Inteligente</h1>
+                        <p>Extracción de texto con machine learning y auto-retroalimentación</p>
+                    </div>
+
+                    <div className="main-content">
+                        {!isProcessing && !results && (
+                            <div {...getRootProps()} className={`upload-zone ${isDragActive ? 'drag-active' : ''}`}>
+                                <input {...getInputProps()} />
+                                <div className="upload-icon">📄</div>
+                                <div className="upload-text">
+                                    {isDragActive ? 'Suelta el archivo aquí' : 'Arrastra una imagen o PDF aquí'}
+                                </div>
+                                <div className="upload-subtext">
+                                    o haz clic para seleccionar un archivo (máx. 10MB)
+                                </div>
+                            </div>
+                        )}
+
+                        {isProcessing && (
+                            <div className="loading active">
+                                <div className="spinner"></div>
+                                <h3>Procesando documento...</h3>
+                                <p>Extrayendo texto con OCR inteligente</p>
+                            </div>
+                        )}
+
+                        {error && (
+                            <div className="error active">
+                                <strong>Error:</strong> {error}
+                            </div>
+                        )}
+
+                        {results && !results.isMultiple && (
+                            <div className="results-section active">
+                                <div className="results-header">
+                                    <h3 className="results-title">Texto Extraído</h3>
+                                    <div className="confidence-badge">
+                                        Confianza: {Math.round((results?.confidence || 0) * 100)}%
+                                    </div>
+                                </div>
+
+                                <div className="extracted-text">
+                                    {results?.correctedText || results?.originalText || 'No se pudo extraer texto del documento.'}
+                                </div>
+
+                        <div className="action-buttons">
+                            <button className="btn btn-primary" onClick={copyToClipboard}>
+                                📋 Copiar Texto
+                            </button>
+                            <button className="btn btn-secondary" onClick={downloadText}>
+                                💾 Descargar
+                            </button>
+                            <button className="btn btn-secondary" onClick={() => setResults(null)}>
+                                🔄 Nuevo Documento
+                            </button>
+                        </div>
+
+                        {results && results.isMultiple && (
+                            <div className="results-section active">
+                                <div className="results-header">
+                                    <h3 className="results-title">🎯 {results.message}</h3>
+                                    <div className="confidence-badge">
+                                        Total: {results.totalReceipts} recibos
+                                    </div>
+                                </div>
+
+                                <div className="multiple-receipts-container">
+                                    {results.receipts.map((receipt, index) => (
+                                        <div key={index} className="receipt-card">
+                                            <div className="receipt-header">
+                                                <h4>📄 Recibo {receipt.receiptNumber}</h4>
+                                                <div className="confidence-badge">
+                                                    {Math.round((receipt.confidence || 0) * 100)}%
+                                                </div>
+                                            </div>
+                                            
+                                            <div className="receipt-details">
+                                                {receipt.classification?.datosExtraidos && (
+                                                    <div className="extracted-data">
+                                                        <h5>📊 Datos Extraídos:</h5>
+                                                        <div className="data-grid">
+                                                            {receipt.classification.datosExtraidos.cliente && (
+                                                                <div className="data-item">
+                                                                    <strong>👤 Cliente:</strong> {receipt.classification.datosExtraidos.cliente}
+                                                                </div>
+                                                            )}
+                                                            {receipt.classification.datosExtraidos.fecha_contrato && (
+                                                                <div className="data-item">
+                                                                    <strong>📅 Fecha:</strong> {receipt.classification.datosExtraidos.fecha_contrato}
+                                                                </div>
+                                                            )}
+                                                            {receipt.classification.datosExtraidos.monto && (
+                                                                <div className="data-item">
+                                                                    <strong>💰 Monto:</strong> ${receipt.classification.datosExtraidos.monto.toFixed(2)}
+                                                                </div>
+                                                            )}
+                                                            {receipt.classification.datosExtraidos.t_pago && (
+                                                                <div className="data-item">
+                                                                    <strong>💳 T.Pago:</strong> {receipt.classification.datosExtraidos.t_pago}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                
+                                                {receipt.databaseInsertion && (
+                                                    <div className={`database-status ${receipt.databaseInsertion.success ? 'success' : 'error'}`}>
+                                                        {receipt.databaseInsertion.success ? '✅ Insertado en BD' : '⚠️ Error en BD'}
+                                                        {receipt.databaseInsertion.data?.id && (
+                                                            <span> - ID: {receipt.databaseInsertion.data.id}</span>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                            
+                                            <details className="receipt-text-details">
+                                                <summary>📄 Ver texto extraído</summary>
+                                                <div className="extracted-text">
+                                                    {receipt.correctedText || receipt.originalText || 'No se pudo extraer texto.'}
+                                                </div>
+                                            </details>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="summary-section">
+                                    <h4>📈 Resumen del Procesamiento</h4>
+                                    <div className="summary-stats">
+                                        <div className="stat-item">
+                                            <strong>Total procesados:</strong> {results.summary.totalProcessed || results.totalReceipts}
+                                        </div>
+                                        <div className="stat-item">
+                                            <strong>Insertados exitosamente:</strong> {results.summary.successfulInsertions || 0}
+                                        </div>
+                                        <div className="stat-item">
+                                            <strong>Fallos en inserción:</strong> {results.summary.failedInsertions || 0}
+                                        </div>
+                                        <div className="stat-item">
+                                            <strong>Tiempo total:</strong> {results.totalProcessingTime || 0}ms
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="action-buttons">
+                                    <button className="btn btn-secondary" onClick={() => setResults(null)}>
+                                        🔄 Procesar Nueva Imagen
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                                <div className="action-buttons">
+                                    <button className="btn btn-primary" onClick={copyToClipboard}>
+                                        📋 Copiar Texto
+                                    </button>
+                                    <button className="btn btn-secondary" onClick={downloadText}>
+                                        💾 Descargar
+                                    </button>
+                                    <button className="btn btn-secondary" onClick={() => setResults(null)}>
+                                        🔄 Nuevo Documento
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {stats && (
+                            <div className="stats">
+                                <div className="stat-card">
+                                    <div className="stat-number">{stats.total_documents || 0}</div>
+                                    <div className="stat-label">Documentos Procesados</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-number">{Math.round((stats.avg_confidence || 0) * 100)}%</div>
+                                    <div className="stat-label">Precisión Promedio</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-number">{stats.total_patterns || 0}</div>
+                                    <div className="stat-label">Patrones Detectados</div>
+                                </div>
+                                <div className="stat-card">
+                                    <div className="stat-number">{Math.round(stats.avg_processing_time || 0)}ms</div>
+                                    <div className="stat-label">Tiempo Promedio</div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );}
+        
+
+            
+                
+
+        ReactDOM.render(<OCRSystem />, document.getElementById('root'));
+    </script>
+</body>
+</html>
