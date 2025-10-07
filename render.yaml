@@ -1,0 +1,43 @@
+services:
+  - type: web
+    name: buscadores-backend
+    env: node
+    plan: starter # Plan Starter para más memoria y CPU
+    buildCommand: npm install --production
+    startCommand: node --max-old-space-size=1024 --optimize-for-size --gc-interval=100 server.js
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: "--max-old-space-size=1024 --optimize-for-size --gc-interval=100"
+    healthCheckPath: /health
+    autoDeploy: false
+    # Configuraciones específicas para archivos grandes
+    disk:
+      name: uploads-disk
+      mountPath: /opt/render/project/src/uploads
+      sizeGB: 2
+    # Variables de entorno para optimización de memoria
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS  
+        value: "--max-old-space-size=1024 --optimize-for-size"
+      - key: MAX_FILE_SIZE
+        value: "50"
+      - key: BATCH_SIZE
+        value: "200"
+      - key: MEMORY_CHECK_INTERVAL
+        value: "1000"
+
+  - type: static
+    name: buscadores-spa
+    buildCommand: |
+      cd dashboard
+      npm ci
+      npm run build
+    staticPublishPath: dashboard/dist
+    routes:
+      - type: rewrite
+        source: "/**"
+        destination: "/index.html"

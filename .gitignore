@@ -1,0 +1,110 @@
+# Dependencias de Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+
+# Archivos de construcción
+dist/
+build/
+*.tgz
+*.tar.gz
+.turbo/
+**/.turbo/
+
+# Archivos de entorno
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Archivos temporales y de prueba
+test-*.cjs
+test-*.js
+*-test.js
+*.test.js
+limpieza-*.ps1
+limpiar-*.ps1
+
+# Uploads temporales (conservar solo algunos recientes)
+uploads/*
+!uploads/.gitignore
+!uploads/README.md
+
+# Archivos de sistema
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Archivos de Windows
+*.tmp
+*.temp
+~$*
+
+# Archivos de VS Code
+.vscode/
+!.vscode/extensions.json
+
+# Archivos de base de datos locales
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads y archivos temporales
+uploads/*
+!uploads/.gitkeep
+
+# Entorno virtual de Python OCR
+ocr_env/
+ocr_env_new/
+
+# Archivos de OCR y Tesseract
+*.traineddata
+ocr_service.py
+requirements.txt
+setup-ocr.bat
+setup-ocr.sh
+setup-tesseract.bat
+setup-tesseract.sh
+install-ocr.bat
+ocr/
+tesseract/
+tessdata/
+
+# Logs
+logs/
+*.log
+
+# Cache
+.cache/
+.npm/
+.yarn/
+
+# Archivos de backup
+*.bak
+*.backup
+*~
+
+# Archivos específicos del proyecto
+dashboard/node_modules/
+dashboard/dist/
+dashboard/.cache/
+
+# Archivos de Excel procesados
+*.xlsx
+*.xls
+!dashboard/Libro1.xlsx
+
+# Scripts de rollback temporales
+rollback-*.bat
+backup-*/
+src-backup-*/
+
+# Panel de control Python (local only)
+panel-control-web2/

@@ -1,0 +1,242 @@
+import cvReadyPromise from '@techstark/opencv-js';
+import sharp from 'sharp';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+class ImageProcessor {
+  constructor() {
+    this.cv = null;
+    this.isInitialized = false;
+    this.rotationAngles = [0, 90, 180, 270];
+
+    console.log('🎯 ImageProcessor inicializado - Usando @techstark/opencv-js');
+  }
+
+  async initialize() {
+    if (this.isInitialized) return;
+
+    try {
+      console.log('🚀 Inicializando OpenCV.js desde NPM...');
+      this.cv = await cvReadyPromise;
+      console.log('✅ OpenCV.js inicializado correctamente');
+      console.log('📋 Build info:', this.cv.getBuildInformation().substring(0, 100) + '...');
+      this.isInitialized = true;
+    } catch (error) {
+      console.error('❌ Error inicializando OpenCV.js:', error.message);
+      throw new Error(`No se pudo inicializar OpenCV.js: ${error.message}`);
+    }
+  }
+
+  async loadImage(input) {
+    let buffer;
+    let filePath = null;
+
+    try {
+      if (typeof input === 'string') {
+        filePath = input;
+        buffer = await fs.readFile(input);
+        console.log(`📁 Analizando archivo: ${path.basename(input)}`);
+      } else if (Buffer.isBuffer(input)) {
+        buffer = input;
+        console.log('📁 Procesando buffer de imagen');
+      } else {
+        throw new Error('Input debe ser una ruta de archivo o Buffer');
+      }
+
+      // Validar buffer
+      if (!buffer || buffer.length === 0) {
+        throw new Error('Buffer de imagen inválido o vacío');
+      }
+
+      return { filePath, buffer };
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        throw new Error(`Archivo no encontrado: ${input}`);
+      }
+      throw new Error(`Error cargando imagen: ${error.message}`);
+    }
+  }
+
+  async normalizeImage(buffer) {
+    try {
+      // Obtener metadatos
+      const metadata = await sharp(buffer).metadata();
+
+      if (!metadata || !metadata.width || !metadata.height) {
+        throw new Error('No se pudieron obtener las dimensiones de la imagen');
+      }
+
+      // Normalizar imagen
+      const normalizedBuffer = await sharp(buffer)
+        .normalize()
+        .sharpen()
+        .withMetadata()
+        .toBuffer();
+
+      return { normalizedBuffer, metadata };
+    } catch (error) {
+      throw new Error(`Error normalizando imagen: ${error.message}`);
+    }
+  }
+
+  async analyzeOrientation(mat) {
+    try {
+      const cv = this.cv;
+
+      // Convertir a escala de grises
+      let gray = new cv.Mat();
+      cv.cvtColor(mat, gray, cv.COLOR_RGBA2GRAY);
+
+      // Detección de bordes
+      let edges = new cv.Mat();
+      cv.Canny(gray, edges, 50, 150, 3, false);
+
+      // Detección de líneas
+      let lines = new cv.Mat();
+      cv.HoughLinesP(edges, lines, 1, Math.PI / 180, 80, 50, 10);
+
+      // Analizar ángulos
+      let angles = [];
+      for (let i = 0; i < lines.rows; ++i) {
+        let startPoint = lines.data32S[i * 4];
+        let startPointY = lines.data32S[i * 4 + 1];
+        let endPoint = lines.data32S[i * 4 + 2];
+        let endPointY = lines.data32S[i * 4 + 3];
+
+        let angle = Math.atan2(endPointY - startPointY, endPoint - startPoint) * 180 / Math.PI;
+        angles.push(angle);
+      }
+
+      // Calcular ángulo dominante
+      let dominantAngle = this.calculateDominantAngle(angles);
+      let rotationNeeded = this.determineRotationFromAngle(dominantAngle);
+
+      // Limpiar memoria
+      gray.delete();
+      edges.delete();
+      lines.delete();
+
+      return {
+        dominantAngle: dominantAngle,
+        rotationNeeded: rotationNeeded,
+        linesDetected: angles.length,
+        confidence: Math.min(angles.length / 20, 1.0),
+        success: true
+      };
+    } catch (error) {
+      console.error('Error en análisis OpenCV:', error);
+      return {
+        dominantAngle: 0,
+        rotationNeeded: 0,
+        linesDetected: 0,
+        confidence: 0,
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  calculateDominantAngle(angles) {
+    if (angles.length === 0) return 0;
+
+    // Normalizar ángulos a [0, 180)
+    let normalizedAngles = angles.map(angle => {
+      angle = Math.abs(angle);
+      return angle > 90 ? 180 - angle : angle;
+    });
+
+    // Crear histograma
+    let histogram = {};
+    normalizedAngles.forEach(angle => {
+      let bucket = Math.round(angle / 5) * 5;
+      histogram[bucket] = (histogram[bucket] || 0) + 1;
+    });
+
+    // Encontrar ángulo dominante
+    let maxCount = 0;
+    let dominantAngle = 0;
+    for (let angle in histogram) {
+      if (histogram[angle] > maxCount) {
+        maxCount = histogram[angle];
+        dominantAngle = parseFloat(angle);
+      }
+    }
+
+    return dominantAngle;
+  }
+
+  determineRotationFromAngle(angle) {
+    if (angle < 15 || angle > 165) return 0;
+    if (angle > 75 && angle < 105) return 270;
+    if (angle < 45) return 270;
+    if (angle > 135) return 90;
+    return 180;
+  }
+
+  async autoRotateImage(input) {
+    try {
+      await this.initialize();
+      console.log('🔄 Iniciando procesamiento de imagen...');
+
+      // 1. Cargar imagen
+      const { filePath, buffer: inputBuffer } = await this.loadImage(input);
+
+      // 2. Normalizar y obtener metadatos
+      const { normalizedBuffer, metadata } = await this.normalizeImage(inputBuffer);
+      console.log(`📊 Dimensiones originales: ${metadata.width}x${metadata.height}`);
+
+      // 3. Preparar para análisis OpenCV
+      const analysisBuffer = await sharp(normalizedBuffer)
+        .resize(1200, 1600, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+
+      // 4. Análisis OpenCV
+      const mat = this.cv.matFromImageData({
+        data: new Uint8ClampedArray(analysisBuffer.data),
+        width: analysisBuffer.info.width,
+        height: analysisBuffer.info.height
+      });
+
+      const orientationResult = await this.analyzeOrientation(mat);
+      console.log(`🎯 Análisis OpenCV: Ángulo dominante ${orientationResult.dominantAngle}°, Líneas detectadas: ${orientationResult.linesDetected}`);
+
+      // 5. Procesar imagen final
+      let outputBuffer = normalizedBuffer;
+      const rotationNeeded = orientationResult.rotationNeeded;
+
+      if (rotationNeeded !== 0) {
+        console.log(`🔄 Aplicando rotación de ${rotationNeeded}°`);
+        outputBuffer = await sharp(normalizedBuffer)
+          .rotate(rotationNeeded)
+          .withMetadata()
+          .toBuffer();
+      } else {
+        console.log('✅ No se requiere rotación');
+      }
+
+      // 6. Guardar imagen procesada
+      const outputPath = filePath ?
+        filePath.replace(/\.[^.]+$/, '_processed.png') :
+        path.join(process.cwd(), 'uploads', `processed_${Date.now()}.png`);
+
+      await fs.writeFile(outputPath, outputBuffer);
+      console.log('✅ Auto-rotación OpenCV completada');
+
+      return outputPath;
+
+    } catch (error) {
+      console.error('❌ Error en procesamiento de imagen:', error);
+      throw new Error(`Error en procesamiento de imagen: ${error.message}`);
+    }
+  }
+}
+
+export default ImageProcessor;
