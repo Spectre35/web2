@@ -1,5 +1,5 @@
 import express from "express";
-import cors from "cors";
+// import cors from "cors"; // DESHABILITADO - usamos CORS manual
 import axios from "axios";
 import pkg from "pg";
 import ExcelJS from "exceljs";
@@ -138,54 +138,31 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_para_jwt_2
 const AUTH_PASSWORD = 'veda0610##'; // Contraseña general para acceso
 const JWT_EXPIRATION = '12h'; // Duración de sesión: 12 horas
 
-// � CONFIGURACIÓN CORS DEFINITIVA CON LIBRERÍA OFICIAL
-const corsOptions = {
-  origin: [
-    'https://cargosfraudes.onrender.com', // ✅ Frontend principal
-    'https://buscadores.onrender.com',    // ✅ Backend self-reference
-    'http://localhost:5173',              // ✅ Desarrollo local
-    'http://localhost:3000'               // ✅ Desarrollo local alternativo
-  ],
-  credentials: true,
-  optionsSuccessStatus: 200,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'x-requested-with', 'Access-Control-Allow-Origin'],
-  exposedHeaders: ['set-cookie']
-};
-
-// Aplicar CORS ultra permisivo
-app.use(cors(corsOptions));
-
-// 🚨 MIDDLEWARE ADICIONAL CORS DE EMERGENCIA CON LOGGING
+// 🔥 CORS DEFINITIVO - NO MÁS PROBLEMAS
 app.use((req, res, next) => {
   const origin = req.headers.origin;
   
-  console.log('🌐 CORS DEBUG:');
-  console.log('   - Method:', req.method);
-  console.log('   - Path:', req.path);
-  console.log('   - Origin:', origin);
-  console.log('   - User-Agent:', req.headers['user-agent']?.substring(0, 50));
+  // LOG para debug
+  console.log(`🌐 ${req.method} ${req.path} desde: ${origin || 'unknown'}`);
   
-  // Aplicar headers CORS manualmente como respaldo
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
-    res.header('Access-Control-Allow-Origin', '*');
-  }
-  
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-requested-with, Access-Control-Allow-Origin');
+  // HEADERS CORS ULTRA PERMISIVOS
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Methods', '*');
+  res.header('Access-Control-Allow-Headers', '*');
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400'); // Cache preflight for 24 hours
+  res.header('Access-Control-Max-Age', '3600');
   
-  // Responder inmediatamente a OPTIONS
+  // Manejar OPTIONS inmediatamente
   if (req.method === 'OPTIONS') {
-    console.log('✅ OPTIONS preflight manejado para:', req.path);
-    return res.status(204).end();
+    console.log(`✅ OPTIONS para ${req.path} - CORS aplicado`);
+    return res.status(200).send('CORS OK');
   }
   
   next();
 });
+
+// NO usar librería cors para evitar conflictos
+// app.use(cors());
 
 app.use(express.json({ limit: '100mb' }));
 app.use(express.urlencoded({ limit: '100mb', extended: true }));
