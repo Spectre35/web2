@@ -53,16 +53,30 @@ const ActualizacionMasiva = () => {
       });
 
       console.log('📥 [ACTUALIZACIÓN] Status respuesta:', response.status);
+      console.log('📥 [ACTUALIZACIÓN] Headers respuesta:', Object.fromEntries(response.headers.entries()));
+      
+      // SIEMPRE obtener el texto primero para debug
+      const responseText = await response.text();
+      console.log('📋 [ACTUALIZACIÓN] Respuesta RAW (primeros 500 chars):', responseText.substring(0, 500));
+      console.log('📋 [ACTUALIZACIÓN] Longitud respuesta:', responseText.length);
       
       if (!response.ok) {
         console.error('❌ [ACTUALIZACIÓN] Response no OK:', response.status);
-        const errorText = await response.text();
-        console.error('❌ [ACTUALIZACIÓN] Error text:', errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        console.error('❌ [ACTUALIZACIÓN] Error text completo:', responseText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${responseText}`);
       }
 
-      const resultado = await response.json();
-      console.log('📋 [ACTUALIZACIÓN] Resultado:', resultado);
+      // Intentar parsear el JSON
+      let resultado;
+      try {
+        resultado = JSON.parse(responseText);
+        console.log('📋 [ACTUALIZACIÓN] JSON parseado exitosamente:', resultado);
+      } catch (jsonError) {
+        console.error('💥 [ACTUALIZACIÓN] ERROR PARSING JSON:');
+        console.error('   - Error:', jsonError.message);
+        console.error('   - Respuesta completa:', responseText);
+        throw new Error(`Error parsing JSON: ${jsonError.message}. Respuesta: ${responseText.substring(0, 200)}`);
+      }
 
       if (resultado.success) {
         console.log('✅ [ACTUALIZACIÓN] Verificación exitosa');
@@ -107,15 +121,28 @@ const ActualizacionMasiva = () => {
       console.log('📥 [ACTUALIZACIÓN] Respuesta - Status:', response.status);
       console.log('⏰ [ACTUALIZACIÓN] Timestamp respuesta:', new Date().toISOString());
 
+      // SIEMPRE obtener el texto primero para debug
+      const responseText = await response.text();
+      console.log('📋 [ACTUALIZACIÓN] Respuesta RAW (primeros 500 chars):', responseText.substring(0, 500));
+      console.log('📋 [ACTUALIZACIÓN] Longitud respuesta:', responseText.length);
+
       if (!response.ok) {
         console.error('❌ [ACTUALIZACIÓN] Response no OK:', response.status);
-        const errorText = await response.text();
-        console.error('❌ [ACTUALIZACIÓN] Error text:', errorText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+        console.error('❌ [ACTUALIZACIÓN] Error text completo:', responseText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${responseText}`);
       }
 
-      const resultado = await response.json();
-      console.log('📋 [ACTUALIZACIÓN] Resultado completo:', resultado);
+      // Intentar parsear el JSON
+      let resultado;
+      try {
+        resultado = JSON.parse(responseText);
+        console.log('📋 [ACTUALIZACIÓN] JSON parseado exitosamente:', resultado);
+      } catch (jsonError) {
+        console.error('💥 [ACTUALIZACIÓN] ERROR PARSING JSON:');
+        console.error('   - Error:', jsonError.message);
+        console.error('   - Respuesta completa:', responseText);
+        throw new Error(`Error parsing JSON: ${jsonError.message}. Respuesta: ${responseText.substring(0, 200)}`);
+      }
 
       if (resultado.success) {
         console.log('✅ [ACTUALIZACIÓN] Actualización exitosa');
