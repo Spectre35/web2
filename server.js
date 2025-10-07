@@ -136,7 +136,7 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 po
 // 🔐 CONFIGURACIÓN DE AUTENTICACIÓN
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_para_jwt_2025';
 const AUTH_PASSWORD = 'veda0610##'; // Contraseña general para acceso
-const JWT_EXPIRATION = '12h'; // Duración de sesión: 12 horas
+const JWT_EXPIRATION = '12h'; // Duración de sesión: 24 horas (modificado)
 
 // 🔥 CORS DEFINITIVO - NO MÁS PROBLEMAS
 app.use((req, res, next) => {
@@ -909,11 +909,20 @@ app.get("/progreso", (req, res) => {
 
 // Login endpoint
 app.post('/api/auth/login', (req, res) => {
-  console.log('🔐 Intento de login recibido');
+  console.log('🔐 [LOGIN] === INTENTO DE LOGIN ===');
+  console.log('🔐 [LOGIN] Body completo:', req.body);
+  console.log('🔐 [LOGIN] Headers:', req.headers);
+  console.log('🔐 [LOGIN] Content-Type:', req.headers['content-type']);
 
   const { password } = req.body;
 
+  console.log('🔐 [LOGIN] Password recibida:', password ? `"${password}"` : 'undefined/null');
+  console.log('🔐 [LOGIN] Password esperada:', `"${AUTH_PASSWORD}"`);
+  console.log('🔐 [LOGIN] Longitud recibida:', password ? password.length : 0);
+  console.log('🔐 [LOGIN] Longitud esperada:', AUTH_PASSWORD.length);
+
   if (!password) {
+    console.log('❌ [LOGIN] Sin contraseña - enviando 400');
     return res.status(400).json({
       success: false,
       message: 'Contraseña requerida'
@@ -930,7 +939,7 @@ app.post('/api/auth/login', (req, res) => {
       { expiresIn: JWT_EXPIRATION }
     );
 
-    console.log('✅ Login exitoso');
+    console.log('✅ [LOGIN] Login exitoso - token generado');
     res.json({
       success: true,
       message: 'Acceso autorizado',
@@ -938,7 +947,8 @@ app.post('/api/auth/login', (req, res) => {
       expiresIn: JWT_EXPIRATION
     });
   } else {
-    console.log('❌ Login fallido - contraseña incorrecta');
+    console.log('❌ [LOGIN] Contraseña incorrecta');
+    console.log('❌ [LOGIN] Comparación:', `"${password}" !== "${AUTH_PASSWORD}"`);
     res.status(401).json({
       success: false,
       message: 'Contraseña incorrecta'

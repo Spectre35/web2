@@ -28,17 +28,22 @@ const ActualizacionMasiva = () => {
   };
 
   const verificarTransacciones = async () => {
+    console.log('🔍 [ACTUALIZACIÓN] === INICIO verificarTransacciones ===');
     setIsLoading(true);
 
     try {
       const transacciones = procesarDatos(datosTabla);
+      console.log('📊 [ACTUALIZACIÓN] Transacciones procesadas:', transacciones.length);
+      console.log('🔍 [ACTUALIZACIÓN] Datos procesados:', transacciones.slice(0, 3));
 
       if (transacciones.length === 0) {
+        console.error('❌ [ACTUALIZACIÓN] Sin transacciones válidas');
         alert('No se pudieron procesar los datos. Asegúrate de usar el formato correcto.');
         setIsLoading(false);
         return;
       }
 
+      console.log('📤 [ACTUALIZACIÓN] Enviando petición a verificar-transacciones');
       const response = await fetch('/api/actualizaciones/verificar-transacciones', {
         method: 'POST',
         headers: {
@@ -47,28 +52,49 @@ const ActualizacionMasiva = () => {
         body: JSON.stringify({ transacciones })
       });
 
+      console.log('📥 [ACTUALIZACIÓN] Status respuesta:', response.status);
+      
+      if (!response.ok) {
+        console.error('❌ [ACTUALIZACIÓN] Response no OK:', response.status);
+        const errorText = await response.text();
+        console.error('❌ [ACTUALIZACIÓN] Error text:', errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
       const resultado = await response.json();
+      console.log('📋 [ACTUALIZACIÓN] Resultado:', resultado);
 
       if (resultado.success) {
+        console.log('✅ [ACTUALIZACIÓN] Verificación exitosa');
         setVerificaciones(resultado.data);
         setPaso(2);
       } else {
+        console.error('❌ [ACTUALIZACIÓN] Error en resultado:', resultado.message);
         alert('Error verificando transacciones: ' + resultado.message);
       }
 
     } catch (error) {
-      console.error('Error verificando transacciones:', error);
-      alert('Error verificando transacciones');
+      console.error('💥 [ACTUALIZACIÓN] ERROR CRÍTICO verificarTransacciones:');
+      console.error('   - Mensaje:', error.message);
+      console.error('   - Stack:', error.stack);
+      alert('Error verificando transacciones: ' + error.message);
     } finally {
+      console.log('🏁 [ACTUALIZACIÓN] Finalizando verificarTransacciones');
       setIsLoading(false);
     }
   };
 
   const ejecutarActualizacion = async () => {
+    console.log('🚀 [ACTUALIZACIÓN] === INICIO ejecutarActualizacion ===');
     setIsLoading(true);
 
     try {
       const transacciones = procesarDatos(datosTabla);
+      console.log('📊 [ACTUALIZACIÓN] Transacciones para actualizar:', transacciones.length);
+      console.log('🔍 [ACTUALIZACIÓN] Transacciones:', transacciones);
+
+      console.log('📤 [ACTUALIZACIÓN] Enviando petición a actualizar-captura-cc');
+      console.log('⏰ [ACTUALIZACIÓN] Timestamp inicio:', new Date().toISOString());
 
       const response = await fetch('/api/actualizaciones/actualizar-captura-cc', {
         method: 'POST',
@@ -78,19 +104,36 @@ const ActualizacionMasiva = () => {
         body: JSON.stringify({ transacciones })
       });
 
+      console.log('📥 [ACTUALIZACIÓN] Respuesta - Status:', response.status);
+      console.log('⏰ [ACTUALIZACIÓN] Timestamp respuesta:', new Date().toISOString());
+
+      if (!response.ok) {
+        console.error('❌ [ACTUALIZACIÓN] Response no OK:', response.status);
+        const errorText = await response.text();
+        console.error('❌ [ACTUALIZACIÓN] Error text:', errorText);
+        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText}`);
+      }
+
       const resultado = await response.json();
+      console.log('📋 [ACTUALIZACIÓN] Resultado completo:', resultado);
 
       if (resultado.success) {
+        console.log('✅ [ACTUALIZACIÓN] Actualización exitosa');
         setResultadoActualizacion(resultado.data);
         setPaso(3);
       } else {
+        console.error('❌ [ACTUALIZACIÓN] Error en actualización:', resultado.message);
         alert('Error en la actualización: ' + resultado.message);
       }
 
     } catch (error) {
-      console.error('Error ejecutando actualización:', error);
-      alert('Error ejecutando actualización');
+      console.error('💥 [ACTUALIZACIÓN] ERROR CRÍTICO ejecutarActualizacion:');
+      console.error('   - Mensaje:', error.message);
+      console.error('   - Stack:', error.stack);
+      console.error('   - Timestamp error:', new Date().toISOString());
+      alert('Error ejecutando actualización: ' + error.message);
     } finally {
+      console.log('🏁 [ACTUALIZACIÓN] Finalizando ejecutarActualizacion');
       setIsLoading(false);
     }
   };
