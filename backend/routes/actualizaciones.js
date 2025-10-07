@@ -10,18 +10,31 @@ async function connectToOriginalDB() {
 // 📝 Endpoint para actualización masiva de CAPTURA_CC
 router.post('/actualizar-captura-cc', async (req, res) => {
   let client;
+  const startTime = Date.now();
 
   try {
+    console.log('🚀 [RENDER] Iniciando actualización masiva...');
+    console.log('🚀 [RENDER] Memoria antes:', process.memoryUsage());
+    
     const { transacciones } = req.body;
 
     if (!transacciones || !Array.isArray(transacciones)) {
+      console.log('❌ [RENDER] Error: transacciones inválidas');
       return res.status(400).json({
         success: false,
         message: 'Se requiere un array de transacciones con id_transaccion y estatus'
       });
     }
 
-    client = await connectToOriginalDB();
+    console.log('📊 [RENDER] Total transacciones a actualizar:', transacciones.length);
+    
+    try {
+      client = await connectToOriginalDB();
+      console.log('✅ [RENDER] Conexión a BD establecida para actualización');
+    } catch (dbError) {
+      console.error('❌ [RENDER] Error conectando a BD para actualización:', dbError.message);
+      throw dbError;
+    }
 
     // NO usar transacción para testing - hacer commits automáticos
     // await client.query('BEGIN');
@@ -94,6 +107,17 @@ router.post('/actualizar-captura-cc', async (req, res) => {
     // NO hacer COMMIT manual - usar autocommit
     // await client.query('COMMIT');
 
+    const tiempoTotal = Date.now() - startTime;
+    const memoriaFinal = process.memoryUsage();
+
+    console.log('✅ [RENDER] Actualización masiva completada:');
+    console.log('   - Total procesadas:', transacciones.length);
+    console.log('   - Exitosas:', actualizacionesExitosas);
+    console.log('   - No encontradas:', noEncontrados.length);
+    console.log('   - Errores:', errores.length);
+    console.log('   - Tiempo total:', tiempoTotal, 'ms');
+    console.log('   - Memoria final:', memoriaFinal);
+
     res.json({
       success: true,
       data: {
@@ -104,29 +128,35 @@ router.post('/actualizar-captura-cc', async (req, res) => {
         detalles: {
           errores: errores,
           no_encontrados: noEncontrados
-        }
+        },
+        tiempo_procesamiento: tiempoTotal,
+        memoria_usada: memoriaFinal
       },
       message: `Se actualizaron ${actualizacionesExitosas} registros exitosamente`
     });
 
   } catch (error) {
-    // NO hacer ROLLBACK - usar autocommit
-    // if (client) {
-    //   try {
-    //     await client.query('ROLLBACK');
-    //   } catch (rollbackError) {
-    //     console.error('Error en rollback:', rollbackError);
-    //   }
-    // }
-
-    console.error('❌ Error en actualización masiva:', error);
+    const tiempoError = Date.now() - startTime;
+    const memoriaError = process.memoryUsage();
+    
+    console.error('❌ [RENDER] ERROR CRÍTICO en actualizar-captura-cc:');
+    console.error('   - Mensaje:', error.message);
+    console.error('   - Stack:', error.stack);
+    console.error('   - Tiempo hasta error:', tiempoError, 'ms');
+    console.error('   - Tipo de error:', error.constructor.name);
+    console.error('   - Memoria en error:', memoriaError);
+    
     res.status(500).json({
       success: false,
-      message: 'Error en la actualización masiva',
-      error: error.message
+      message: 'Error en la actualización masiva en Render',
+      error: error.message,
+      tiempo_error: tiempoError,
+      tipo_error: error.constructor.name,
+      memoria_error: memoriaError
     });
   } finally {
     if (client) {
+      console.log('🔌 [RENDER] Liberando conexión BD para actualización');
       client.release();
     }
   }
@@ -135,18 +165,31 @@ router.post('/actualizar-captura-cc', async (req, res) => {
 // 📊 Endpoint para verificar registros antes de actualizar
 router.post('/verificar-transacciones', async (req, res) => {
   let client;
+  const startTime = Date.now();
 
   try {
+    console.log('🚀 [RENDER] Iniciando verificación de transacciones...');
+    console.log('🚀 [RENDER] Tamaño del body:', JSON.stringify(req.body).length, 'bytes');
+    
     const { transacciones } = req.body;
 
     if (!transacciones || !Array.isArray(transacciones)) {
+      console.log('❌ [RENDER] Error: transacciones inválidas');
       return res.status(400).json({
         success: false,
         message: 'Se requiere un array de transacciones'
       });
     }
 
-    client = await connectToOriginalDB();
+    console.log('📊 [RENDER] Total transacciones a verificar:', transacciones.length);
+    
+    try {
+      client = await connectToOriginalDB();
+      console.log('✅ [RENDER] Conexión a BD establecida');
+    } catch (dbError) {
+      console.error('❌ [RENDER] Error conectando a BD:', dbError.message);
+      throw dbError;
+    }
 
     const verificaciones = [];
 
@@ -231,6 +274,13 @@ router.post('/verificar-transacciones', async (req, res) => {
 
     const encontrados = verificaciones.filter(v => v.existe).length;
     const noEncontrados = verificaciones.filter(v => !v.existe).length;
+    const tiempoTotal = Date.now() - startTime;
+
+    console.log('✅ [RENDER] Verificación completada:');
+    console.log('   - Total procesadas:', transacciones.length);
+    console.log('   - Encontradas:', encontrados);
+    console.log('   - No encontradas:', noEncontrados);
+    console.log('   - Tiempo total:', tiempoTotal, 'ms');
 
     res.json({
       success: true,
@@ -238,19 +288,29 @@ router.post('/verificar-transacciones', async (req, res) => {
         total_verificados: transacciones.length,
         encontrados,
         no_encontrados: noEncontrados,
-        verificaciones
+        verificaciones,
+        tiempo_procesamiento: tiempoTotal
       }
     });
 
   } catch (error) {
-    console.error('❌ Error verificando transacciones:', error);
+    const tiempoError = Date.now() - startTime;
+    console.error('❌ [RENDER] ERROR CRÍTICO en verificar-transacciones:');
+    console.error('   - Mensaje:', error.message);
+    console.error('   - Stack:', error.stack);
+    console.error('   - Tiempo hasta error:', tiempoError, 'ms');
+    console.error('   - Tipo de error:', error.constructor.name);
+    
     res.status(500).json({
       success: false,
-      message: 'Error verificando transacciones',
-      error: error.message
+      message: 'Error verificando transacciones en Render',
+      error: error.message,
+      tiempo_error: tiempoError,
+      tipo_error: error.constructor.name
     });
   } finally {
     if (client) {
+      console.log('🔌 [RENDER] Liberando conexión BD');
       client.release();
     }
   }
