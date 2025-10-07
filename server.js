@@ -137,9 +137,9 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_para_jwt_2
 const AUTH_PASSWORD = 'veda0610##'; // Contraseña general para acceso
 const JWT_EXPIRATION = '12h'; // Duración de sesión: 12 horas
 
-// 🌐 CORS configuración limpia y eficiente
+// 🌐 CORS configuración robusta para desarrollo y producción
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path}`);
+  console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin}`);
   
   // Lista de orígenes permitidos
   const allowedOrigins = [
@@ -151,16 +151,38 @@ app.use((req, res, next) => {
   ];
 
   const origin = req.headers.origin;
-  if (allowedOrigins.includes(origin)) {
-    res.header('Access-Control-Allow-Origin', origin);
+  
+  // En producción, permitir el dominio específico
+  if (process.env.NODE_ENV === 'production') {
+    if (origin && (origin.includes('cargosfraudes.onrender.com') || origin.includes('buscadores.onrender.com'))) {
+      res.header('Access-Control-Allow-Origin', origin);
+      console.log(`✅ CORS permitido para producción: ${origin}`);
+    } else if (allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      console.log(`✅ CORS permitido para desarrollo: ${origin}`);
+    } else {
+      // Fallback para producción - permitir el dominio principal
+      res.header('Access-Control-Allow-Origin', 'https://cargosfraudes.onrender.com');
+      console.log(`⚠️ CORS fallback aplicado para: ${origin}`);
+    }
+  } else {
+    // En desarrollo, ser más permisivo
+    if (allowedOrigins.includes(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      console.log(`✅ CORS permitido para desarrollo: ${origin}`);
+    } else if (origin && origin.startsWith('http://localhost:')) {
+      res.header('Access-Control-Allow-Origin', origin);
+      console.log(`✅ CORS permitido para localhost: ${origin}`);
+    }
   }
 
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   res.header('Access-Control-Allow-Credentials', 'true');
 
   // Responder a preflight requests
   if (req.method === 'OPTIONS') {
+    console.log(`✅ Preflight OPTIONS respondido para: ${origin}`);
     return res.status(200).end();
   }
   
@@ -194,10 +216,26 @@ app.get('/cors-test', (req, res) => {
   });
 });
 
+// 🌐 Endpoint específico para verificar CORS en producción
+app.get('/cors-production-test', (req, res) => {
+  console.log('🔥 CORS Production Test - Origin:', req.headers.origin);
+  console.log('🔥 Headers recibidos:', Object.keys(req.headers));
+  
+  res.status(200).json({
+    success: true,
+    message: 'CORS funcionando en producción',
+    origin: req.headers.origin,
+    userAgent: req.headers['user-agent'],
+    allHeaders: req.headers,
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString()
+  });
+});
+
 // 🔐 MIDDLEWARE DE AUTENTICACIÓN JWT
 const authenticateToken = (req, res, next) => {
   // Rutas públicas (sin autenticación)
-  const publicRoutes = ['/api/auth/login', '/api/auth/verify', '/health', '/models'];
+  const publicRoutes = ['/api/auth/login', '/api/auth/verify', '/health', '/models', '/cors-test', '/cors-production-test', '/emergency-health', '/simple-health'];
 
   if (publicRoutes.includes(req.path)) {
     return next();
