@@ -140,62 +140,30 @@ const JWT_EXPIRATION = '12h'; // Duración de sesión: 12 horas
 
 // � CONFIGURACIÓN CORS DEFINITIVA CON LIBRERÍA OFICIAL
 const corsOptions = {
-  origin: function (origin, callback) {
-    console.log(`🔍 CORS check - Origin: ${origin}`);
-    
-    // Lista de orígenes permitidos
-    const allowedOrigins = [
-      'https://cargosfraudes.onrender.com',
-      'https://buscadores.onrender.com',
-      'http://localhost:3000',
-      'http://localhost:5173',
-      'http://localhost:5174'
-    ];
-
-    // Permitir requests sin origin (Postman, mobile apps, etc.)
-    if (!origin) {
-      console.log('✅ CORS: Request sin origin permitido');
-      return callback(null, true);
-    }
-
-    // Verificar si el origin está en la lista
-    if (allowedOrigins.includes(origin)) {
-      console.log(`✅ CORS: Origin permitido - ${origin}`);
-      return callback(null, true);
-    }
-
-    // En desarrollo, permitir localhost
-    if (origin && origin.startsWith('http://localhost:')) {
-      console.log(`✅ CORS: Localhost permitido - ${origin}`);
-      return callback(null, true);
-    }
-
-    console.log(`❌ CORS: Origin bloqueado - ${origin}`);
-    return callback(new Error('CORS: Origin no permitido'), false);
-  },
+  origin: true, // ✅ ACEPTA CUALQUIER ORIGIN
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: [
-    'Origin',
-    'X-Requested-With', 
-    'Content-Type', 
-    'Accept', 
-    'Authorization',
-    'Cache-Control',
-    'Pragma'
-  ],
-  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
-  maxAge: 86400, // 24 horas de cache para preflight
-  preflightContinue: false,
   optionsSuccessStatus: 200
 };
 
-// Aplicar CORS con la configuración
+// Aplicar CORS ultra permisivo
 app.use(cors(corsOptions));
 
-// Middleware adicional para logging
+// 🚨 MIDDLEWARE ADICIONAL CORS DE EMERGENCIA
 app.use((req, res, next) => {
+  // Aplicar headers CORS manualmente como respaldo
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  
   console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin}`);
+  
+  // Responder inmediatamente a OPTIONS
+  if (req.method === 'OPTIONS') {
+    console.log(`🚨 OPTIONS manejado manualmente para: ${req.path}`);
+    return res.status(200).end();
+  }
+  
   next();
 });
 
