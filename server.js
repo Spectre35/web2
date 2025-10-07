@@ -1,4 +1,5 @@
 import express from "express";
+import cors from "cors";
 import axios from "axios";
 import pkg from "pg";
 import ExcelJS from "exceljs";
@@ -137,45 +138,64 @@ const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_para_jwt_2
 const AUTH_PASSWORD = 'veda0610##'; // Contraseña general para acceso
 const JWT_EXPIRATION = '12h'; // Duración de sesión: 12 horas
 
-// 🚨 MIDDLEWARE DE EMERGENCIA CORS (SE EJECUTA PRIMERO)
-app.use('*', (req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://cargosfraudes.onrender.com');
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization, Cache-Control, Pragma');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  
-  if (req.method === 'OPTIONS') {
-    console.log(`🚨 EMERGENCY CORS OPTIONS para: ${req.path}`);
-    return res.status(200).end();
-  }
-  next();
-});
+// � CONFIGURACIÓN CORS DEFINITIVA CON LIBRERÍA OFICIAL
+const corsOptions = {
+  origin: function (origin, callback) {
+    console.log(`🔍 CORS check - Origin: ${origin}`);
+    
+    // Lista de orígenes permitidos
+    const allowedOrigins = [
+      'https://cargosfraudes.onrender.com',
+      'https://buscadores.onrender.com',
+      'http://localhost:3000',
+      'http://localhost:5173',
+      'http://localhost:5174'
+    ];
 
-// 🌐 CORS configuración ULTRA ROBUSTA para producción
+    // Permitir requests sin origin (Postman, mobile apps, etc.)
+    if (!origin) {
+      console.log('✅ CORS: Request sin origin permitido');
+      return callback(null, true);
+    }
+
+    // Verificar si el origin está en la lista
+    if (allowedOrigins.includes(origin)) {
+      console.log(`✅ CORS: Origin permitido - ${origin}`);
+      return callback(null, true);
+    }
+
+    // En desarrollo, permitir localhost
+    if (origin && origin.startsWith('http://localhost:')) {
+      console.log(`✅ CORS: Localhost permitido - ${origin}`);
+      return callback(null, true);
+    }
+
+    console.log(`❌ CORS: Origin bloqueado - ${origin}`);
+    return callback(new Error('CORS: Origin no permitido'), false);
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: [
+    'Origin',
+    'X-Requested-With', 
+    'Content-Type', 
+    'Accept', 
+    'Authorization',
+    'Cache-Control',
+    'Pragma'
+  ],
+  exposedHeaders: ['Content-Length', 'X-Foo', 'X-Bar'],
+  maxAge: 86400, // 24 horas de cache para preflight
+  preflightContinue: false,
+  optionsSuccessStatus: 200
+};
+
+// Aplicar CORS con la configuración
+app.use(cors(corsOptions));
+
+// Middleware adicional para logging
 app.use((req, res, next) => {
   console.log(`${req.method} ${req.path} - Origin: ${req.headers.origin}`);
-  
-  const origin = req.headers.origin;
-  
-  // CONFIGURACIÓN AGRESIVA: Siempre permitir cargosfraudes.onrender.com
-  res.header('Access-Control-Allow-Origin', 'https://cargosfraudes.onrender.com');
-  res.header('Access-Control-Allow-Methods', '*');
-  res.header('Access-Control-Allow-Headers', '*');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400'); // Cache preflight por 24 horas
-  
-  // Headers adicionales para compatibilidad
-  res.header('Access-Control-Expose-Headers', '*');
-  res.header('Vary', 'Origin');
-  
-  console.log(`🌐 CORS headers aplicados para: ${origin}`);
-
-  // Responder inmediatamente a preflight requests
-  if (req.method === 'OPTIONS') {
-    console.log(`✅ Preflight OPTIONS respondido inmediatamente para: ${origin}`);
-    return res.status(200).end();
-  }
-  
   next();
 });
 
