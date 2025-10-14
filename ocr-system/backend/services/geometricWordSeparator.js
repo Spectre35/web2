@@ -9,6 +9,9 @@ import Tesseract from 'tesseract.js';
 class GeometricWordSeparator {
   constructor() {
     this.debugMode = true;
+    this.edgeDetectionEnabled = true;  // ⚡ Control de activación
+    this.edgeThreshold = 50;           // Píxeles del borde para considerar "cortado"
+    this.confidenceThreshold = 60;     // Confianza mínima para evitar re-OCR
   }
 
   /**
@@ -779,6 +782,251 @@ class GeometricWordSeparator {
    */
   setDebugMode(enabled) {
     this.debugMode = enabled;
+  }
+
+  /**
+   * 🔍 DETECTOR INTELIGENTE DE PALABRAS CORTADAS
+   * Análisis rápido post-OCR para detectar palabras que parecen estar cortadas
+   * @param {Array} wordsWithCoords - Palabras con coordenadas de bounding box
+   * @param {Object} imageInfo - Información de la imagen (width, height)
+   * @returns {Object} Resultado del análisis con palabras potencialmente cortadas
+   */
+  detectTruncatedWords(wordsWithCoords, imageInfo = {}) {
+    if (!this.edgeDetectionEnabled) {
+      return { truncatedWords: [], analysisTime: 0, needsReprocessing: false };
+    }
+
+    const startTime = Date.now();
+    const truncatedWords = [];
+    const suspiciousPatterns = [];
+
+    console.log('🔍 Iniciando detección de palabras cortadas...');
+
+    // Análisis por palabra para detectar cortes
+    wordsWithCoords.forEach((word, index) => {
+      const analysis = this.analyzeWordForTruncation(word, imageInfo);
+      
+      if (analysis.isTruncated) {
+        truncatedWords.push({
+          index,
+          word: word.text,
+          reason: analysis.reason,
+          confidence: word.confidence,
+          bbox: word.bbox,
+          recommendedAction: analysis.action,
+          priority: analysis.priority
+        });
+
+        console.log(`🚨 Palabra cortada detectada: "${word.text}" - ${analysis.reason}`);
+      }
+
+      if (analysis.suspicious) {
+        suspiciousPatterns.push({
+          index,
+          word: word.text,
+          pattern: analysis.suspiciousPattern,
+          confidence: word.confidence
+        });
+      }
+    });
+
+    const analysisTime = Date.now() - startTime;
+    const needsReprocessing = truncatedWords.some(w => w.priority === 'HIGH');
+
+    console.log(`📊 Análisis completado en ${analysisTime}ms: ${truncatedWords.length} palabras cortadas, ${suspiciousPatterns.length} patrones sospechosos`);
+
+    return {
+      truncatedWords,
+      suspiciousPatterns,
+      analysisTime,
+      needsReprocessing,
+      recommendation: this.generateReprocessingRecommendation(truncatedWords, imageInfo)
+    };
+  }
+
+  /**
+   * 🔬 ANALIZAR PALABRA INDIVIDUAL PARA DETECTAR CORTES
+   * @param {Object} word - Palabra con bbox y texto
+   * @param {Object} imageInfo - Info de la imagen
+   * @returns {Object} Análisis de si la palabra está cortada
+   */
+  analyzeWordForTruncation(word, imageInfo) {
+    const analysis = {
+      isTruncated: false,
+      reason: '',
+      action: 'none',
+      priority: 'LOW',
+      suspicious: false,
+      suspiciousPattern: ''
+    };
+
+    // 1. 📐 ANÁLISIS DE BORDE DE IMAGEN
+    if (imageInfo.width) {
+      const rightEdge = imageInfo.width - word.bbox.x1;
+      const leftEdge = word.bbox.x0;
+
+      if (rightEdge < this.edgeThreshold) {
+        analysis.isTruncated = true;
+        analysis.reason = `Palabra muy cerca del borde derecho (${rightEdge}px)`;
+        analysis.action = 'extend_right';
+        analysis.priority = 'HIGH';
+      }
+
+      if (leftEdge < this.edgeThreshold) {
+        analysis.isTruncated = true;
+        analysis.reason = `Palabra muy cerca del borde izquierdo (${leftEdge}px)`;
+        analysis.action = 'extend_left';
+        analysis.priority = 'MEDIUM';
+      }
+    }
+
+    // 2. 🔤 ANÁLISIS MORFOLÓGICO DE LA PALABRA
+    const morphAnalysis = this.analyzeMorphology(word.text);
+    if (morphAnalysis.likelyIncomplete) {
+      analysis.isTruncated = true;
+      analysis.reason = morphAnalysis.reason;
+      analysis.action = 'reprocess_word';
+      analysis.priority = morphAnalysis.priority;
+    }
+
+    // 3. 📊 ANÁLISIS DE CONFIANZA
+    if (word.confidence < this.confidenceThreshold) {
+      analysis.suspicious = true;
+      analysis.suspiciousPattern = `Baja confianza: ${word.confidence}%`;
+      
+      if (word.confidence < 40) {
+        analysis.isTruncated = true;
+        analysis.reason = `Confianza muy baja (${word.confidence}%) - posible corte`;
+        analysis.action = 'reprocess_word';
+        analysis.priority = 'MEDIUM';
+      }
+    }
+
+    // 4. 📏 ANÁLISIS GEOMÉTRICO DE ASPECT RATIO
+    const aspectRatio = word.bbox.width / word.bbox.height;
+    if (aspectRatio < 0.5) { // Muy estrecho
+      analysis.suspicious = true;
+      analysis.suspiciousPattern = `Aspect ratio anómalo: ${aspectRatio.toFixed(2)}`;
+    }
+
+    return analysis;
+  }
+
+  /**
+   * 🔤 ANÁLISIS MORFOLÓGICO PARA DETECTAR PALABRAS INCOMPLETAS
+   * @param {string} text - Texto de la palabra
+   * @returns {Object} Análisis morfológico
+   */
+  analyzeMorphology(text) {
+    const analysis = {
+      likelyIncomplete: false,
+      reason: '',
+      priority: 'LOW'
+    };
+
+    // Patrones de palabras que parecen cortadas
+    const truncationPatterns = [
+      { pattern: /^[A-Z]{5,8}[^AEIOUÁÉÍÓÚ]$/i, reason: 'Termina en consonante después de 5+ letras', priority: 'HIGH' },
+      { pattern: /^[A-Z]+[RLNM]$/i, reason: 'Termina en R, L, N, M (común en cortes)', priority: 'MEDIUM' },
+      { pattern: /^[A-Z]+[^O]LL$/i, reason: 'Patrón *LL sin O final (ej: CARRILL)', priority: 'HIGH' },
+      { pattern: /^[A-Z]{3,}[^AEIOUÁÉÍÓÚ]{2,}$/i, reason: 'Múltiples consonantes finales', priority: 'MEDIUM' },
+      { pattern: /^[A-Z]{8,}[BCDFGHJKLMNPQRSTVWXYZ]$/i, reason: 'Palabra larga terminando en consonante', priority: 'HIGH' }
+    ];
+
+    for (const p of truncationPatterns) {
+      if (p.pattern.test(text)) {
+        analysis.likelyIncomplete = true;
+        analysis.reason = p.reason;
+        analysis.priority = p.priority;
+        break;
+      }
+    }
+
+    // Casos específicos de apellidos comunes cortados
+    const commonTruncations = [
+      'CARRILL', 'CASTILL', 'MORILL', 'ROBERT', 'ALBERT', 'HUMBERT'
+    ];
+
+    if (commonTruncations.includes(text.toUpperCase())) {
+      analysis.likelyIncomplete = true;
+      analysis.reason = `Apellido común probablemente cortado: ${text}`;
+      analysis.priority = 'HIGH';
+    }
+
+    return analysis;
+  }
+
+  /**
+   * 💡 GENERAR RECOMENDACIÓN DE REPROCESAMIENTO
+   * @param {Array} truncatedWords - Palabras cortadas detectadas
+   * @param {Object} imageInfo - Info de la imagen
+   * @returns {Object} Recomendación de acción
+   */
+  generateReprocessingRecommendation(truncatedWords, imageInfo) {
+    if (truncatedWords.length === 0) {
+      return {
+        action: 'none',
+        message: 'No se detectaron palabras cortadas',
+        estimatedTime: 0
+      };
+    }
+
+    const highPriorityWords = truncatedWords.filter(w => w.priority === 'HIGH');
+    
+    if (highPriorityWords.length > 0) {
+      return {
+        action: 'selective_reocr',
+        message: `Reprocesar ${highPriorityWords.length} palabra(s) con alta probabilidad de corte`,
+        estimatedTime: highPriorityWords.length * 200, // ~200ms por palabra
+        words: highPriorityWords,
+        regions: this.calculateExtendedRegions(highPriorityWords, imageInfo)
+      };
+    }
+
+    return {
+      action: 'manual_review',
+      message: `Revisar manualmente ${truncatedWords.length} palabra(s) sospechosa(s)`,
+      estimatedTime: 0,
+      words: truncatedWords
+    };
+  }
+
+  /**
+   * 📐 CALCULAR REGIONES EXTENDIDAS PARA RE-OCR
+   * @param {Array} words - Palabras que necesitan reprocesamiento
+   * @param {Object} imageInfo - Info de la imagen
+   * @returns {Array} Regiones extendidas para re-OCR
+   */
+  calculateExtendedRegions(words, imageInfo) {
+    const extensionPadding = 20; // Píxeles adicionales en cada dirección
+    
+    return words.map(wordInfo => {
+      const bbox = wordInfo.bbox;
+      
+      return {
+        word: wordInfo.word,
+        originalBbox: bbox,
+        extendedBbox: {
+          x0: Math.max(0, bbox.x0 - extensionPadding),
+          y0: Math.max(0, bbox.y0 - extensionPadding),
+          x1: Math.min(imageInfo.width || bbox.x1 + extensionPadding, bbox.x1 + extensionPadding),
+          y1: Math.min(imageInfo.height || bbox.y1 + extensionPadding, bbox.y1 + extensionPadding)
+        },
+        action: wordInfo.recommendedAction
+      };
+    });
+  }
+
+  /**
+   * ⚙️ CONFIGURAR DETECTOR DE BORDES
+   * @param {Object} config - Configuración del detector
+   */
+  configureEdgeDetection(config = {}) {
+    this.edgeDetectionEnabled = config.enabled ?? true;
+    this.edgeThreshold = config.edgeThreshold ?? 50;
+    this.confidenceThreshold = config.confidenceThreshold ?? 60;
+    
+    console.log(`🔧 Detector de bordes configurado: ${this.edgeDetectionEnabled ? 'Activo' : 'Inactivo'}, Umbral: ${this.edgeThreshold}px, Confianza: ${this.confidenceThreshold}%`);
   }
 }
 

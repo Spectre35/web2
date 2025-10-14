@@ -10,6 +10,7 @@ import ImageProcessor from '../services/imageProcessor.js';
 import { getWorkerPool } from '../services/workerPool.js';
 import DatabaseService from '../services/databaseService.js';
 import BatchProcessor from '../services/batchProcessor.js';
+import ProcessingProgressTracker from '../services/processingProgressTracker.js';
 
 const databaseService = new DatabaseService();
 const batchProcessor = new BatchProcessor();
@@ -19,6 +20,38 @@ const __dirname = dirname(__filename);
 const router = express.Router();
 const classifier = new DocumentClassifier();
 let imageProcessor = null;
+
+// 📊 Inicializar el tracker de progreso
+let progressTracker = null;
+
+// Función para establecer el tracker de progreso (se llama desde server.js)
+export const setProgressTracker = (tracker) => {
+    progressTracker = tracker;
+    console.log('📊 ProgressTracker establecido en ocrRoutes.js');
+};
+
+// 🧹 Función utilitaria para limpiar archivos después de procesamiento exitoso
+const cleanupFiles = async (filePaths, source = 'unknown') => {
+    const cleaned = [];
+    const errors = [];
+    
+    for (const filePath of filePaths) {
+        try {
+            if (fs.existsSync(filePath)) {
+                await fs.promises.unlink(filePath);
+                cleaned.push(filePath);
+                console.log(`🗑️  [${source}] Archivo eliminado exitosamente: ${path.basename(filePath)}`);
+            } else {
+                console.log(`⚠️  [${source}] Archivo no encontrado para eliminar: ${path.basename(filePath)}`);
+            }
+        } catch (error) {
+            console.error(`❌ [${source}] Error eliminando archivo ${path.basename(filePath)}:`, error.message);
+            errors.push({ file: filePath, error: error.message });
+        }
+    }
+    
+    return { cleaned, errors };
+};
 
 // Inicializar el procesador de imágenes
 const initImageProcessor = async () => {
@@ -36,19 +69,41 @@ const initImageProcessor = async () => {
     }
 };
 
-// Configuración de Tesseract optimizada para documentos de Europiel
+// 🎯 CONFIGURACIÓN INTELIGENTE Y ADAPTATIVA DE TESSERACT 
 const tesseractConfig = {
-    tessedit_pageseg_mode: 6, // Un bloque uniforme de texto - mejor para documentos
-    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,;:!?()-"\'áéíóúüñÁÉÍÓÚÜÑ/$',
+    // Segmentación de página - optimizada para recibos
+    tessedit_pageseg_mode: 6, // Bloque uniforme de texto (funciona bien)
+    
+    // Lista de caracteres completa y específica para recibos mexicanos
+    tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789 .,;:!?()-"\'áéíóúüñÁÉÍÓÚÜÑ/$%#',
+    
+    // Configuraciones optimizadas para texto de recibos
     preserve_interword_spaces: 1,
     tessedit_create_hocr: 0,
     tessedit_create_tsv: 0,
+    
+    // Diccionarios activados para mejor reconocimiento
     load_system_dawg: 1,
-    load_freq_dawg: 1,
+    load_freq_dawg: 1, 
     load_unambig_dawg: 1,
     load_punc_dawg: 1,
     load_number_dawg: 1,
-    load_bigram_dawg: 1
+    load_bigram_dawg: 1,
+    
+    // Motor OCR híbrido para mejor precisión
+    tessedit_ocr_engine_mode: 3, // Legacy + LSTM (el más confiable)
+    
+    // Configuraciones específicas para mejorar la detección de texto corrupto
+    tessedit_adapt_to_char_wh: 1, // Adaptar al ancho/alto de caracteres
+    tessedit_good_quality_unrej: 1, // Rechazar menos caracteres de buena calidad
+    
+    // Mejoras para texto de baja calidad (como el recibo 1)
+    textord_min_linesize: 1.25, // Tamaño mínimo de línea más flexible
+    textord_excess_blobsize: 1.3, // Más tolerancia para blobs de texto
+    
+    // Configuración de confianza más flexible
+    tessedit_reject_mode: 0, // No rechazar automáticamente
+    tessedit_zero_rejection: 1 // Aceptar más texto de baja confianza
 };
 
 // Pool de workers de Tesseract
@@ -125,6 +180,11 @@ const uploadMultiple = multer({
  */
 router.post("/upload", upload.single("file"), async (req, res) => {
     console.log('🔴 [INDIVIDUAL] Endpoint /upload llamado');
+    
+    // Obtener instancias del sistema de progreso
+    const progressTracker = req.app.get('progressTracker');
+    const io = req.app.get('io');
+    
     // Configurar timeout de 5 minutos para la solicitud
     req.setTimeout(300000, () => {
         console.error('⏰ Timeout de solicitud OCR');
@@ -142,10 +202,14 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         }
 
         // Validar parámetros requeridos
-        const { sucursal, bloque, caja } = req.body;
+        const { sucursal, bloque, caja, sessionId } = req.body;
         if (!sucursal || !bloque || !caja) {
             throw new Error("Faltan parámetros requeridos (sucursal, bloque, caja)");
         }
+
+        // Crear sesión de progreso para archivo individual
+        const currentSessionId = sessionId || `single_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        progressTracker.startSession(currentSessionId, 1, [req.file.size]);
 
         console.log("📄 Archivo recibido:", {
             name: req.file.originalname,
@@ -155,6 +219,14 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             bloque,
             caja
         });
+
+        // 🔍 LOG DETALLADO: Información completa del archivo
+        console.log(`📊 === INICIO PROCESAMIENTO OCR COMPLETO ===`);
+        console.log(`📁 Archivo original: ${req.file.originalname}`);
+        console.log(`💾 Tamaño: ${(req.file.size / 1024).toFixed(2)} KB`);
+        console.log(`🎭 Tipo MIME: ${req.file.mimetype}`);
+        console.log(`📍 Ruta temporal: ${req.file.path}`);
+        console.log(`⚙️ Configuración: Sucursal=${sucursal}, Bloque=${bloque}, Caja=${caja}`);
 
         // Obtener el pool de workers
         const workerPool = getWorkerPool();
@@ -175,6 +247,12 @@ router.post("/upload", upload.single("file"), async (req, res) => {
         console.log("🔍 Iniciando procesamiento OCR del archivo:", req.file.originalname);
         const startTime = Date.now();
 
+        // 📊 Actualizar progreso: Inicio de preprocesamiento
+        progressTracker.updateStageProgress(currentSessionId, 'upload', 0, {
+            fileName: req.file.originalname,
+            stageStartTime: startTime
+        });
+
         try {
             // Inicializar imageProcessor si no está listo
             if (!imageProcessor) {
@@ -184,6 +262,13 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             } else {
                 console.log(`✅ ImageProcessor ya está disponible`);
             }
+
+            // 📊 Actualizar progreso: Inicio de preprocesamiento
+            const preprocessingStart = Date.now();
+            progressTracker.updateStageProgress(currentSessionId, 'preprocessing', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: preprocessingStart
+            });
 
             console.log(`🔍 Iniciando detección de múltiples recibos para: ${req.file.originalname}`);
 
@@ -248,9 +333,27 @@ router.post("/upload", upload.single("file"), async (req, res) => {
                     console.log(`📄 Procesando recibo ${receipt.index} de ${receipt.total} de la imagen ${req.file.originalname}`);
                     console.log(`📁 Ruta del recibo: ${receipt.path}`);
 
+                    // 📊 Actualizar progreso: Iniciando preprocesamiento de recibo
+                    if (progressTracker) {
+                        progressTracker.updateStageProgress(currentSessionId, 'preprocessing', 0, {
+                            fileName: req.file.originalname,
+                            currentReceipt: receipt.index,
+                            totalReceipts: receipt.total
+                        });
+                    }
+
                     // Pre-procesar imagen para mejor calidad
                     const processedImageResult = await imageProcessor.autoRotateImage(receipt.path);
                     const processedImagePath = processedImageResult.processedPath;
+
+                    // 📊 Actualizar progreso: Preprocesamiento completado, iniciando OCR
+                    if (progressTracker) {
+                        progressTracker.updateStageProgress(currentSessionId, 'ocr', 0, {
+                            fileName: req.file.originalname,
+                            currentReceipt: receipt.index,
+                            totalReceipts: receipt.total
+                        });
+                    }
 
                     // Validar archivo procesado
                     const processedStats = fs.statSync(processedImagePath);
@@ -262,6 +365,17 @@ router.post("/upload", upload.single("file"), async (req, res) => {
                     const workerPool = getWorkerPool();
                     const { data } = await workerPool.processImage(processedImagePath, tesseractConfig);
 
+                    // 🔍 LOG DETALLADO: Texto extraído por OCR
+                    console.log('\n🔥🔥🔥 ANGEL - AQUÍ ESTÁ TODO LO QUE LEYÓ EL OCR 🔥🔥🔥');
+                    console.log(`📝 ════════ TEXTO EXTRAÍDO POR OCR (Recibo ${receipt.index}) ════════`);
+                    console.log(`📊 Confianza OCR: ${data.confidence || 'N/A'}%`);
+                    console.log(`📄 Longitud del texto: ${data.text ? data.text.length : 0} caracteres`);
+                    console.log(`� TEXTO COMPLETO QUE ESCANEÓ:`);
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.log(data.text);
+                    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+                    console.log(`📝 ════════ FIN TEXTO OCR (Recibo ${receipt.index}) ════════\n`);
+
                     if (!data || !data.text) {
                         console.warn(`⚠️ Error en OCR del recibo ${receipt.index}: no se pudo extraer texto`);
                         continue;
@@ -269,6 +383,23 @@ router.post("/upload", upload.single("file"), async (req, res) => {
 
                     // Clasificar documento y extraer campos
                     const classification = classifier.classifyDocument(data.text);
+
+                    // 📊 Actualizar progreso: Clasificación completada, iniciando extracción
+                    if (progressTracker) {
+                        const classificationProgress = Math.floor(((receipt.index) / receipt.total) * 70); // 70% para clasificación
+                        progressTracker.updateStageProgress(currentSessionId, 'classification', classificationProgress, {
+                            fileName: req.file.originalname,
+                            currentReceipt: receipt.index,
+                            totalReceipts: receipt.total,
+                            documentType: classification.documentType
+                        });
+                        
+                        progressTracker.updateStageProgress(currentSessionId, 'extraction', 0, {
+                            fileName: req.file.originalname,
+                            currentReceipt: receipt.index,
+                            totalReceipts: receipt.total
+                        });
+                    }
 
                     // Usar los campos ya extraídos automáticamente por classifyDocument
                     const extractedFields = classification.extractedFields || {};
@@ -326,6 +457,20 @@ router.post("/upload", upload.single("file"), async (req, res) => {
                 console.log(`\n✨ OCR de múltiples recibos completado en ${processingTime}ms`);
                 console.log(`📊 Total de recibos procesados: ${allResults.length}`);
 
+                // 📊 Actualizar progreso: Completar todas las etapas
+                if (progressTracker) {
+                    progressTracker.updateStageProgress(currentSessionId, 'extraction', 100, {
+                        fileName: req.file.originalname,
+                        totalReceipts: allResults.length
+                    });
+                    progressTracker.updateStageProgress(currentSessionId, 'validation', 100, {
+                        fileName: req.file.originalname,
+                        totalReceipts: allResults.length
+                    });
+                    progressTracker.completeFile(currentSessionId, 0, processingTime, true);
+                    progressTracker.completeSession(currentSessionId);
+                }
+
                 // Limpiar workers pool para evitar problemas en el siguiente lote
                 try {
                     const workerPool = getWorkerPool();
@@ -350,7 +495,23 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             console.log(`📄 Procesando como documento único: ${req.file.originalname}`);
 
             // Usar la ruta correcta según si es contrato (original) o recibo dividido
-            const imagePath = detectedReceipts[0].path;
+            const imagePath = detectedReceipts[0].path || req.file.path;
+            console.log(`📍 Ruta de imagen a procesar: ${imagePath}`);
+            
+            if (!imagePath) {
+                throw new Error('No se pudo determinar la ruta de la imagen a procesar');
+            }
+
+            // 📊 Actualizar progreso: Inicio de OCR
+            const ocrStart = Date.now();
+            progressTracker.updateStageProgress(currentSessionId, 'preprocessing', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: preprocessingStart
+            });
+            progressTracker.updateStageProgress(currentSessionId, 'ocr', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: ocrStart
+            });
 
             // Pre-procesar imagen para mejor calidad
             const processedImageResult = await imageProcessor.autoRotateImage(imagePath);
@@ -365,6 +526,28 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             // Obtener worker disponible del pool
             const workerPool = getWorkerPool();
             const { data } = await workerPool.processImage(processedImagePath, tesseractConfig);
+
+            // 📊 Actualizar progreso: OCR completado, inicio de clasificación
+            const classificationStart = Date.now();
+            progressTracker.updateStageProgress(currentSessionId, 'ocr', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: ocrStart
+            });
+            progressTracker.updateStageProgress(currentSessionId, 'classification', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: classificationStart
+            });
+
+            // 🔍 LOG DETALLADO: Texto extraído por OCR (documento único)
+            console.log('\n🔥🔥🔥 ANGEL - AQUÍ ESTÁ TODO LO QUE LEYÓ EL OCR 🔥🔥🔥');
+            console.log(`📝 ════════ TEXTO EXTRAÍDO POR OCR (DOCUMENTO ÚNICO) ════════`);
+            console.log(`📊 Confianza OCR: ${data.confidence || 'N/A'}%`);
+            console.log(`📄 Longitud del texto: ${data.text ? data.text.length : 0} caracteres`);
+            console.log(`� TEXTO COMPLETO QUE ESCANEÓ:`);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log(data.text);
+            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+            console.log(`📝 ════════ FIN TEXTO OCR (DOCUMENTO ÚNICO) ════════\n`);
 
             if (!data || !data.text) {
                 throw new Error("Error en OCR: no se pudo extraer texto de la imagen");
@@ -392,6 +575,28 @@ router.post("/upload", upload.single("file"), async (req, res) => {
             // Usar los campos extraídos automáticamente por classifyDocument
             const extractedFields = classification.extractedFields || {};
 
+            // 📊 Actualizar progreso: Clasificación completada, inicio de extracción
+            const extractionStart = Date.now();
+            progressTracker.updateStageProgress(currentSessionId, 'classification', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: classificationStart
+            });
+            progressTracker.updateStageProgress(currentSessionId, 'extraction', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: extractionStart
+            });
+
+            // 📊 Actualizar progreso: Extracción completada, inicio de validación
+            const validationStart = Date.now();
+            progressTracker.updateStageProgress(currentSessionId, 'extraction', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: extractionStart
+            });
+            progressTracker.updateStageProgress(currentSessionId, 'validation', 0, {
+                fileName: req.file.originalname,
+                stageStartTime: validationStart
+            });
+
             // Preparar respuesta para mostrar modal de validación en frontend
                         // Normalizar campos esperados por el frontend
                         const camposEsperados = [
@@ -416,14 +621,46 @@ router.post("/upload", upload.single("file"), async (req, res) => {
                 success: true,
                 needsValidation: true,
                 validationData,
-                processingTime
+                processingTime,
+                // 🔍 INFORMACIÓN COMPLETA PARA LOGS EN EL FRONTEND
+                debugInfo: {
+                    originalText: data.text,
+                    ocrConfidence: data.confidence,
+                    textLength: data.text ? data.text.length : 0,
+                    documentType: classification.type,
+                    classificationConfidence: classification.confidence,
+                    extractedFields: extractedFields,
+                    processingSteps: [
+                        `📄 Archivo procesado: ${req.file.originalname}`,
+                        `🔍 Texto extraído: ${data.text ? data.text.length : 0} caracteres`,
+                        `📊 Confianza OCR: ${data.confidence || 'N/A'}`,
+                        `📋 Tipo detectado: ${classification.type}`,
+                        `⚡ Tiempo de procesamiento: ${processingTime}ms`,
+                        `✅ Campos extraídos: ${Object.keys(extractedFields).join(', ')}`
+                    ]
+                }
             };
+
+            // 📊 Finalizar progreso: Archivo completamente procesado
+            if (progressTracker) {
+                progressTracker.updateStageProgress(currentSessionId, 'validation', 100, {
+                    fileName: req.file.originalname,
+                    stageStartTime: validationStart
+                });
+                progressTracker.completeFile(currentSessionId, 0, processingTime, true);
+                progressTracker.completeSession(currentSessionId);
+            }
 
             console.log("✅ Documento procesado (SOLO extracción, sin guardar en BD):", {
                 tipo: classification.type,
                 confianza: data.confidence,
-                campos: Object.keys(extractedFields)
+                campos: Object.keys(extractedFields),
+                sessionId: currentSessionId
             });
+
+            // Agregar información de sesión a la respuesta
+            response.sessionId = currentSessionId;
+            response.progressStats = progressTracker.getProgressStats(currentSessionId);
 
             res.json(response);
 
@@ -447,6 +684,11 @@ router.post("/upload", upload.single("file"), async (req, res) => {
  */
 router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res) => {
     console.log('🔵 [BATCH] Endpoint /batch-upload llamado');
+    
+    // Obtener instancias del sistema de progreso
+    const progressTracker = req.app.get('progressTracker');
+    const io = req.app.get('io');
+    
     // Configurar timeout de 10 minutos para lotes
     req.setTimeout(600000, () => {
         console.error('⏰ Timeout de lote OCR');
@@ -464,10 +706,15 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
         }
 
         // Validar parámetros requeridos
-        const { sucursal, bloque, caja } = req.body;
+        const { sucursal, bloque, caja, sessionId } = req.body;
         if (!sucursal || !bloque || !caja) {
             throw new Error("Faltan parámetros requeridos (sucursal, bloque, caja)");
         }
+
+        // Crear sesión de progreso para lote
+        const currentSessionId = sessionId || `batch_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const fileSizes = req.files.map(file => file.size);
+        progressTracker.startSession(currentSessionId, req.files.length, fileSizes);
 
         console.log(`📚 Iniciando procesamiento de lote con ${req.files.length} archivos`);
         const batchStartTime = Date.now();
@@ -488,8 +735,18 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
             }
         }
 
-        // Procesar archivos en paralelo con manejo de errores individual
-        const results = await Promise.all(req.files.map(async file => {
+        // Procesar archivos secuencialmente para mejor seguimiento de progreso
+        const results = [];
+        for (let fileIndex = 0; fileIndex < req.files.length; fileIndex++) {
+            const file = req.files[fileIndex];
+            const fileStartTime = Date.now();
+            
+            // 📊 Actualizar progreso: Inicio de archivo
+            progressTracker.updateStageProgress(currentSessionId, 'upload', fileIndex, {
+                fileName: file.originalname,
+                stageStartTime: fileStartTime
+            });
+
             try {
                 if (!imageProcessor) {
                     console.log(`🔧 ImageProcessor es null, inicializando...`);
@@ -531,13 +788,25 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
                 });
 
                 if (detectedReceipts.length > 1) {
-                    console.log(`� MÚLTIPLES RECIBOS DETECTADOS: ${detectedReceipts.length} recibos en ${file.originalname}`);
+                    console.log(`🔍 MÚLTIPLES RECIBOS DETECTADOS: ${detectedReceipts.length} recibos en ${file.originalname}`);
+
+                    // 📊 Actualizar progreso: Inicio de procesamiento de múltiples recibos
+                    progressTracker.updateStageProgress(currentSessionId, 'preprocessing', fileIndex, {
+                        fileName: file.originalname,
+                        message: `Procesando ${detectedReceipts.length} recibos encontrados`
+                    });
 
                     // Procesar cada recibo individualmente
                     const receiptResults = await Promise.all(detectedReceipts.map(async (receipt, index) => {
                         try {
                             console.log(`📄 Procesando recibo ${index + 1} de ${detectedReceipts.length} de la imagen ${file.originalname}`);
                             console.log(`📁 Ruta del recibo: ${receipt.path}`);
+
+                            // 📊 Actualizar progreso para múltiples recibos: OCR
+                            progressTracker.updateStageProgress(currentSessionId, 'ocr', fileIndex, {
+                                fileName: `${file.originalname} (recibo ${index + 1}/${detectedReceipts.length})`,
+                                message: `Procesando recibo ${index + 1} de ${detectedReceipts.length}`
+                            });
 
                             const result = await workerPool.processImage(receipt.path, {
                                 tessedit_pageseg_mode: 6,
@@ -551,8 +820,20 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
 
                             console.log(`📝 Texto extraído del recibo ${index + 1} (${result.data.text.length} caracteres)`);
 
+                            // 📊 Actualizar progreso: Classification para múltiples recibos
+                            progressTracker.updateStageProgress(currentSessionId, 'classification', fileIndex, {
+                                fileName: `${file.originalname} (recibo ${index + 1}/${detectedReceipts.length})`,
+                                message: `Clasificando recibo ${index + 1} de ${detectedReceipts.length}`
+                            });
+
                             const classification = classifier.classifyDocument(result.data.text);
                             const extractedFields = classification.extractedFields || {};
+
+                            // 📊 Actualizar progreso: Extraction para múltiples recibos
+                            progressTracker.updateStageProgress(currentSessionId, 'extraction', fileIndex, {
+                                fileName: `${file.originalname} (recibo ${index + 1}/${detectedReceipts.length})`,
+                                message: `Extrayendo campos del recibo ${index + 1}`
+                            });
 
                             console.log(`✅ Campos extraídos del recibo ${index + 1}:`, {
                                 cliente: extractedFields.cliente,
@@ -566,6 +847,12 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
                             if (!extractedFields.fecha_contrato) missingFields.push('Fecha no detectada');
 
                             if (missingFields.length > 0) {
+                                // 📊 Actualizar progreso: Recibo con campos faltantes
+                                progressTracker.updateStageProgress(currentSessionId, 'validation', fileIndex, {
+                                    fileName: `${file.originalname} (recibo ${index + 1}/${detectedReceipts.length})`,
+                                    message: `Recibo ${index + 1} - Requiere revisión manual`
+                                });
+
                                 return {
                                     success: true,
                                     fileUrl: `/uploads/${path.basename(receipt.path)}`,
@@ -591,6 +878,12 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
                                     needsReview: true
                                 };
                             }
+
+                            // 📊 Actualizar progreso: Recibo completado exitosamente
+                            progressTracker.updateStageProgress(currentSessionId, 'validation', fileIndex, {
+                                fileName: `${file.originalname} (recibo ${index + 1}/${detectedReceipts.length})`,
+                                message: `Recibo ${index + 1} de ${detectedReceipts.length} completado exitosamente`
+                            });
 
                             return {
                                 success: true,
@@ -626,12 +919,31 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
                     }));
 
                     // Aplanar el array de resultados para que sea consistente con el formato esperado
-                    return receiptResults;
+                    const multipleReceiptsResult = receiptResults;
+                    
+                    // 📊 Marcar archivo como completado después de procesar todos los recibos
+                    const fileProcessingTime = Date.now() - fileStartTime;
+                    progressTracker.completeFile(currentSessionId, fileIndex, fileProcessingTime, true);
+                    
+                    results.push(multipleReceiptsResult);
+                    continue; // Saltar al siguiente archivo
                 }
 
                 // Si es una sola imagen
                 // Usar el path original del archivo para una sola imagen
                 const processedImagePath = file.path;
+
+                // 📊 Actualizar progreso: Preprocessing
+                progressTracker.updateStageProgress(currentSessionId, 'preprocessing', fileIndex, {
+                    fileName: file.originalname,
+                    message: 'Preparando imagen para OCR'
+                });
+
+                // 📊 Actualizar progreso: OCR
+                progressTracker.updateStageProgress(currentSessionId, 'ocr', fileIndex, {
+                    fileName: file.originalname,
+                    message: 'Extrayendo texto de la imagen'
+                });
 
                 const result = await workerPool.processImage(processedImagePath, {
                     tessedit_pageseg_mode: 6,
@@ -643,9 +955,27 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
                     throw new Error('Error en el procesamiento OCR: no hay resultados');
                 }
 
+                // 📊 Actualizar progreso: Classification
+                progressTracker.updateStageProgress(currentSessionId, 'classification', fileIndex, {
+                    fileName: file.originalname,
+                    message: 'Clasificando tipo de documento'
+                });
+
                 // Clasificar el documento usando solo classifyDocument (ya extrae campos automáticamente)
                 const classification = classifier.classifyDocument(result.data.text);
                 const extractedFields = classification.extractedFields || {};
+
+                // 📊 Actualizar progreso: Extraction
+                progressTracker.updateStageProgress(currentSessionId, 'extraction', fileIndex, {
+                    fileName: file.originalname,
+                    message: 'Extrayendo campos específicos'
+                });
+
+                // 📊 Actualizar progreso: Validation
+                progressTracker.updateStageProgress(currentSessionId, 'validation', fileIndex, {
+                    fileName: file.originalname,
+                    message: 'Validando datos extraídos'
+                });
 
                 // Preparar los resultados finales
                 const ocrResults = {
@@ -655,7 +985,7 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
                     text: result.data.text
                 };
 
-                return {
+                const fileResult = {
                     success: true,
                     fileUrl: `/uploads/${path.basename(file.path)}`,
                     originalName: file.originalname,
@@ -669,15 +999,35 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
                     },
                     ocrResults
                 };
+
+                // 📊 Marcar archivo como completado
+                const fileProcessingTime = Date.now() - fileStartTime;
+                progressTracker.completeFile(currentSessionId, fileIndex, fileProcessingTime, true);
+                
+                results.push(fileResult);
+                
             } catch (error) {
                 console.error(`❌ Error procesando archivo ${file.originalname}:`, error);
-                return {
+                
+                // 📊 Marcar archivo como fallido
+                const fileProcessingTime = Date.now() - fileStartTime;
+                progressTracker.updateStageProgress(currentSessionId, 'validation', fileIndex, {
+                    fileName: file.originalname,
+                    error: error
+                });
+                progressTracker.completeFile(currentSessionId, fileIndex, fileProcessingTime, false);
+                
+                const errorResult = {
                     success: false,
                     originalName: file.originalname,
                     error: error.message
                 };
+                results.push(errorResult);
             }
-        }));
+        }
+
+        // 📊 Finalizar sesión de progreso
+        progressTracker.completeSession(currentSessionId);
 
         // Aplanar los resultados si hay múltiples recibos por imagen
         const flattenedResults = results.flatMap(result => {
@@ -718,7 +1068,9 @@ router.post("/batch-upload", uploadMultiple.array("files", 200), async (req, res
             totalReceipts: flattenedResults.length,
             successfulReceipts: totalSuccessful,
             failedReceipts: flattenedResults.length - totalSuccessful,
-            failedReceiptNames: failedFiles
+            failedReceiptNames: failedFiles,
+            sessionId: currentSessionId,
+            progressStats: progressTracker.getProgressStats(currentSessionId)
         });
 
     } catch (error) {
@@ -782,13 +1134,37 @@ router.post('/confirm-batch', async (req, res) => {
             }
         }
 
+        // 🧹 Limpiar archivos después de guardado exitoso
+        let cleanupResults = { cleaned: [], errors: [] };
+        if (savedRecords.length > 0) {
+            try {
+                // Extraer rutas de archivos de los registros guardados exitosamente
+                const filesToClean = savedRecords
+                    .filter(record => record.originalFileName)
+                    .map(record => path.join(__dirname, '../../uploads', record.originalFileName))
+                    .filter(filePath => fs.existsSync(filePath));
+                
+                if (filesToClean.length > 0) {
+                    cleanupResults = await cleanupFiles(filesToClean, 'CONFIRM-BATCH');
+                    console.log(`🧹 [CONFIRM-BATCH] Limpieza completada: ${cleanupResults.cleaned.length}/${filesToClean.length} archivos eliminados`);
+                }
+            } catch (cleanupError) {
+                console.error('❌ [CONFIRM-BATCH] Error en limpieza automática:', cleanupError.message);
+            }
+        }
+
         return res.json({
             success: true,
             message: `Guardado completado: ${savedRecords.length}/${validatedData.length} registros exitosos`,
             savedCount: savedRecords.length,
             errorCount: errorRecords.length,
             savedRecords: savedRecords,
-            errorRecords: errorRecords
+            errorRecords: errorRecords,
+            cleanup: {
+                filesDeleted: cleanupResults.cleaned.length,
+                deletionErrors: cleanupResults.errors.length,
+                details: cleanupResults
+            }
         });
 
     } catch (error) {
@@ -831,6 +1207,160 @@ router.get('/documents', async (req, res) => {
       message: error.message
     });
   }
+});
+
+// 🧹 Endpoint para limpieza manual de uploads
+router.delete('/cleanup/uploads', async (req, res) => {
+    try {
+        const uploadsDir = path.join(__dirname, '../../uploads');
+        
+        if (!fs.existsSync(uploadsDir)) {
+            return res.json({
+                success: true,
+                message: 'Directorio uploads no encontrado',
+                filesDeleted: 0
+            });
+        }
+
+        const files = fs.readdirSync(uploadsDir);
+        const filePaths = files.map(file => path.join(uploadsDir, file));
+        
+        const cleanupResults = await cleanupFiles(filePaths, 'MANUAL-CLEANUP');
+        
+        res.json({
+            success: true,
+            message: `Limpieza manual completada: ${cleanupResults.cleaned.length}/${files.length} archivos eliminados`,
+            filesDeleted: cleanupResults.cleaned.length,
+            totalFiles: files.length,
+            errors: cleanupResults.errors
+        });
+        
+    } catch (error) {
+        console.error('❌ Error en limpieza manual:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 📊 Endpoint para estadísticas de uploads
+router.get('/uploads/stats', async (req, res) => {
+    try {
+        const uploadsDir = path.join(__dirname, '../../uploads');
+        
+        if (!fs.existsSync(uploadsDir)) {
+            return res.json({
+                success: true,
+                totalFiles: 0,
+                totalSize: 0,
+                totalSizeMB: 0,
+                files: []
+            });
+        }
+
+        const files = fs.readdirSync(uploadsDir);
+        let totalSize = 0;
+        const fileStats = [];
+
+        for (const file of files) {
+            const filePath = path.join(uploadsDir, file);
+            try {
+                const stats = fs.statSync(filePath);
+                const sizeBytes = stats.size;
+                totalSize += sizeBytes;
+                
+                fileStats.push({
+                    name: file,
+                    size: sizeBytes,
+                    sizeMB: (sizeBytes / (1024 * 1024)).toFixed(2),
+                    created: stats.birthtime,
+                    modified: stats.mtime
+                });
+            } catch (error) {
+                console.error(`Error obteniendo stats de ${file}:`, error.message);
+            }
+        }
+
+        // Ordenar por tamaño descendente
+        fileStats.sort((a, b) => b.size - a.size);
+
+        res.json({
+            success: true,
+            totalFiles: files.length,
+            totalSize: totalSize,
+            totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2),
+            files: fileStats
+        });
+        
+    } catch (error) {
+        console.error('❌ Error obteniendo estadísticas:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 📜 Sistema de logs en memoria para debugging
+let recentLogs = [];
+const MAX_LOGS = 100;
+
+// Interceptar console.log para capturar logs
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+    // Agregar al array de logs recientes
+    const logEntry = {
+        timestamp: new Date().toISOString(),
+        message: args.map(arg => typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)).join(' '),
+        type: 'info'
+    };
+    
+    recentLogs.unshift(logEntry);
+    
+    // Mantener solo los últimos MAX_LOGS
+    if (recentLogs.length > MAX_LOGS) {
+        recentLogs = recentLogs.slice(0, MAX_LOGS);
+    }
+    
+    // Llamar al console.log original
+    originalConsoleLog.apply(console, args);
+};
+
+// 📜 Endpoint para obtener logs recientes
+router.get('/debug/logs', (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 50;
+        const logsToReturn = recentLogs.slice(0, limit);
+        
+        res.json({
+            success: true,
+            logs: logsToReturn,
+            totalLogs: recentLogs.length,
+            maxLogs: MAX_LOGS
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 📜 Endpoint para limpiar logs
+router.post('/debug/logs/clear', (req, res) => {
+    try {
+        recentLogs = [];
+        res.json({
+            success: true,
+            message: 'Logs limpiados exitosamente'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
 });
 
 // Inicializar servicios al arrancar

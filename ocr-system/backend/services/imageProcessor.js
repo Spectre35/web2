@@ -38,6 +38,103 @@ class ImageProcessor {
   }
 
   /**
+   * 🚀 Preprocesamiento específico para recibos - Optimiza la imagen para máxima legibilidad OCR
+   * @param {Buffer|string} input - Buffer de imagen o ruta de archivo
+   * @returns {Promise<Buffer>} - Buffer de imagen optimizada
+   */
+  async optimizeForReceipts(input) {
+    try {
+      console.log('🔧 Aplicando optimización específica para recibos...');
+
+      let imageBuffer;
+      if (typeof input === 'string') {
+        imageBuffer = await fs.readFile(input);
+      } else {
+        imageBuffer = input;
+      }
+
+      // 📊 Análisis inicial de la imagen
+      const metadata = await sharp(imageBuffer).metadata();
+      console.log(`📊 Imagen original: ${metadata.width}x${metadata.height}, formato: ${metadata.format}`);
+
+      // 🎯 FASE 1: Escalado inteligente basado en el contenido
+      const targetHeight = Math.min(Math.max(metadata.height, 2000), 3000); // Entre 2000-3000px
+      const scaleFactor = targetHeight / metadata.height;
+      
+      let optimizedBuffer = await sharp(imageBuffer)
+        .resize({
+          height: targetHeight,
+          width: Math.round(metadata.width * scaleFactor),
+          kernel: sharp.kernel.lanczos3,
+          fit: 'fill'
+        })
+        // Convertir a escala de grises de inmediato para mejor procesamiento
+        .greyscale()
+        // Normalizar el rango dinámico
+        .normalize()
+        .toBuffer();
+
+      // 🎯 FASE 2: Corrección de iluminación y contraste adaptativo
+      const stats = await sharp(optimizedBuffer).stats();
+      const avgBrightness = (stats.channels[0].mean / 255);
+      
+      // Ajustar gamma según el brillo promedio (rango válido: 1.0-3.0)
+      let gamma = 1.0;
+      if (avgBrightness < 0.4) gamma = 1.4; // Imagen muy oscura
+      else if (avgBrightness > 0.7) gamma = 1.1; // Imagen muy clara (corregido: era 0.8)
+      else gamma = 1.2; // Imagen normal
+
+      optimizedBuffer = await sharp(optimizedBuffer)
+        .gamma(gamma)
+        .linear(1.3, -15) // Aumentar contraste, reducir offset
+        .toBuffer();
+
+      // 🎯 FASE 3: Filtrado de ruido manteniendo los bordes del texto
+      optimizedBuffer = await sharp(optimizedBuffer)
+        .blur(0.5) // Blur muy sutil para reducir ruido de alta frecuencia
+        .sharpen({ // Re-enfocar con parámetros específicos para texto
+          sigma: 0.8,
+          flat: 1.0,
+          jagged: 1.5
+        })
+        .toBuffer();
+
+      // 🎯 FASE 4: Binarización adaptativa para texto claro
+      const finalBuffer = await sharp(optimizedBuffer)
+        .threshold(125, { // Umbral optimizado para recibos
+          grayscale: false,
+          greyscale: false
+        })
+        // Aplicar morfología para limpiar el texto
+        .convolve({ // Kernel para limpiar bordes
+          width: 3,
+          height: 3,
+          kernel: [
+            -1, -1, -1,
+            -1,  9, -1,
+            -1, -1, -1
+          ]
+        })
+        .png() // Formato sin compresión
+        .toBuffer();
+
+      console.log('✅ Optimización específica para recibos completada');
+      return finalBuffer;
+
+    } catch (error) {
+      console.error('❌ Error en optimización para recibos:', error.message);
+      // Fallback a procesamiento básico
+      return await sharp(input)
+        .greyscale()
+        .normalize()
+        .sharpen()
+        .threshold(128)
+        .png()
+        .toBuffer();
+    }
+  }
+
+  /**
    * Detecta y separa múltiples recibos usando análisis simple de dimensiones
    * @param {string} imagePath - Ruta de la imagen original
    * @returns {Promise<Array>} Array de objetos con las rutas de los recibos detectados
@@ -57,59 +154,75 @@ class ImageProcessor {
       console.log(`📏 PROPORCIÓN ALTURA/ANCHO: ${aspectRatio.toFixed(2)}`);
       console.log(`🎯 UMBRAL DE DETECCIÓN: 1.25 (actual: ${aspectRatio.toFixed(2)})`);
 
-      // Si la proporción indica múltiples recibos (altura > 1.25 * ancho)
-      if (aspectRatio > 1.25) {
-        console.log('🔍 DETECTADA IMAGEN CON MÚLTIPLES RECIBOS - DIVIDIENDO...');
-        console.log(`🎯 IMAGEN CALIFICA PARA DIVISIÓN: ${aspectRatio.toFixed(2)} > 1.25`);
-
-        // Calcular punto de división (mitad de la imagen)
-        const halfHeight = Math.floor(metadata.height / 2);
-        const overlap = 50; // Píxeles de superposición para no cortar texto
-
-        console.log(`📏 Dividiendo imagen en altura ${halfHeight} con overlap ${overlap}px`);
+      // 🎯 DETECCIÓN INTELIGENTE: Usar imageSegmentation para determinar número real de recibos
+      console.log('🔍 INICIANDO DETECCIÓN INTELIGENTE DE RECIBOS...');
+      
+      // Importar y usar imageSegmentation
+      const ImageSegmentationModule = await import('./imageSegmentation.js');
+      const ImageSegmentation = ImageSegmentationModule.default;
+      const segmenter = new ImageSegmentation();
+      
+      // Detectar regiones reales de recibos
+      const receiptRegions = await segmenter.detectReceiptRegions(imagePath, metadata.width, metadata.height);
+      
+      console.log(`📊 RESULTADO DETECCIÓN: ${receiptRegions.length} recibo(s) detectado(s)`);
+      
+      if (receiptRegions.length === 1) {
+        console.log('✅ UN SOLO RECIBO DETECTADO - Procesando imagen completa');
+        return [imagePath]; // Devolver imagen original sin dividir
+      }
+      
+      if (receiptRegions.length >= 2) {
+        console.log(`🔍 ${receiptRegions.length} RECIBOS DETECTADOS - DIVIDIENDO INTELIGENTEMENTE...`);
 
         // Generar nombres únicos para cada recibo
         const baseName = imagePath.replace(/\.[^/.]+$/, "");
-        const topReceiptPath = `${baseName}_receipt_1.png`;
-        const bottomReceiptPath = `${baseName}_receipt_2.png`;
+        const receiptPaths = [];
 
-        console.log(`📁 Archivo superior: ${topReceiptPath}`);
-        console.log(`📁 Archivo inferior: ${bottomReceiptPath}`);
+        // Extraer cada región detectada
+        for (let i = 0; i < receiptRegions.length; i++) {
+          const region = receiptRegions[i];
+          const receiptPath = `${baseName}_receipt_${i + 1}.png`;
+          
+          console.log(`📁 Extrayendo recibo ${i + 1}: ${receiptPath}`);
+          console.log(`� Región: x=${region.x}, y=${region.y}, width=${region.width}, height=${region.height}`);
 
-        // Extraer y guardar recibo superior
-        await sharp(imageBuffer)
-          .extract({
-            left: 0,
-            top: 0,
-            width: metadata.width,
-            height: halfHeight + overlap
-          })
-          .png()
-          .toFile(topReceiptPath);
+          await sharp(imageBuffer)
+            .extract({
+              left: region.x,
+              top: region.y,
+              width: region.width,
+              height: region.height
+            })
+            .png()
+            .toFile(receiptPath);
 
-        // Extraer y guardar recibo inferior
-        await sharp(imageBuffer)
-          .extract({
-            left: 0,
-            top: Math.max(0, halfHeight - overlap),
-            width: metadata.width,
-            height: metadata.height - halfHeight + overlap
-          })
-          .png()
-          .toFile(bottomReceiptPath);
+          receiptPaths.push(receiptPath);
+        }
 
-        console.log('✂️ IMAGEN DIVIDIDA EN 2 RECIBOS EXITOSAMENTE');
-        console.log(`🎯 RETORNANDO 2 RECIBOS SEPARADOS`);
-        const result = [
-          { path: topReceiptPath, index: 1, total: 2 },
-          { path: bottomReceiptPath, index: 2, total: 2 }
-        ];
+        console.log(`✂️ IMAGEN DIVIDIDA EN ${receiptRegions.length} RECIBOS EXITOSAMENTE`);
+        console.log(`🎯 RETORNANDO ${receiptRegions.length} RECIBOS SEPARADOS`);
+        
+        // Crear resultado con formato correcto
+        const result = receiptPaths.map((path, index) => ({
+          path: path,
+          index: index + 1,
+          total: receiptPaths.length
+        }));
+        
         console.log(`📋 RESULTADO DE DIVISIÓN:`, result);
         return result;
       }
 
-      console.log('📄 PROCESANDO COMO RECIBO ÚNICO (no cumple criterio de división)');
-      console.log(`🎯 RETORNANDO 1 RECIBO ÚNICO`);
+      // Si no se detectaron múltiples recibos, procesar como único
+      console.log('📄 PROCESANDO COMO RECIBO ÚNICO (detección inteligente confirmó 1 recibo)');
+      console.log(`🎯 RETORNANDO 1 RECIBO ÚNICO con path: ${imagePath}`);
+      
+      // Asegurar que imagePath existe y es válido
+      if (!imagePath) {
+        throw new Error('imagePath es undefined en detectAndSeparateReceipts');
+      }
+      
       const result = [{ path: imagePath, index: 1, total: 1 }];
       console.log(`📋 RESULTADO ÚNICO:`, result);
       return result;
@@ -118,6 +231,13 @@ class ImageProcessor {
       console.error('❌ ERROR DETECTANDO MÚLTIPLES RECIBOS:', error);
       console.error('❌ STACK TRACE:', error.stack);
       console.log('🔄 FALLBACK: Retornando imagen original como recibo único');
+      console.log(`🔄 FALLBACK path: ${imagePath}`);
+      
+      // Asegurar que imagePath existe y es válido
+      if (!imagePath) {
+        throw new Error('imagePath es undefined en detectAndSeparateReceipts fallback');
+      }
+      
       // En caso de error, devolver la imagen original
       return [{ path: imagePath, index: 1, total: 1 }];
     }
@@ -251,13 +371,44 @@ class ImageProcessor {
       // Limpiar memoria de OpenCV
       mat.delete();
 
-      // Preparación final de la imagen para OCR
-      const finalBuffer = await sharp(currentBuffer)
-        .normalize() // Normalizar contraste
-        .sharpen() // Mejorar nitidez
-        .threshold(128) // Binarización adaptativa
-        .png() // Convertir a PNG para mejor compatibilidad
-        .toBuffer();
+      // 🎯 PREPROCESAMIENTO INTELIGENTE Y ADAPTATIVO PARA OCR
+      console.log('🔧 Aplicando preprocesamiento inteligente adaptado a la imagen...');
+      
+      // Análizar la imagen actual para determinar el mejor preprocesamiento
+      const currentMetadata = await sharp(currentBuffer).metadata();
+      console.log(`📐 Analizando imagen: ${currentMetadata.width}x${currentMetadata.height}, densidad: ${currentMetadata.density || 'N/A'}`);
+      
+      // Calcular el factor de escala óptimo basado en el contenido
+      const targetHeight = this.calculateOptimalHeight(currentMetadata);
+      console.log(`🎯 Altura objetivo calculada: ${targetHeight}px`);
+      
+      // Aplicar preprocesamiento adaptativo según las características de la imagen
+      let sharpInstance = sharp(currentBuffer);
+      
+      // 1. Redimensionado inteligente 
+      sharpInstance = sharpInstance.resize(null, targetHeight, {
+        fit: 'inside',
+        withoutEnlargement: false,
+        kernel: sharp.kernel.lanczos3 // Mejor calidad para texto
+      });
+      
+      // 2. Conversión a escala de grises con ajuste de gamma
+      sharpInstance = sharpInstance.greyscale();
+      
+      // 3. Ajuste de contraste adaptativo basado en la densidad del texto
+      const contrastFactor = this.calculateOptimalContrast(currentMetadata);
+      console.log(`🎛️ Factor de contraste adaptativo: ${contrastFactor}`);
+      sharpInstance = sharpInstance.linear(contrastFactor, 0);
+      
+      // 4. Normalización inteligente
+      sharpInstance = sharpInstance.normalize();
+      
+      // 5. Enfoque adaptativo para texto
+      const sharpenSigma = this.calculateOptimalSharpen(currentMetadata);
+      console.log(`🔍 Sigma de enfoque adaptativo: ${sharpenSigma}`);
+      sharpInstance = sharpInstance.sharpen({ sigma: sharpenSigma });
+      
+      const finalBuffer = await sharpInstance.png().toBuffer();
 
       // Validar que la imagen final sea válida
       const finalMetadata = await sharp(finalBuffer).metadata();
@@ -296,6 +447,7 @@ class ImageProcessor {
       };
 
       console.log(`✅ Auto-rotación OpenCV completada - ${degreesApplied}° aplicados`);
+      console.log(`🎯 Imagen optimizada para OCR de alta precisión`);
       return result;
 
     } catch (error) {
@@ -869,6 +1021,81 @@ class ImageProcessor {
         }
       }
 
+      return results;
+    } catch (error) {
+      console.error(`❌ Error en processWithSteps: ${error.message}`);
+      throw error;
+    }
+  }
+
+  /**
+   * 📏 Calcula la altura óptima para OCR basada en las características de la imagen
+   * @param {Object} metadata - Metadatos de la imagen de Sharp
+   * @returns {number} - Altura objetivo en píxeles
+   */
+  calculateOptimalHeight(metadata) {
+    const { width, height } = metadata;
+    const aspectRatio = width / height;
+    
+    // Para imágenes muy anchas (múltiples recibos), usar más resolución
+    if (aspectRatio > 1.5) {
+      return 2400; // Más resolución para imágenes anchas
+    }
+    
+    // Para recibos individuales altos y delgados
+    if (aspectRatio < 0.8) {
+      return 2200; // Resolución alta para recibos individuales
+    }
+    
+    // Para imágenes cuadradas o proporción normal
+    return 2000; // Resolución estándar
+  }
+
+  /**
+   * 🎛️ Calcula el factor de contraste óptimo basado en las características de la imagen
+   * @param {Object} metadata - Metadatos de la imagen de Sharp
+   * @returns {number} - Factor de contraste entre 1.0 y 1.5
+   */
+  calculateOptimalContrast(metadata) {
+    const { width, height } = metadata;
+    const totalPixels = width * height;
+    
+    // Para imágenes más pequeñas, aplicar más contraste
+    if (totalPixels < 2000000) { // Menos de 2MP
+      return 1.3;
+    }
+    
+    // Para imágenes muy grandes, contraste moderado
+    if (totalPixels > 6000000) { // Más de 6MP
+      return 1.15;
+    }
+    
+    // Para el rango medio, contraste balanceado
+    return 1.2;
+  }
+
+  /**
+   * 🔍 Calcula el sigma de enfoque óptimo basado en las características de la imagen
+   * @param {Object} metadata - Metadatos de la imagen de Sharp
+   * @returns {number} - Valor sigma entre 0.5 y 2.0
+   */
+  calculateOptimalSharpen(metadata) {
+    const { width, height } = metadata;
+    const aspectRatio = width / height;
+    
+    // Para imágenes muy anchas (posible múltiples recibos), enfoque moderado
+    if (aspectRatio > 1.5) {
+      return 0.8;
+    }
+    
+    // Para recibos individuales, enfoque más agresivo
+    if (aspectRatio < 0.8) {
+      return 1.2;
+    }
+    
+    // Para proporción normal, enfoque balanceado
+    return 1.0;
+
       results.finalPath = currentPath;
       results.totalTime = Date.now() - startTime;
 
@@ -887,7 +1114,6 @@ class ImageProcessor {
       };
     }
   }
-}
 
 // Exportar la clase en lugar de una instancia
 export default ImageProcessor;

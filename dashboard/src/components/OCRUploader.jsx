@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
+import OCRDebugPanel from './OCRDebugPanel';
+import ServerLogsViewer from './ServerLogsViewer';
 
 const OCRUploader = ({ onDocumentProcessed }) => {
   const [isUploading, setIsUploading] = useState(false);
@@ -263,6 +265,12 @@ const OCRUploader = ({ onDocumentProcessed }) => {
           </div>
         )}
       </div>
+
+      {/* Panel de Debug OCR */}
+      <OCRDebugPanel results={results} />
+
+      {/* Visor de Logs del Servidor */}
+      <ServerLogsViewer />
 
       {/* Información del sistema */}
       <div className="mt-6 p-4 bg-gray-50 rounded text-sm text-gray-600">

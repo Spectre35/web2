@@ -3,12 +3,16 @@ import helmet from 'helmet';
 import compression from 'compression';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { createServer } from 'http';
+import { Server as SocketIOServer } from 'socket.io';
 import dotenv from 'dotenv';
 
 // Importaciones del sistema OCR
 import ocrRoutes from './backend/routes/ocrRoutes.js';
+import { setProgressTracker } from './backend/routes/ocrRoutes.js';
 import { initializeDatabase } from './backend/models/ocrDatabase.js';
 import { getWorkerPool } from './backend/services/workerPool.js';
+import ProcessingProgressTracker from './backend/services/processingProgressTracker.js';
 
 // Configuración del entorno
 dotenv.config();
@@ -17,7 +21,41 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
+const server = createServer(app);
+const io = new SocketIOServer(server, {
+  cors: {
+    origin: ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174", "https://cargosfraudes.onrender.com"],
+    methods: ["GET", "POST"]
+  }
+});
 const PORT = process.env.OCR_PORT || 3002;
+
+// 🎯 Sistema de seguimiento de progreso global
+const progressTracker = new ProcessingProgressTracker();
+
+// 🔌 Configurar WebSocket para progreso en tiempo real
+io.on('connection', (socket) => {
+  console.log('🔌 Cliente conectado a WebSocket:', socket.id);
+  
+  socket.on('join-session', (sessionId) => {
+    socket.join(sessionId);
+    console.log(`🔗 Cliente ${socket.id} unido a sesión: ${sessionId}`);
+    
+    // Enviar estado actual si la sesión existe
+    const stats = progressTracker.getProgressStats(sessionId);
+    if (stats) {
+      socket.emit('progress-update', stats);
+    }
+  });
+  
+  socket.on('disconnect', () => {
+    console.log('🔌 Cliente desconectado:', socket.id);
+  });
+});
+
+// Hacer disponible el tracker y io globalmente
+app.set('progressTracker', progressTracker);
+app.set('io', io);
 
 // Middlewares de seguridad y compresión
 app.use(helmet({
@@ -68,7 +106,10 @@ app.use(express.json({ limit: '100mb' })); // Aumentado para lotes grandes
 app.use(express.urlencoded({ extended: true, limit: '100mb' }));
 
 // Servir archivos estáticos del frontend
-app.use(express.static(join(__dirname, 'frontend/dist')));
+app.use(express.static(join(__dirname, 'frontend')));
+
+// 📊 Establecer el progressTracker en las rutas OCR
+setProgressTracker(progressTracker);
 
 // Rutas de la API OCR
 app.use('/api/ocr', ocrRoutes);
@@ -83,9 +124,19 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Ruta para servir el frontend (SPA)
+// Ruta principal - usar el nuevo frontend con progreso avanzado
+app.get('/', (req, res) => {
+  res.sendFile(join(__dirname, 'frontend/index-progress.html'));
+});
+
+// Mantener ruta al frontend básico para compatibilidad
+app.get('/basic', (req, res) => {
+  res.sendFile(join(__dirname, 'frontend/index.html'));
+});
+
+// Ruta para servir el frontend (SPA) - usar progreso avanzado por defecto
 app.get('*', (req, res) => {
-  res.sendFile(join(__dirname, 'frontend/dist/index.html'));
+  res.sendFile(join(__dirname, 'frontend/index-progress.html'));
 });
 
 // Manejo de errores global
@@ -115,6 +166,22 @@ app.use((req, res) => {
   });
 });
 
+// Configurar eventos del tracker de progreso
+progressTracker.on('progress', ({ sessionId, stats, isComplete }) => {
+  // Emitir progreso a todos los clientes de la sesión
+  io.to(sessionId).emit('progress-update', stats);
+  
+  // Log detallado del progreso
+  console.log(`📊 Progreso [${sessionId}]: ${stats.overallProgress}% - Archivo ${stats.currentFile}/${stats.totalFiles} - Tiempo restante: ${Math.round(stats.estimatedRemaining / 1000)}s`);
+  
+  // Limpiar sesión completada después de un tiempo
+  if (isComplete) {
+    setTimeout(() => {
+      progressTracker.cleanupSession(sessionId);
+    }, 300000); // Limpiar después de 5 minutos
+  }
+});
+
 // Función para inicializar el servidor
 async function startServer() {
   try {
@@ -129,14 +196,15 @@ async function startServer() {
     await workerPool.initialize();
     console.log('✅ Worker pool de Tesseract inicializado correctamente');
 
-    // Iniciar servidor
-    app.listen(PORT, () => {
+    // Iniciar servidor con WebSocket
+    server.listen(PORT, () => {
       console.log(`\n🚀 Servidor OCR corriendo en puerto ${PORT}`);
       console.log(`📊 Health check: http://localhost:${PORT}/api/health`);
       console.log(`🔍 OCR API: http://localhost:${PORT}/api/ocr`);
       console.log(`📦 Batch API: http://localhost:${PORT}/api/ocr/batch-upload`);
       console.log(`📊 Worker Stats: http://localhost:${PORT}/api/ocr/worker-stats`);
       console.log(`🌐 Frontend: http://localhost:${PORT}`);
+      console.log(`🔌 WebSocket habilitado para progreso en tiempo real`);
       console.log(`📝 Entorno: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🏊 Workers disponibles: ${workerPool.getStats().totalWorkers}\n`);
     });

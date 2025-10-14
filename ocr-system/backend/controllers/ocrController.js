@@ -1121,7 +1121,11 @@ class OCRController {
         enableOrientation = true,
         enableNoiseReduction = true,
         keepIntermediateFiles = false,
-        fastMode = false
+        fastMode = false,
+        // 🆕 NUEVAS OPCIONES DE DETECCIÓN DE PALABRAS CORTADAS
+        detectTruncatedWords = true,
+        edgeThreshold = 50,
+        confidenceThreshold = 60
       } = req.body;
 
       console.log('🎛️ Configurando mejoras de procesamiento...');
@@ -1132,7 +1136,10 @@ class OCRController {
         enableOrientation,
         enableNoiseReduction,
         keepIntermediateFiles,
-        fastMode
+        fastMode,
+        detectTruncatedWords,
+        edgeThreshold,
+        confidenceThreshold
       });
 
       res.json({
@@ -1142,7 +1149,20 @@ class OCRController {
         recommendations: {
           fastMode: fastMode ? 'Activado - procesamiento más rápido, menos mejoras' : 'Desactivado - procesamiento completo',
           batchProcessing: config.enableNoiseReduction ? 'Usar fastMode=true para lotes grandes' : 'Optimizado para velocidad',
-          accuracy: !fastMode ? 'Configurado para máxima precisión' : 'Configurado para velocidad'
+          accuracy: !fastMode ? 'Configurado para máxima precisión' : 'Configurado para velocidad',
+          // 🆕 NUEVA RECOMENDACIÓN
+          truncatedWords: config.detectTruncatedWords 
+            ? `Detección activada (umbral: ${config.edgeThreshold}px, confianza: ${config.confidenceThreshold}%) - ~50ms adicional por documento`
+            : 'Detección desactivada - procesamiento más rápido'
+        },
+        // 🆕 INFORMACIÓN ADICIONAL
+        newFeatures: {
+          truncatedWordDetection: {
+            enabled: config.detectTruncatedWords,
+            description: 'Detecta automáticamente palabras que parecen estar cortadas por OCR',
+            performance: '~50ms adicional por documento',
+            benefits: 'Mejora la detección de nombres completos como CARRILLO vs CARRILL'
+          }
         }
       });
 

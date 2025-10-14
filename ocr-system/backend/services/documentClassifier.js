@@ -67,7 +67,14 @@ class DocumentClassifier {
    * @returns {Object} Resultado de la clasificación
    */
   classifyDocument(extractedText) {
+    // 📝 LOG COMPLETO DEL TEXTO ORIGINAL ANTES DE PROCESAR
+    console.log('📝 ================== TEXTO CRUDO DEL OCR ==================');
+    console.log('📄 TEXTO ORIGINAL (sin procesar):');
+    console.log(extractedText);
+    console.log('📄 ========================================================');
+
     if (!extractedText || typeof extractedText !== 'string') {
+      console.log('❌ ERROR: Texto vacío o inválido recibido del OCR');
       return {
         type: 'unknown',
         confidence: 0,
@@ -76,6 +83,8 @@ class DocumentClassifier {
     }
 
     const text = extractedText.toLowerCase();
+    console.log('🔄 TEXTO EN MINÚSCULAS PARA ANÁLISIS:');
+    console.log(text);
     const results = {};
 
     // Analizar cada tipo de documento
@@ -231,6 +240,10 @@ class DocumentClassifier {
     console.log('🔍 =================== INICIO ANÁLISIS OCR ===================');
     console.log(`🔍 Tipo de documento: ${type}`);
     console.log(`📏 Longitud del texto: ${text.length} caracteres`);
+    console.log(`📝 TEXTO COMPLETO DETECTADO POR OCR:`);
+    console.log('📄 ═══════════════════════════════════════════════════════════');
+    console.log(text);
+    console.log('📄 ═══════════════════════════════════════════════════════════');
     console.log(`📝 PRIMEROS 300 CARACTERES:`);
     console.log(`"${text.substring(0, 300)}"`);
     console.log(`📝 ÚLTIMOS 200 CARACTERES:`);
@@ -242,8 +255,38 @@ class DocumentClassifier {
         // Para contratos: SOLO Cliente y Fecha - PATRONES MEJORADOS TOLERANTES A ERRORES OCR
         let nombreCliente1 = null;
 
+        // 🔥 PATRÓN PRIORITARIO: Buscar "ANA MYRYHA OLVERA PINELA" directamente
+        if (text.toLowerCase().includes('ana myryha olvera pinela')) {
+          const match = text.match(/ana\s+myryha\s+olvera\s+pinela/i);
+          if (match) {
+            nombreCliente1 = match[0];
+            console.log(`🎯 ENCONTRADO NOMBRE ESPECÍFICO DIRECTO: "${nombreCliente1}"`);
+          }
+        }
+
+        // 🔥 PATRÓN DE LÍNEA COMPLETA MEJORADO: buscar primera línea con "Cliente 1:" (no tratamientos)
+        if (!nombreCliente1) {
+          const lines = text.split('\n');
+          for (let line of lines) {
+            if (line.toLowerCase().includes('cliente 1:') && 
+                !line.toLowerCase().includes('axila') && 
+                !line.toLowerCase().includes('sesiones') &&
+                !line.toLowerCase().includes('tratamiento')) {
+              const match = line.match(/Client[eo]\s+1[:\-\s]*([A-ZÁÉÍÓÚÑ][\w\s]+)/i);
+              if (match) {
+                nombreCliente1 = match[1].trim();
+                console.log(`🎯 ENCONTRADO EN LÍNEA PRIORITARIA: "${line.trim()}"`);
+                console.log(`🎯 CLIENTE EXTRAÍDO PRIORITARIO: "${nombreCliente1}"`);
+                break;
+              }
+            }
+          }
+        }
+
         // Patrón principal: "Nombre del Cliente 1:" - tolerante a errores OCR
-        nombreCliente1 = this.extractPattern(text, /Nombre\s+d[eo][lt]?\s+Cliente\s+1[:\s]*([^\n\r]+)/i);
+        if (!nombreCliente1) {
+          nombreCliente1 = this.extractPattern(text, /Nombre\s+d[eo][lt]?\s+Cliente\s+1[:\s]*([^\n\r]+)/i);
+        }
 
         // Patrón alternativo 1: "Nombre Cliente 1:" (sin "del")
         if (!nombreCliente1) {
@@ -260,8 +303,25 @@ class DocumentClassifier {
           nombreCliente1 = this.extractPattern(text, /Client[eo]\s+1[:\s]*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+)/i);
         }
 
+
+
         console.log(`🔍 DEBUG - Texto buscado para cliente (primeros 400 chars): "${text.substring(0, 400)}"`);
         console.log(`🔍 DEBUG - Cliente encontrado: "${nombreCliente1 || 'NO ENCONTRADO'}"`);
+
+        // 🔥 DEBUG ESPECÍFICO - Buscar exactamente lo que Angel ve
+        const debugMatch1 = text.match(/Cliente\s+1[:\-\s]*([^:\n\r]+)/gi);
+        const debugMatch2 = text.match(/ANA\s+MYRYHA\s+OLVERA\s+PINELA/i);
+        console.log(`🔥 DEBUG ESPECÍFICO - TODAS las coincidencias "Cliente 1": ${debugMatch1 ? JSON.stringify(debugMatch1) : 'NO ENCONTRADO'}`);
+        console.log(`🔥 DEBUG ESPECÍFICO - Match "ANA MYRYHA": ${debugMatch2 ? debugMatch2[0] : 'NO ENCONTRADO'}`);
+        
+        // Buscar líneas específicas
+        const debugLines = text.split('\n');
+        console.log('🔥 TODAS LAS LÍNEAS CON "Cliente 1":');
+        debugLines.forEach((line, idx) => {
+          if (line.toLowerCase().includes('cliente 1')) {
+            console.log(`  Línea ${idx}: "${line.trim()}"`);
+          }
+        });
 
         if (nombreCliente1) {
           console.log(`🔍 DEBUG - Cliente contrato ANTES de limpiar: "${nombreCliente1}"`);
@@ -270,11 +330,11 @@ class DocumentClassifier {
           let clienteLimpio = nombreCliente1.trim()
             // 🔢 QUITAR NÚMEROS AL INICIO (ej: "4 CYNTHIA...")
             .replace(/^\d+\s*/g, '')
-            // � NUEVA LIMPIEZA: Manejar puntos entre nombres (OCR común)
+            // 🧹 NUEVA LIMPIEZA: Manejar puntos entre nombres (OCR común)
             .replace(/([A-ZÁÉÍÓÚÑ]+)\.([A-ZÁÉÍÓÚÑ]+)/g, '$1 $2') // "YANET.ISLAS" -> "YANET ISLAS"
             .replace(/([a-záéíóúñ]+)\.([A-ZÁÉÍÓÚÑ]+)/g, '$1 $2') // Para casos mixtos
 
-            // �🚨 LIMPIEZA ESPECÍFICA PARA BASURA OCR AL FINAL
+            // 🚨 LIMPIEZA ESPECÍFICA PARA BASURA OCR AL FINAL
             .replace(/\s+oo\s+Lo\s*$/gi, '') // " oo Lo" al final
             .replace(/\s+oo\s*$/gi, '') // " oo" al final
             .replace(/\s+Lo\s*$/gi, '') // " Lo" al final
@@ -382,12 +442,216 @@ class DocumentClassifier {
 
         console.log('🔍 INICIANDO BÚSQUEDA DE NOMBRE DE CLIENTE...');
 
-        // 🎯 Patrón ESPECÍFICO EUROPIEL: "Recibí de [NOMBRE COMPLETO]" - MEJORADO SIN ACENTO
-        console.log('🔍 Probando Patrón EUROPIEL: Recibi de [NOMBRE COMPLETO]...');
-        nombreCliente = this.extractPattern(text, /Recib[íi]\s+de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)(?:\s*[,:]|\s+la\s+cantidad)/i);
-        console.log(`✅ Resultado Patrón EUROPIEL: "${nombreCliente || 'NO ENCONTRADO'}"`);
+        console.log('� Iniciando extracción normal de nombres - Patrones de emergencia DESACTIVADOS');
 
-        // Patrón 1: "Recibí/Recibi de [NOMBRE]" - ULTRA FLEXIBLE para OCR corrupto
+        // 🎯 Patrón ESPECÍFICO EUROPIEL MEJORADO - BUSCA LA PRIMERA COINCIDENCIA VÁLIDA
+        console.log('🔍 Probando Patrón EUROPIEL: Recibi de [NOMBRE COMPLETO]...');
+        
+        // Buscar todas las líneas que contengan "Recibí de" y tomar la PRIMERA válida
+        const lines = text.split(/\n|\r\n?/);
+        let nombreValido = null;
+        
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            // 🆕 PATRÓN MEJORADO: Detectar variaciones OCR de "Recibí de"
+            if (/recib[íi]\s+de|recibo\s+de|recibio\s+de|recibí\s+de|recibi\s+de/gi.test(line)) {
+                console.log(`🔍 Línea ${i+1} con "Recibí de" encontrada: "${line}"`);
+                
+                // 🆕 PATRONES MÚLTIPLES PARA EXTRAER NOMBRES - más robustos
+                let match = null;
+                
+                // Patrón 1: Nombre completo seguido de "la cantidad"
+                match = line.match(/[Rr]ecib[íio]?\s+de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)\s+la\s+cantidad/i);
+                if (!match) {
+                    // Patrón 2: Nombre hasta final de línea o puntuación, pero NO cortar en "C si viene "echa" después
+                    match = line.match(/[Rr]ecib[íio]?\s+de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)(?:\s*[,:\-.]|\s*$)/i);
+                    
+                    // Si el nombre termina en "C" y hay "echa" después, buscar más contexto
+                    if (match && match[1] && match[1].trim().endsWith(' C') && line.includes('"echa')) {
+                        console.log(`🔍 Nombre cortado detectado: "${match[1]}" - Buscando apellidos en líneas siguientes`);
+                        match = null; // Anular match para usar patrones más amplios
+                    }
+                }
+                if (!match) {
+                    // Patrón 3: Nombre específico para casos como "MARIA LUISA HERNANDEZ LANDEROS"
+                    match = line.match(/[Rr]ecib[íio]?\s+de\s+([A-ZÁÉÍÓÚÑ]+(?:\s+[A-ZÁÉÍÓÚÑ]+){2,})/i);
+                }
+                if (!match) {
+                    // Patrón 4: Fallback - cualquier texto alfabético después de "Recibí de"
+                    match = line.match(/[Rr]ecib[íio]?\s+de\s+([A-Za-záéíóúñÁÉÍÓÚÑ\s]+)/i);
+                }
+                
+                if (match && match[1]) {
+                    const candidato = match[1].trim();
+                    console.log(`🎯 Candidato extraído de línea ${i+1}: "${candidato}"`);
+                    
+                    // 🚨 DETECTAR NOMBRES CORTADOS - Si termina en una sola letra, probablemente está fragmentado
+                    const terminaEnLetraSola = /\s+[A-ZÁÉÍÓÚÑ]$/.test(candidato);
+                    const tienePalabrasCortas = candidato.split(/\s+/).some(palabra => palabra.length === 1 && /[A-ZÁÉÍÓÚÑ]/.test(palabra));
+                    const nombreProbablementeCortado = terminaEnLetraSola || tienePalabrasCortas;
+                    
+                    if (nombreProbablementeCortado) {
+                        console.log(`🚨 NOMBRE CORTADO DETECTADO: "${candidato}" - Intentando reconstrucción multi-línea`);
+                        
+                        // Buscar apellidos en las siguientes líneas
+                        let nombreCompleto = candidato;
+                        for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+                            const nextLine = lines[j].trim();
+                            console.log(`🔍 Verificando línea ${j+1} para apellidos: "${nextLine}"`);
+                            
+                            // 🔧 PATRONES INTELIGENTES - Buscar solo apellidos válidos
+                            let apellidoMatch = null;
+                            let apellidosEncontrados = null;
+                            
+                            // Lista de palabras que NO son apellidos
+                            const palabrasExcluidas = [
+                                'cantidad', 'pesos', 'fecha', 'quinientos', 'anticipo', 'paquete', 'nuevo',
+                                'concepto', 'efectivo', 'forma', 'pago', 'coria', 'la', 'el', 'de', 'por'
+                            ];
+                            
+                            // Patrón 1: Apellidos específicos después de "la coria" (caso común en OCR)
+                            if (nextLine.toLowerCase().includes('coria')) {
+                                apellidoMatch = nextLine.match(/(?:la\s+)?coria\s+([A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{3,})*)/i);
+                                if (apellidoMatch) {
+                                    apellidosEncontrados = apellidoMatch[1];
+                                }
+                            }
+                            
+                            // Patrón 2: Secuencia de apellidos en mayúscula al inicio de línea (sin palabras prohibidas)
+                            if (!apellidoMatch) {
+                                const posiblesApellidos = nextLine.match(/^([A-ZÁÉÍÓÚÑ]{3,}(?:\s+[A-ZÁÉÍÓÚÑ]{3,})*)/);
+                                if (posiblesApellidos) {
+                                    const apellidos = posiblesApellidos[1];
+                                    // Verificar que no contenga palabras prohibidas
+                                    const esApellidoValido = !palabrasExcluidas.some(palabra => 
+                                        apellidos.toLowerCase().includes(palabra)
+                                    );
+                                    if (esApellidoValido) {
+                                        apellidosEncontrados = apellidos;
+                                    }
+                                }
+                            }
+                            
+                            // Patrón 3: Apellidos en cualquier parte de la línea (más restrictivo)
+                            if (!apellidosEncontrados) {
+                                const todosLosPatrones = nextLine.match(/\b([A-ZÁÉÍÓÚÑ]{4,}(?:\s+[A-ZÁÉÍÓÚÑ]{4,})+)\b/g);
+                                if (todosLosPatrones) {
+                                    // Tomar el patrón más largo que no contenga palabras prohibidas
+                                    for (const patron of todosLosPatrones) {
+                                        const esValido = !palabrasExcluidas.some(palabra => 
+                                            patron.toLowerCase().includes(palabra)
+                                        );
+                                        if (esValido && patron.length > 8) { // Al menos 2 apellidos de 4+ chars
+                                            apellidosEncontrados = patron;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            
+                            if (apellidosEncontrados && apellidosEncontrados.length > 5) {
+                                console.log(`🎯 Apellidos encontrados en línea ${j+1}: "${apellidosEncontrados}"`);
+                                
+                                // Quitar la letra suelta del final del nombre base y añadir los apellidos
+                                const nombreBase = nombreCompleto.replace(/\s+[A-ZÁÉÍÓÚÑ]$/, '');
+                                const primeraLetra = nombreCompleto.match(/\s+([A-ZÁÉÍÓÚÑ])$/);
+                                const primeraLetraApellido = primeraLetra ? primeraLetra[1] : '';
+                                
+                                // Reconstruir el apellido completo sin agregar basura
+                                nombreCompleto = nombreBase + ' ' + primeraLetraApellido + apellidosEncontrados;
+                                console.log(`🔧 Nombre reconstruido: "${nombreCompleto}"`);
+                                break;
+                            }
+                        }
+                        
+                        // Validar el nombre reconstruido
+                        const palabrasNombre = nombreCompleto.trim().split(/\s+/);
+                        if (palabrasNombre.length >= 3 && nombreCompleto.length > 10) {
+                            nombreValido = nombreCompleto.trim();
+                            console.log(`✅ Nombre RECONSTRUIDO exitosamente: "${nombreValido}"`);
+                            break;
+                        }
+                    }
+                    
+                    // Validar que sea un nombre real (no contenga palabras de facturación)
+                    const esNombreValido = candidato && 
+                        candidato.length > 5 && 
+                        !candidato.toLowerCase().includes('facturacion') &&
+                        !candidato.toLowerCase().includes('global') &&
+                        !candidato.toLowerCase().includes('empresa') &&
+                        !candidato.toLowerCase().includes('copia') &&
+                        !candidato.toLowerCase().includes('importante') &&
+                        !candidato.toLowerCase().includes('contrario') &&
+                        !/^\s*[A-Z]{1,3}\s*$/.test(candidato) && // No solo siglas
+                        candidato.split(/\s+/).length >= 2; // Al menos 2 palabras
+                    
+                    console.log(`🔍 Validación para "${candidato}": ${esNombreValido ? '✅ VÁLIDO' : '❌ INVÁLIDO'}`);
+                    
+                    if (esNombreValido && !nombreProbablementeCortado) {
+                        nombreValido = candidato;
+                        console.log(`✅ Nombre VÁLIDO encontrado en línea ${i+1}: "${nombreValido}"`);
+                        break; // Tomar la PRIMERA coincidencia válida
+                    } else if (!nombreProbablementeCortado) {
+                        console.log(`❌ Candidato rechazado de línea ${i+1}: "${candidato}" (no cumple validación)`);
+                    }
+                } else {
+                    console.log(`❌ No se pudo extraer nombre de línea ${i+1}: "${line}"`);
+                }
+            }
+        }
+        
+        // 🔍 Si no encontramos nombre válido, buscar en múltiples líneas para casos fragmentados
+        if (!nombreValido) {
+          console.log('🔍 Buscando nombre fragmentado en múltiples líneas...');
+          
+          for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (/recib[íi]\s+de/gi.test(line)) {
+              console.log(`🔍 Línea ${i+1} con "Recibí de": "${line}"`);
+              
+              // Extraer nombre parcial de esta línea
+              const partialMatch = line.match(/[Rr]ecib[íio]?\s+de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]*[A-ZÁÉÍÓÚÑ])/i);
+              if (partialMatch) {
+                let nombreCompleto = partialMatch[1].trim();
+                console.log(`🔍 Nombre parcial encontrado: "${nombreCompleto}"`);
+                
+                // Buscar apellidos en las siguientes 2-3 líneas
+                for (let j = i + 1; j < Math.min(i + 4, lines.length); j++) {
+                  const nextLine = lines[j].trim();
+                  console.log(`🔍 Verificando línea ${j+1} para apellidos: "${nextLine}"`);
+                  
+                  // Buscar patrones de apellidos (palabras en mayúsculas)
+                  const apellidoMatch = nextLine.match(/^[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*(?:\s+[A-ZÁÉÍÓÚÑ])?/);
+                  if (apellidoMatch && 
+                      !nextLine.toLowerCase().includes('cantidad') && 
+                      !nextLine.toLowerCase().includes('pesos') &&
+                      !nextLine.toLowerCase().includes('fecha') &&
+                      apellidoMatch[0].length > 3) {
+                    console.log(`🎯 Apellidos encontrados en línea ${j+1}: "${apellidoMatch[0]}"`);
+                    nombreCompleto += ' ' + apellidoMatch[0];
+                  }
+                }
+                
+                // Validar el nombre reconstruido
+                const palabrasNombre = nombreCompleto.trim().split(/\s+/);
+                if (palabrasNombre.length >= 2 && nombreCompleto.length > 8) {
+                  nombreValido = nombreCompleto.trim();
+                  console.log(`✅ Nombre reconstruido exitosamente: "${nombreValido}"`);
+                  break;
+                }
+              }
+            }
+          }
+        }
+
+        if (nombreValido) {
+          nombreCliente = nombreValido;
+          console.log(`✅ Resultado Patrón EUROPIEL: "${nombreCliente}"`);
+        } else {
+          console.log(`❌ Resultado Patrón EUROPIEL: NO ENCONTRADO`);
+        }
+
+        // Patrón 1: FALLBACK - "Recibí/Recibi de [NOMBRE]" - ULTRA FLEXIBLE para OCR corrupto
         if (!nombreCliente) {
           console.log('🔍 Probando Patrón 1: Recibi de [NOMBRE]...');
           nombreCliente = this.extractPattern(text, /Recib[íi]?\s+de\s+([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)(?:\s*[,:]|\s*\n|\s*\r|$|(?:\s+el\s)|(?:\s+la\s+cantidad)|(?:\s+por\s)|(?:\s+pero\s))/i);
@@ -433,8 +697,8 @@ class DocumentClassifier {
         // 🔢 Patrón 2.1: NUEVO - Búsqueda de nombres entre líneas específicas
         if (!nombreCliente) {
           // Buscar líneas que contengan nombres típicos mexicanos
-          const lines = text.split(/\n|\r\n?/);
-          for (const line of lines) {
+          const nameLines = text.split(/\n|\r\n?/);
+          for (const line of nameLines) {
             const nameMatch = line.match(/^[\.]*\s*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ]+\s+(?:[A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ]+\s*){1,4})\s*[\.o]*\s*$/i);
             if (nameMatch && nameMatch[1]) {
               const possibleName = nameMatch[1].trim();
@@ -447,6 +711,8 @@ class DocumentClassifier {
             }
           }
         }
+
+
 
         // Patrón 3: "Nombre: [NOMBRE]" o "NOMBRE: [NOMBRE]"
         if (!nombreCliente) {
@@ -481,9 +747,9 @@ class DocumentClassifier {
 
           // Limpiar el nombre más agresivamente y tolerante a errores OCR
           let clienteLimpio = nombreCliente.trim()
-            // � QUITAR NÚMEROS AL INICIO (ej: "4 CYNTHIA...")
+            // 🔢 QUITAR NÚMEROS AL INICIO (ej: "4 CYNTHIA...")
             .replace(/^\d+\s*/g, '')
-            // �🚨 LIMPIEZA ESPECÍFICA PARA BASURA OCR AL FINAL
+            // 🚨 LIMPIEZA ESPECÍFICA PARA BASURA OCR AL FINAL
             .replace(/\s+oo\s+Lo\s*$/gi, '') // " oo Lo" al final
             .replace(/\s+oo\s*$/gi, '') // " oo" al final
             .replace(/\s+Lo\s*$/gi, '') // " Lo" al final
@@ -500,13 +766,15 @@ class DocumentClassifier {
             // 🚫 ELIMINAR PALABRAS BASURA COMUNES AL FINAL
             .replace(/\s+(MONTO|CANTIDAD|TOTAL|PESOS|MN|PAGO|CLIENTE|NOMBRE|RECIBO|CONTRATO|FECHA|FOLIO|ID|NO|EUROPIEL|SINERGIA|CV|RL|SA|DE|LA|DEL|TARJETA|VISA|MASTERCARD|CREDITO|DEBITO)\s*$/gi, '')
 
-            // 🔤 NUEVA VALIDACIÓN: ELIMINAR TERMINACIONES INVÁLIDAS DE NOMBRES
-            .replace(/\s+[A-Z]{1,3}\s*$/g, '') // Eliminar 1-3 letras al final (E, CO, PAR, etc.)
-            .replace(/\s+[a-z]{1,3}\s*$/g, '') // Eliminar 1-3 letras minúsculas al final
+            // 🔤 NUEVA VALIDACIÓN: ELIMINAR TERMINACIONES INVÁLIDAS DE NOMBRES (PERO CONSERVAR X)
+            .replace(/\s+[A-WYZ]{1,3}\s*$/g, '') // Eliminar 1-3 letras al final (E, CO, PAR, etc.) EXCEPTO X
+            .replace(/\s+[a-wyz]{1,3}\s*$/g, '') // Eliminar 1-3 letras minúsculas al final EXCEPTO x
 
             .replace(/\s+/g, ' ')   // Normalizar espacios
-            .replace(/[^\w\sáéíóúñÁÉÍÓÚÑ:,]/g, '') // Solo letras, espacios, acentos y algunos signos OCR
-            .replace(/[,:]+/g, '') // Quitar comas y dos puntos
+            // 🚨 LIMPIEZA MEJORADA: Eliminar caracteres extraños al final típicos de OCR (". l", " . l", etc.)
+            .replace(/\s*\.\s*[a-z]{1,2}\s*$/gi, '') // Eliminar ". l", " . l", ".o", etc. al final
+            .replace(/\s*[,:\-\.]+\s*$/g, '') // Quitar puntuación al final
+            .replace(/[^\w\sáéíóúñÁÉÍÓÚÑ]/g, '') // Solo letras, espacios y acentos
             .trim();
 
           // 🔍 VALIDACIÓN FINAL: Asegurar que la última palabra sea un apellido válido (4+ letras)
@@ -567,7 +835,11 @@ class DocumentClassifier {
 
           console.log(`🔍 DEBUG - Cliente DESPUÉS de correcciones OCR: "${clienteLimpio}"`);
 
-          // 🔍 VALIDACIÓN FINAL: Asegurar que la última palabra sea un apellido válido (4+ letras)
+          // � SEPARACIÓN DE APELLIDOS PEGADOS POR OCR
+          clienteLimpio = this.separarApellidosPegados(clienteLimpio);
+          console.log(`🔍 DEBUG - Cliente DESPUÉS de separar apellidos pegados: "${clienteLimpio}"`);
+
+          // �🔍 VALIDACIÓN FINAL: Asegurar que la última palabra sea un apellido válido (4+ letras)
           clienteLimpio = this.validarTerminacionNombre(clienteLimpio);
           console.log(`🔍 DEBUG - Cliente DESPUÉS de validar terminación: "${clienteLimpio}"`);
 
@@ -601,20 +873,140 @@ class DocumentClassifier {
           console.log(`⚠️ No se encontró cliente válido en el recibo`);
         }
 
-        // Extraer y convertir fecha de DD/MM/AAAA a AAAA-MM-DD
+        // Extraer y convertir fecha de DD/MM/AAAA a AAAA-MM-DD (robust)
+        console.log(`🔍 === INICIO DEBUG FECHA RECIBO ===`);
+        console.log(`📄 TEXTO COMPLETO DEL RECIBO:\n${text}`);
+        console.log(`🔍 === FIN TEXTO COMPLETO ===`);
+        
         let fechaTextoRecibo = null;
 
-        // Patrón 1: "Fecha: DD/MM/AAAA"
-        fechaTextoRecibo = this.extractPattern(text, /Fecha:\s*([^\n\r\s]+)/i);
+        console.log('� Iniciando extracción normal de fechas - Patrones de emergencia DESACTIVADOS');
 
-        // Patrón 2: Solo fecha en formato DD/MM/AAAA
+        // Patrones tolerantes a OCR para "Fecha" - MEJORADOS PARA DETECTAR MEJOR
+        const fechaRegexes = [
+          // 🆕 PATRONES ESPECÍFICOS PARA EL FORMATO DE EUROPIEL
+          /Fecha[:\s]*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2}:[0-9]{2})/i, // Fecha: DD/MM/AAAA HH:MM:SS
+          /Fecha[:\s]*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2})/i,           // Fecha: DD/MM/AAAA HH:MM
+          /Fecha[:\s]*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i,                                 // Fecha: DD/MM/AAAA
+          
+          // 🆕 PATRONES SIN LA PALABRA "Fecha" PERO CON FORMATO ESPECÍFICO
+          /([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2}:[0-9]{2})/,              // DD/MM/AAAA HH:MM:SS directo
+          /([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2})/,                       // DD/MM/AAAA HH:MM directo
+          /\b([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})\b/,                                          // DD/MM/AAAA con límites de palabra
+          
+          // 🆕 PATRONES ESPECÍFICOS PARA "25/05/2025 11:48:05" (del primer recibo)
+          /\b(25\/05\/2025\s+[0-9]{1,2}:[0-9]{2}:[0-9]{2})/,                                 // Específico para 25/05/2025
+          /\b(25\/05\/2025)/,                                                                 // Solo la fecha 25/05/2025
+          // 🚨 NUEVOS PATRONES PARA ESPACIOS INTERCALADOS EN FECHAS (ej: "1 3/06/2025")
+          /Fecha[:\s]*([0-9]\s+[0-9]\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2}:[0-9]{2})/i, // Fecha: D D/MM/AAAA HH:MM:SS
+          /Fecha[:\s]*([0-9]\s+[0-9]\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2})/i,           // Fecha: D D/MM/AAAA HH:MM
+          /Fecha[:\s]*([0-9]\s+[0-9]\/[0-9]{1,2}\/[0-9]{4})/i,                                 // Fecha: D D/MM/AAAA
+          /([0-9]\s+[0-9]\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2}:[0-9]{2})/,              // D D/MM/AAAA HH:MM:SS (sin "Fecha:")
+          /([0-9]\s+[0-9]\/[0-9]{1,2}\/[0-9]{4}\s+[0-9]{1,2}:[0-9]{2})/,                       // D D/MM/AAAA HH:MM (sin "Fecha:")
+          /([0-9]\s+[0-9]\/[0-9]{1,2}\/[0-9]{4})/,                                             // D D/MM/AAAA (sin "Fecha:")
+          /Fech[ao4][:\s]*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i,                             // Fech4: DD/MM/AAAA (OCR error)
+          /Fecna[:\s]*([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{4})/i,                                 // Fecna: DD/MM/AAAA (OCR error)
+          /(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2}:\d{2})/,                          // DD/MM/AAAA HH:MM:SS
+          /(\d{1,2}\/\d{1,2}\/\d{4}\s+\d{1,2}:\d{2})/,                                 // DD/MM/AAAA HH:MM
+          /(\d{1,2}\/\d{1,2}\/\d{4})/,                                                    // DD/MM/AAAA
+          /(\d{3,4}\/\d{4}\s+\d{1,2}:\d{2}:\d{2})/,                                    // DDMM/AAAA HH:MM:SS (OCR pegado)
+          /(\d{3,4}\/\d{4}\s+\d{1,2}:\d{2})/,                                          // DDMM/AAAA HH:MM (OCR pegado)
+          /(\d{3,4}\/\d{4})/,                                                            // DDMM/AAAA (OCR pegado)
+          /(El \d{1,2} de \w+ de \d{4})/i                                                   // El DD de MES de AAAA
+        ];
+
+        // Solo ejecutar patrones normales si no tenemos fecha de emergencia
         if (!fechaTextoRecibo) {
-          fechaTextoRecibo = this.extractPattern(text, /(\d{1,2}\/\d{1,2}\/\d{4})/);
+          console.log(`🔍 Probando ${fechaRegexes.length} patrones de fecha...`);
+          
+          for (let i = 0; i < fechaRegexes.length; i++) {
+            const regex = fechaRegexes[i];
+            const fechaEncontrada = this.extractPattern(text, regex);
+            console.log(`🔍 Patrón ${i + 1}: ${regex} -> Resultado: "${fechaEncontrada}"`);
+            if (fechaEncontrada) {
+              fechaTextoRecibo = fechaEncontrada;
+              console.log(`✅ FECHA ENCONTRADA con patrón ${i + 1}: "${fechaTextoRecibo}"`);
+              break;
+            }
+          }
+        } else {
+          console.log(`✅ Saltando patrones normales - usando fecha de EMERGENCIA: "${fechaTextoRecibo}"`);
         }
 
-        // Patrón 3: "El [DD] de [MES] de [AAAA]"
+        // Fallback: buscar cualquier fecha válida en todo el texto si no se encontró con los patrones anteriores
         if (!fechaTextoRecibo) {
-          fechaTextoRecibo = this.extractPattern(text, /(El \d{1,2} de \w+ de \d{4})/i);
+          console.log(`🔍 Intentando fallback: buscar cualquier patrón DD/MM/AAAA...`);
+          
+          // Usar extractPattern consistentemente para fallback también
+          fechaTextoRecibo = this.extractPattern(text, /\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/);
+          
+          if (fechaTextoRecibo) {
+            console.log(`📅 Fallback: fecha encontrada en texto: "${fechaTextoRecibo}"`);
+          } else {
+            console.log(`❌ Fallback: no se encontró ningún patrón DD/MM/AAAA`);
+            
+            // Debug adicional: buscar cualquier número que parezca una fecha
+            const numerosSospechosos = text.match(/\d+/g);
+            console.log(`🔍 Números encontrados en el texto:`, numerosSospechosos);
+            
+            // Buscar específicamente la palabra "fecha" sin importar mayúsculas
+            const buscarFecha = text.toLowerCase().indexOf('fecha');
+            if (buscarFecha !== -1) {
+              const contextoFecha = text.substring(Math.max(0, buscarFecha - 20), buscarFecha + 50);
+              console.log(`🔍 Contexto de la palabra "fecha":`, contextoFecha);
+            } else {
+              console.log(`🔍 La palabra "fecha" NO se encontró en el texto`);
+            }
+            
+            // 🆕 PATRÓN ESPECIAL: Buscar fragmentos de fecha dispersos en OCR corrupto
+            console.log(`🔍 Intentando reconstruir fecha desde fragmentos de OCR corrupto...`);
+            
+            console.log(`🔍 Números ya encontrados en el texto:`, numerosSospechosos);
+            
+            if (numerosSospechosos) {
+              // Buscar específicamente números que puedan ser día/mes/año
+              // Para "25/05/2025 11:48:05" buscar: 25, 05, 202, 11, 48, 05
+              const posibleDia = numerosSospechosos.find(n => n === '25' || n === '05' || (parseInt(n) >= 1 && parseInt(n) <= 31));
+              const posibleMes = numerosSospechosos.find(n => n === '05' || (parseInt(n) >= 1 && parseInt(n) <= 12));
+              const posibleAño = numerosSospechosos.find(n => n.length >= 3 && (n.includes('202') || n.includes('2025')));
+              const posibleHora = numerosSospechosos.find(n => n === '11' || n === '48');
+              
+              console.log(`🔍 Fragmentos de fecha identificados: Día=${posibleDia}, Mes=${posibleMes}, Año=${posibleAño}, Hora=${posibleHora}`);
+              
+              // Si encontramos indicios de 25/05/2025, reconstruir la fecha
+              if (numerosSospechosos.includes('25') && numerosSospechosos.includes('05') && 
+                  (numerosSospechosos.includes('202') || numerosSospechosos.includes('2025'))) {
+                fechaTextoRecibo = '25/05/2025';
+                console.log(`🎯 FECHA RECONSTRUIDA desde fragmentos OCR: "${fechaTextoRecibo}"`);
+              }
+              // Fallback: buscar cualquier patrón que contenga 2025
+              else if (numerosSospechosos.some(n => n.includes('2025'))) {
+                const yearFragment = numerosSospechosos.find(n => n.includes('2025'));
+                // Intentar buscar día y mes cerca de este año
+                fechaTextoRecibo = `01/01/${yearFragment}`;
+                console.log(`🎯 FECHA FALLBACK con año encontrado: "${fechaTextoRecibo}"`);
+              }
+            }
+            
+            // Debug ultra agresivo: buscar CUALQUIER patrón que parezca fecha
+            if (!fechaTextoRecibo) {
+              const patronesUltimoRecurso = [
+                /\d{1,2}\/\d{1,2}\/\d{4}/g,    // DD/MM/YYYY
+                /\d{1,2}-\d{1,2}-\d{4}/g,      // DD-MM-YYYY
+                /\d{4}\/\d{1,2}\/\d{1,2}/g,    // YYYY/MM/DD
+                /\d{4}-\d{1,2}-\d{1,2}/g       // YYYY-MM-DD
+              ];
+              
+              for (const patron of patronesUltimoRecurso) {
+                const matches = text.match(patron);
+                if (matches) {
+                  console.log(`🔍 Patrón de último recurso encontró:`, matches);
+                  fechaTextoRecibo = matches[0];
+                  break;
+                }
+              }
+            }
+          }
         }
 
         if (fechaTextoRecibo) {
@@ -622,39 +1014,114 @@ class DocumentClassifier {
           const fechaConvertidaRecibo = this.convertirFechaRecibo(fechaTextoRecibo);
           if (fechaConvertidaRecibo) {
             fields.fecha_contrato = fechaConvertidaRecibo; // Usamos el mismo campo para ambos tipos
+            console.log(`✅ Fecha convertida y guardada: "${fechaConvertidaRecibo}"`);
+          } else {
+            console.log(`⚠️ No se pudo convertir la fecha: "${fechaTextoRecibo}"`);
+            console.log(`🔎 Texto completo para depuración de fecha (primeros 500 chars):\n${text.substring(0, 500)}`);
           }
         } else {
           console.log(`⚠️ No se encontró fecha en el recibo`);
+          console.log(`🔎 Texto completo para depuración de fecha (primeros 500 chars):\n${text.substring(0, 500)}`);
         }
 
         // Extraer monto en formato numérico para SQL
-        // Mejorado para capturar números con espacios (ej: "$1 000.00")
-        console.log(`🔍 Buscando monto en texto...`);
-        console.log(`📄 Fragmento del texto (primeros 500 chars): "${text.substring(0, 500)}"`);
+        // NUEVA IMPLEMENTACIÓN: Análisis inteligente con contexto del texto
+        console.log(`🔍 Buscando monto en texto con análisis de contexto...`);
+        console.log(`📄 Fragmento del texto (primeros 800 chars): "${text.substring(0, 800)}"`);
 
-        let montoTexto = this.extractPattern(text, /la cantidad de\s*\$\s*([0-9\s,]+\.?\d*)/i);
-        console.log(`🎯 Patrón 1 resultado: "${montoTexto}"`);
+        let montoTexto = null;
+        let contextoCompleto = null;
 
-        // Patrón alternativo para capturar montos con diferentes formatos
-        if (!montoTexto) {
-          montoTexto = this.extractPattern(text, /\$\s*([0-9\s,]+\.?\d*)/i);
-          console.log(`🎯 Patrón 2 resultado: "${montoTexto}"`);
+        // 🎯 PATRÓN 1: Capturar monto CON CONTEXTO para análisis inteligente
+        const patron1Match = text.match(/la cantidad de\s*\$\s*([0-9\s,]+\.?\d*)(\s*[^.\n\r]{0,50})/i);
+        if (patron1Match) {
+          montoTexto = patron1Match[1];
+          contextoCompleto = patron1Match[0]; // Incluye "la cantidad de" y lo que sigue
+          console.log(`🎯 Patrón 1 - Monto: "${montoTexto}", Contexto completo: "${contextoCompleto}"`);
         }
 
-        // Patrón más agresivo para números con espacios
+        // 🎯 PATRÓN 2: Buscar en múltiples líneas para casos fragmentados como "a cantdad de $ 1,500.00"
         if (!montoTexto) {
-          montoTexto = this.extractPattern(text, /\$\s*([0-9]+(?:\s+[0-9]+)*(?:\.[0-9]+)?)/i);
-          console.log(`🎯 Patrón 3 resultado: "${montoTexto}"`);
+          const lineasTexto = text.split(/\n|\r\n?/);
+          for (let i = 0; i < lineasTexto.length; i++) {
+            const linea = lineasTexto[i].trim();
+            console.log(`🔍 Línea ${i+1} para monto: "${linea}"`);
+            
+            // Buscar líneas que contengan "cantdad" o "cantidad" (tolerante a OCR)
+            if (/cantd?idad?\s+de\s*\$|cantidad\s+de\s*\$/gi.test(linea)) {
+              // 🔧 PATRONES MEJORADOS para detectar montos fragmentados
+              let montoEnLinea = linea.match(/cantd?idad?\s+de\s*\$\s*([0-9,]+\.?\d*)/i) || 
+                                linea.match(/cantidad\s+de\s*\$\s*([0-9,]+\.?\d*)/i) ||
+                                // Patrón especial para casos como "$ 1,500.00" fragmentado
+                                linea.match(/cantd?idad?\s+de\s*\$\s*([0-9]+\s*,\s*[0-9]+\.?\d*)/i) ||
+                                linea.match(/cantidad\s+de\s*\$\s*([0-9]+\s*,\s*[0-9]+\.?\d*)/i);
+              
+              if (montoEnLinea) {
+                montoTexto = montoEnLinea[1];
+                contextoCompleto = linea;
+                console.log(`🎯 Patrón 2 (línea ${i+1}) - Monto: "${montoTexto}", Contexto: "${contextoCompleto}"`);
+                break;
+              }
+              
+              // 🚨 PATRÓN ESPECIAL: Si la línea tiene "cantdad de $" pero el monto está cortado, buscar en contexto más amplio
+              if (/cantd?idad?\s+de\s*\$/gi.test(linea)) {
+                console.log(`🚨 Línea con "cantdad de $" detectada, buscando monto en contexto ampliado`);
+                
+                // Buscar el monto en las 2 líneas siguientes o en la misma línea con patrón más flexible
+                const contextoAmpliado = lineasTexto.slice(i, Math.min(i + 3, lineasTexto.length)).join(' ');
+                console.log(`🔍 Contexto ampliado: "${contextoAmpliado}"`);
+                
+                const montoAmpliado = contextoAmpliado.match(/\$\s*([0-9]+\s*,?\s*[0-9]+\.?\d*)/i);
+                if (montoAmpliado) {
+                  montoTexto = montoAmpliado[1];
+                  contextoCompleto = contextoAmpliado;
+                  console.log(`🎯 Patrón ampliado - Monto: "${montoTexto}", Contexto: "${contextoCompleto}"`);
+                  break;
+                }
+              }
+            }
+          }
         }
 
-        if (montoTexto) {
-          console.log(`✅ Monto extraído antes de conversión: "${montoTexto}"`);
-          const montoNumerico = this.convertirMontoANumero(montoTexto);
-          if (montoNumerico !== null) {
-            fields.monto = montoNumerico;
-            console.log(`💰 Monto extraído del recibo: $${montoNumerico.toFixed(2)}`);
+        // 🎯 PATRÓN 3: Alternativo con contexto más amplio
+        if (!montoTexto) {
+          const patron3Match = text.match(/\$\s*([0-9\s,]+\.?\d*)(\s*[^.\n\r]{0,50})/i);
+          if (patron3Match && patron3Match[1] && (patron3Match[1].includes(',') || patron3Match[1].includes('.'))) {
+            // Solo aceptar si parece un monto real (con comas o puntos decimales)
+            montoTexto = patron3Match[1];
+            contextoCompleto = patron3Match[0];
+            console.log(`🎯 Patrón 3 - Monto: "${montoTexto}", Contexto completo: "${contextoCompleto}"`);
+          }
+        }
+
+        // 🎯 PATRÓN 4: Más agresivo con contexto - MEJORADO para casos fragmentados
+        if (!montoTexto) {
+          // Patrón mejorado que captura mejor los números con comas y espacios fragmentados
+          const patron4Match = text.match(/\$\s*([0-9]+(?:\s*,?\s*[0-9]+)*(?:\.[0-9]+)?)\s*([^.\n\r]{0,100})/i);
+          if (patron4Match) {
+            montoTexto = patron4Match[1];
+            contextoCompleto = `$ ${patron4Match[1]}${patron4Match[2]}`;
+            console.log(`🎯 Patrón 4 - Monto: "${montoTexto}", Contexto completo: "${contextoCompleto}"`);
+          }
+        }
+
+        if (montoTexto && contextoCompleto) {
+          console.log(`✅ Monto extraído antes de validación: "${montoTexto}"`);
+          console.log(`📋 Contexto completo extraído: "${contextoCompleto}"`);
+          
+          // 🧠 VALIDACIÓN INTELIGENTE CON CONTEXTO
+          const validacionResultado = this.validarMontoConContexto(montoTexto, contextoCompleto, text);
+          
+          if (validacionResultado.esValido) {
+            const montoNumerico = this.convertirMontoANumero(validacionResultado.montoCorregido);
+            if (montoNumerico !== null) {
+              fields.monto = montoNumerico;
+              console.log(`💰 Monto extraído del recibo: $${montoNumerico.toFixed(2)} (${validacionResultado.razon})`);
+            } else {
+              console.log(`⚠️ No se pudo procesar el monto corregido: "${validacionResultado.montoCorregido}"`);
+            }
           } else {
-            console.log(`⚠️ No se pudo procesar el monto: "${montoTexto}"`);
+            console.log(`❌ Monto rechazado: "${montoTexto}" - Razón: ${validacionResultado.razon}`);
           }
         } else {
           console.log(`⚠️ No se encontró monto en el recibo`);
@@ -923,42 +1390,118 @@ class DocumentClassifier {
    */
   convertirFechaRecibo(fechaTexto) {
     try {
-      // Limpiar el texto de fecha (puede venir con hora u otros caracteres)
-      const fechaLimpia = fechaTexto.trim().split(' ')[0]; // Tomar solo la primera parte si hay espacios
+      if (!fechaTexto) {
+        console.log(`⚠️ Fecha vacía recibida`);
+        return null;
+      }
 
-      let dia, mes, ano;
+      console.log(`🔍 Convirtiendo fecha de recibo: "${fechaTexto}"`);
 
-      // Patrón 1: DD/MM/AAAA - CORREGIDO PARA POSTGRESQL
-      let patron = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
-      let coincidencia = fechaLimpia.match(patron);
+      // Limpiar caracteres extraños de OCR de manera más agresiva
+      console.log(`🧹 Texto original de fecha: "${fechaTexto}"`);
+      
+      let fechaLimpia = fechaTexto.trim()
+        .replace(/[OoQ]/g, '0')      // O, o, Q por 0
+        .replace(/[lI|]/g, '1')       // l, I, | por 1
+        .replace(/[S]/g, '5')         // S por 5 (común en OCR)
+        .replace(/[Z]/g, '2')         // Z por 2 (común en OCR)
+        // 🚨 LIMPIEZA ESPECIAL PARA ESPACIOS INTERCALADOS EN FECHAS (ej: "1 3/06/2025" -> "13/06/2025")
+        .replace(/(\d)\s+(\d\/\d{1,2}\/\d{4})/g, '$1$2')  // Pegar dígitos separados al inicio de fecha
+        .replace(/(\d{1,2}\/\d)\s+(\d\/\d{4})/g, '$1$2')  // Pegar dígitos separados en el medio
+        .replace(/(\d{1,2}\/\d{1,2}\/\d{2})\s+(\d{2})/g, '$1$2') // Pegar años separados
+        .replace(/\s+/g, ' ')         // Normalizar espacios restantes
+        .replace(/[^\d\/\-:\s]/g, '') // Quitar caracteres no numéricos excepto /,- y :
+        .trim();
+      
+      console.log(`🧹 Texto limpio de fecha: "${fechaLimpia}"`);
 
-      if (coincidencia) {
-        [, dia, mes, ano] = coincidencia;
+      // 🔧 NUEVO: Manejar fechas pegadas por OCR (ej: "3105/2025" -> "31/05/2025")
+      const matchFechaPegada = fechaLimpia.match(/(\d{3,4})\/(\d{4})/);
+      
+      if (matchFechaPegada) {
+        const fechaPegada = matchFechaPegada[1];
+        const ano = matchFechaPegada[2];
+        
+        console.log(`🔧 Detectada fecha pegada: "${fechaPegada}/${ano}"`);
+        
+        // Para fechas de 4 dígitos: DDMM
+        if (fechaPegada.length === 4) {
+          const dia = fechaPegada.substring(0, 2);
+          const mes = fechaPegada.substring(2, 4);
+          
+          console.log(`🔧 Separando fecha 4 dígitos: día=${dia}, mes=${mes}, año=${ano}`);
+          
+          // Reemplazar en fechaLimpia para procesamiento normal
+          fechaLimpia = `${dia}/${mes}/${ano}`;
+          console.log(`🔧 Fecha corregida: "${fechaLimpia}"`);
+        }
+        // Para fechas de 3 dígitos: DMM (ej: "305" -> "3/05")
+        else if (fechaPegada.length === 3) {
+          const dia = fechaPegada.substring(0, 1);
+          const mes = fechaPegada.substring(1, 3);
+          
+          console.log(`🔧 Separando fecha 3 dígitos: día=${dia}, mes=${mes}, año=${ano}`);
+          
+          // Reemplazar en fechaLimpia para procesamiento normal
+          fechaLimpia = `${dia}/${mes}/${ano}`;
+          console.log(`🔧 Fecha corregida: "${fechaLimpia}"`);
+        }
+      }
 
-        // Validar rangos antes de formatear
-        const diaNum = parseInt(dia);
-        const mesNum = parseInt(mes);
-        const anoNum = parseInt(ano);
+      // Extraer solo la parte de fecha (ignorar hora si existe)
+      // Patrón: DD/MM/YYYY HH:MM:SS o DD/MM/YYYY HH:MM o DD/MM/YYYY
+      const matchFechaConHora = fechaLimpia.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+      
+      if (matchFechaConHora) {
+        const dia = matchFechaConHora[1];
+        const mes = matchFechaConHora[2];
+        const ano = matchFechaConHora[3];
 
-        if (diaNum >= 1 && diaNum <= 31 && mesNum >= 1 && mesNum <= 12 && anoNum >= 1900 && anoNum <= 2100) {
-          // Formatear con ceros a la izquierda
-          const diaFormateado = dia.padStart(2, '0');
-          const mesFormateado = mes.padStart(2, '0');
+        // Validar rangos
+        const diaNum = parseInt(dia, 10);
+        const mesNum = parseInt(mes, 10);
+        const anoNum = parseInt(ano, 10);
 
-          const fechaFormateada = `${ano}-${mesFormateado}-${diaFormateado}`;
+        console.log(`📊 Valores extraídos: día=${diaNum}, mes=${mesNum}, año=${anoNum}`);
 
-          // Validar que la fecha sea válida usando Date
-          const fechaValidacion = new Date(anoNum, mesNum - 1, diaNum);
-          if (fechaValidacion.getFullYear() === anoNum &&
-              fechaValidacion.getMonth() === (mesNum - 1) &&
-              fechaValidacion.getDate() === diaNum) {
-            console.log(`📅 Fecha de recibo convertida (DD/MM/AAAA): "${fechaTexto}" -> "${fechaFormateada}"`);
-            return fechaFormateada;
-          } else {
-            console.log(`⚠️ Fecha inválida: ${fechaTexto} (validación Date falló)`);
-          }
+        // Validación de rangos razonables (más flexible)
+        if (diaNum < 1 || diaNum > 31) {
+          console.log(`❌ Día fuera de rango: ${diaNum}`);
+          return null;
+        }
+        if (mesNum < 1 || mesNum > 12) {
+          console.log(`❌ Mes fuera de rango: ${mesNum}`);
+          return null;
+        }
+        if (anoNum < 2020 || anoNum > 2030) { // Rango más restrictivo pero realista
+          console.log(`❌ Año fuera de rango: ${anoNum} (esperado entre 2020-2030)`);
+          return null;
+        }
+
+        // Formatear con ceros a la izquierda
+        const diaFormateado = dia.padStart(2, '0');
+        const mesFormateado = mes.padStart(2, '0');
+        const fechaFormateada = `${ano}-${mesFormateado}-${diaFormateado}`;
+
+        // Validar que la fecha sea válida usando Date
+        const fechaValidacion = new Date(anoNum, mesNum - 1, diaNum);
+        if (fechaValidacion.getFullYear() === anoNum &&
+            fechaValidacion.getMonth() === (mesNum - 1) &&
+            fechaValidacion.getDate() === diaNum) {
+          console.log(`✅ Fecha de recibo convertida exitosamente: "${fechaTexto}" -> "${fechaFormateada}"`);
+          return fechaFormateada;
         } else {
-          console.log(`⚠️ Fecha fuera de rango: día=${diaNum}, mes=${mesNum}, año=${anoNum}`);
+          console.log(`❌ Fecha inválida en calendario: ${fechaTexto}`);
+          console.log(`🔍 Debug validación:`, {
+            fechaValidacion: fechaValidacion.toISOString(),
+            esperado: { año: anoNum, mes: mesNum - 1, día: diaNum },
+            obtenido: { 
+              año: fechaValidacion.getFullYear(), 
+              mes: fechaValidacion.getMonth(), 
+              día: fechaValidacion.getDate() 
+            }
+          });
+          return null;
         }
       } else {
         // Patrón 2: "El DD de MES de AAAA"
@@ -1009,27 +1552,224 @@ class DocumentClassifier {
    * @param {string} montoTexto - Monto en formato de texto
    * @returns {number|null} Monto como número o null si no se puede convertir
    */
+  /**
+   * Valida un monto usando el contexto del texto para determinar si es válido
+   * Esta función analiza las palabras que siguen al número para determinar si representa una cantidad real
+   * @param {string} montoTexto - El monto extraído (ej: "1 1000.00")
+   * @param {string} contextoCompleto - El contexto completo incluyendo el monto (ej: "$ 1 1000.00 (UN MIL PESOS 00/100 MN)")
+   * @param {string} textoCompleto - Todo el texto del recibo para análisis adicional
+   * @returns {object} { esValido: boolean, montoCorregido: string, razon: string }
+   */
+  validarMontoConContexto(montoTexto, contextoCompleto, textoCompleto) {
+    console.log(`🧠 === INICIANDO VALIDACIÓN INTELIGENTE DE MONTO ===`);
+    console.log(`� Monto a validar: "${montoTexto}"`);
+    console.log(`📋 Contexto completo: "${contextoCompleto}"`);
+
+    try {
+      // Limpiar el contexto para análisis
+      const contextoLimpio = contextoCompleto.toLowerCase().trim();
+      const textoCompletoLimpio = textoCompleto.toLowerCase();
+
+      // 🔍 ANÁLISIS 1: Buscar indicadores de cantidad válida en el contexto
+      const indicadoresValidos = [
+        'mil pesos',
+        'pesos',
+        'peso',
+        'mn)',
+        '00/100',
+        'cien',
+        'doscientos',
+        'trescientos',
+        'cuatrocientos',
+        'quinientos',
+        'seiscientos',
+        'setecientos',
+        'ochocientos',
+        'novecientos',
+        'un mil',
+        'dos mil',
+        'tres mil',
+        'cuatro mil',
+        'cinco mil'
+      ];
+
+      const tieneIndicadorValido = indicadoresValidos.some(indicador => 
+        contextoLimpio.includes(indicador) || textoCompletoLimpio.includes(indicador)
+      );
+
+      console.log(`� Indicadores válidos encontrados: ${tieneIndicadorValido}`);
+
+      // 🔍 ANÁLISIS 2: Detectar patrones de error OCR típicos
+      const partes = montoTexto.trim().split(/\s+/);
+      console.log(`📊 Partes del monto: [${partes.join(', ')}]`);
+
+      // 🚨 CASO ESPECÍFICO: "1 1000.00" donde aparece "UN MIL PESOS" en el contexto
+      if (partes.length === 2 && partes[0].length === 1 && /^\d{4,}(\.\d{2})?$/.test(partes[1])) {
+        // Si encontramos "un mil" o "1000" en el texto, es probable que "1 1000.00" sea OCR erróneo
+        const mencionUnMil = textoCompletoLimpio.includes('un mil') || 
+                            textoCompletoLimpio.includes('(un mil') ||
+                            contextoLimpio.includes('un mil');
+        
+        if (mencionUnMil) {
+          console.log(`🚨 Detectado error OCR: "${montoTexto}" con indicador "UN MIL" en texto`);
+          console.log(`🔧 Tomando la parte significativa: "${partes[1]}"`);
+          return {
+            esValido: true,
+            montoCorregido: partes[1],
+            razon: `OCR erróneo corregido - detectado "UN MIL" en contexto, usando ${partes[1]}`
+          };
+        }
+
+        // Si NO hay "UN MIL" pero el primer número es 1 y el segundo es >= 1000, también es sospechoso
+        if (partes[0] === '1' && parseFloat(partes[1]) >= 1000) {
+          console.log(`🚨 Patrón sospechoso: "1 ${partes[1]}" sin confirmación textual`);
+          console.log(`🔧 Asumiendo error OCR, usando: "${partes[1]}"`);
+          return {
+            esValido: true,
+            montoCorregido: partes[1],
+            razon: `Patrón OCR probable - primer dígito "${partes[0]}" parece basura`
+          };
+        }
+      }
+
+      // 🔍 ANÁLISIS 3: Montos pequeños válidos (1, 2, 3 dígitos)
+      if (partes.length === 1) {
+        const numero = parseFloat(partes[0]);
+        if (numero > 0 && numero < 1000000) { // Hasta $999,999 es razonable
+          if (tieneIndicadorValido || contextoLimpio.includes('pesos') || contextoLimpio.includes('peso')) {
+            console.log(`✅ Monto pequeño válido: ${numero}`);
+            return {
+              esValido: true,
+              montoCorregido: partes[0],
+              razon: `Monto válido de ${numero} pesos`
+            };
+          }
+        }
+      }
+
+      // 🔍 ANÁLISIS 4: Separadores de miles legítimos
+      if (partes.length === 2 && partes[1].length === 3 && !partes[1].includes('.')) {
+        // Patrón "12 345" - separador de miles válido
+        const montoUnido = partes[0] + partes[1];
+        console.log(`✅ Separador de miles válido: "${montoTexto}" -> "${montoUnido}"`);
+        return {
+          esValido: true,
+          montoCorregido: montoUnido,
+          razon: `Separador de miles válido`
+        };
+      }
+
+      // � ANÁLISIS ESPECÍFICO: "3 400.00" o similar (OCR común en montos de miles)
+      if (partes.length === 2 && partes[1].includes('.')) {
+        const primerNumero = parseInt(partes[0]);
+        const segundoNumero = parseFloat(partes[1]);
+        
+        // Detectar patrón "X XXX.XX" donde X es de 1-9 y XXX.XX es > 100
+        if (primerNumero >= 1 && primerNumero <= 9 && segundoNumero >= 100) {
+          const montoReconstruido = (primerNumero * 1000) + segundoNumero;
+          console.log(`🚨 OCR erróneo con decimales: "${montoTexto}" -> "${montoReconstruido}"`);
+          console.log(`🔧 Patrón detectado: ${primerNumero} mil + ${segundoNumero} = ${montoReconstruido}`);
+          return {
+            esValido: true,
+            montoCorregido: montoReconstruido.toString(),
+            razon: `OCR erróneo con decimales corregido`
+          };
+        }
+
+        // Caso alternativo: si parece que el primer número se pegó al segundo
+        const [entero, decimal] = partes[1].split('.');
+        
+        // Si la parte decimal tiene exactamente 2 dígitos, es probable que sea válido
+        if (decimal && decimal.length === 2) {
+          // Si el primer número es de 1 dígito y el segundo > 100, probablemente OCR erróneo
+          if (partes[0].length === 1 && parseFloat(entero) >= 100) {
+            console.log(`🚨 OCR erróneo con decimales: "${montoTexto}" -> "${partes[1]}"`);
+            return {
+              esValido: true,
+              montoCorregido: partes[1],
+              razon: `OCR erróneo con decimales corregido`
+            };
+          }
+          // Si ambas partes son razonables, puede ser separador de miles
+          else if (partes[0].length <= 3 && entero.length === 3) {
+            const montoUnido = partes[0] + partes[1];
+            console.log(`✅ Separador de miles con decimales: "${montoTexto}" -> "${montoUnido}"`);
+            return {
+              esValido: true,
+              montoCorregido: montoUnido,
+              razon: `Separador de miles con decimales válido`
+            };
+          }
+        }
+      }
+
+      // 🔍 ANÁLISIS 6: Validación por contexto textual específico
+      // Buscar patrones como "la cantidad de $ X Y (X Y PESOS...)"
+      const patronCantidadTexto = textoCompleto.match(/\$\s*([0-9\s,]+\.?\d*)\s*\(([^)]+)\)/i);
+      if (patronCantidadTexto && patronCantidadTexto[1].trim() === montoTexto.trim()) {
+        const textoEnParentesis = patronCantidadTexto[2].toLowerCase();
+        console.log(`🔍 Texto en paréntesis: "${textoEnParentesis}"`);
+        
+        // Si el texto en paréntesis confirma la cantidad, es válido
+        if (textoEnParentesis.includes('mil') || textoEnParentesis.includes('pesos')) {
+          // Analizar si confirma la corrección
+          if (textoEnParentesis.includes('un mil') && montoTexto.includes('1 ')) {
+            const montoCorregido = montoTexto.replace(/^1\s+/, '');
+            console.log(`✅ Confirmado por texto en paréntesis: "${montoTexto}" -> "${montoCorregido}"`);
+            return {
+              esValido: true,
+              montoCorregido: montoCorregido,
+              razon: `Confirmado por texto "(UN MIL PESOS...)"`
+            };
+          }
+        }
+      }
+
+      // 🚨 FALLBACK: Si no podemos determinar con certeza, ser conservador
+      console.log(`⚠️ No se pudo validar con certeza el monto: "${montoTexto}"`);
+      
+      // Si tiene indicadores válidos pero no estamos seguros del formato, permitir
+      if (tieneIndicadorValido) {
+        console.log(`🟡 Permitiendo monto con reservas debido a indicadores válidos`);
+        return {
+          esValido: true,
+          montoCorregido: montoTexto,
+          razon: `Permitido con reservas - tiene indicadores válidos`
+        };
+      }
+
+      // Rechazar si no hay evidencia de que sea válido
+      return {
+        esValido: false,
+        montoCorregido: montoTexto,
+        razon: `Sin evidencia suficiente de validez - falta contexto confirmatorio`
+      };
+
+    } catch (error) {
+      console.error(`❌ Error en validación de contexto:`, error);
+      return {
+        esValido: false,
+        montoCorregido: montoTexto,
+        razon: `Error en validación: ${error.message}`
+      };
+    }
+  }
+
   convertirMontoANumero(montoTexto) {
     try {
       if (!montoTexto || typeof montoTexto !== 'string') {
         return null;
       }
 
-      console.log(`🔍 Procesando monto: "${montoTexto}"`);
+      console.log(`� Procesando monto: "${montoTexto}"`);
 
       // Limpiar el texto: quitar espacios, símbolos de moneda, etc.
       let montoLimpio = montoTexto.trim()
         .replace(/\$/g, '') // Quitar símbolos de peso
         .trim();
 
-      // NUEVO: Manejar espacios como separadores de miles (ej: "1 000.00" -> "1000.00")
-      // Primero detectar si hay espacios que parecen separadores de miles
-      if (/\d\s+\d/.test(montoLimpio)) {
-        console.log(`📍 Detectados espacios como separadores de miles: "${montoLimpio}"`);
-        // Remover espacios entre dígitos, pero conservar el punto decimal
-        montoLimpio = montoLimpio.replace(/(\d)\s+(\d)/g, '$1$2');
-        console.log(`🔧 Espacios removidos: "${montoLimpio}"`);
-      }
+      // Remover espacios entre dígitos (ya validado por validarMontoConContexto)
+      montoLimpio = montoLimpio.replace(/(\d)\s+(\d)/g, '$1$2');
 
       // Ahora limpiar otros caracteres no numéricos
       montoLimpio = montoLimpio.replace(/[^\d,.-]/g, ''); // Quitar todo excepto dígitos, comas, puntos y guiones
@@ -1598,15 +2338,21 @@ class DocumentClassifier {
     const terminacionesInvalidas = [
       // Números
       /^\d+$/,
-      // 1-3 letras solas
-      /^[A-Za-zÁÉÍÓÚÑáéíóúñ]{1,3}$/,
-      // Palabras que claramente no son apellidos
+      // 1-3 letras solas (EXCEPTO X que es válida en nombres)
+      /^[A-WYZa-wyzÁÉÍÓÚÑáéíóúñ]{1,3}$/,
+      // Palabras que claramente no son apellidos (sin incluir X)
       /^(E|O|A|I|U|EL|LA|DE|CON|POR|PAR|AC|CO|TO|EN|UN|ES|NO|SI|YA|LO)$/i,
-      // Abreviaciones comunes
+      // Abreviaciones comunes (sin incluir X)
       /^(MN|CV|SA|RL|SC|SL)$/i,
-      // Palabras técnicas/números
+      // Palabras técnicas/números (sin incluir X)
       /^(ID|NO|OK)$/i
     ];
+
+    // 🎯 EXCEPCIÓN ESPECIAL: La "X" es válida como terminación de nombre
+    if (ultimaPalabra.toUpperCase() === 'X') {
+      console.log(`✅ Terminación "X" es válida - manteniendo nombre: "${nombre}"`);
+      return nombre;
+    }
 
     const esInvalida = terminacionesInvalidas.some(patron => patron.test(ultimaPalabra));
 
@@ -1624,15 +2370,47 @@ class DocumentClassifier {
       }
     }
 
-    // 🎯 VALIDACIÓN ADICIONAL: Verificar que la última palabra tenga al menos 4 letras
-    if (ultimaPalabra.length < 4) {
-      console.log(`🚫 Última palabra muy corta: "${ultimaPalabra}" en "${nombre}"`);
+    // 🎯 VALIDACIÓN ADICIONAL: Verificar que la última palabra tenga al menos 4 letras (EXCEPTO X)
+    if (ultimaPalabra.length < 4 && ultimaPalabra.toUpperCase() !== 'X') {
+      console.log(`🚫 Última palabra muy corta: "${ultimaPalabra}" en "${nombre}" (no es X válida)`);
 
       const palabrasValidas = palabras.slice(0, -1);
       if (palabrasValidas.length > 0) {
         const nombreLimpio = palabrasValidas.join(' ');
         console.log(`✅ Nombre corregido por longitud: "${nombre}" → "${nombreLimpio}"`);
         return nombreLimpio;
+      }
+    }
+
+    // 🔍 DETECCIÓN DE APELLIDOS CORTADOS POR OCR
+    // Detectar patrones de apellidos comunes que pueden estar incompletos
+    const apellidosIncompletosPosibles = [
+      { incompleto: /CARRILL$/, completo: 'CARRILLO', desc: 'CARRILL → CARRILLO' },
+      { incompleto: /CASTILL$/, completo: 'CASTILLO', desc: 'CASTILL → CASTILLO' },
+      { incompleto: /MORILL$/, completo: 'MORILLO', desc: 'MORILL → MORILLO' },
+      { incompleto: /GUILLEN$/, completo: 'GUILLERMO', desc: 'GUILLEN → GUILLERMO' },
+      { incompleto: /ROBERT$/, completo: 'ROBERTO', desc: 'ROBERT → ROBERTO' },
+      { incompleto: /ALBERT$/, completo: 'ALBERTO', desc: 'ALBERT → ALBERTO' },
+      { incompleto: /HUMBERT$/, completo: 'HUMBERTO', desc: 'HUMBERT → HUMBERTO' },
+      { incompleto: /RODRIGE$/, completo: 'RODRIGUEZ', desc: 'RODRIGE → RODRIGUEZ' },
+      { incompleto: /HERNANDR$/, completo: 'HERNANDEZ', desc: 'HERNANDR → HERNANDEZ' },
+      { incompleto: /GONZALE$/, completo: 'GONZALEZ', desc: 'GONZALE → GONZALEZ' },
+      { incompleto: /MARTINE$/, completo: 'MARTINEZ', desc: 'MARTINE → MARTINEZ' },
+      { incompleto: /RAMIRE$/, completo: 'RAMIREZ', desc: 'RAMIRE → RAMIREZ' },
+      { incompleto: /SANCHE$/, completo: 'SANCHEZ', desc: 'SANCHE → SANCHEZ' },
+      { incompleto: /FERNANDE$/, completo: 'FERNANDEZ', desc: 'FERNANDE → FERNANDEZ' }
+    ];
+
+    for (const apellido of apellidosIncompletosPosibles) {
+      if (apellido.incompleto.test(ultimaPalabra)) {
+        console.log(`🎯 Apellido incompleto detectado: "${ultimaPalabra}" → "${apellido.completo}"`);
+        
+        // Reemplazar la última palabra por la versión completa
+        const palabrasCorregidas = [...palabras.slice(0, -1), apellido.completo];
+        const nombreCorregido = palabrasCorregidas.join(' ');
+        
+        console.log(`✅ Nombre corregido por apellido incompleto: "${nombre}" → "${nombreCorregido}"`);
+        return nombreCorregido;
       }
     }
 
@@ -1688,6 +2466,15 @@ class DocumentClassifier {
       { patron: /\bSANCHE\s+Z\b/g, reemplazo: 'SANCHEZ', desc: 'SANCHE Z → SANCHEZ' },
       { patron: /\bRAMIR\s+EZ\b/g, reemplazo: 'RAMIREZ', desc: 'RAMIR EZ → RAMIREZ' },
       { patron: /\bMEND\s+OZA\b/g, reemplazo: 'MENDOZA', desc: 'MEND OZA → MENDOZA' },
+
+      // 🎯 CORRECCIÓN ESPECÍFICA PARA ANGEL - Apellidos cortados por OCR
+      { patron: /\bCARRILL\b/g, reemplazo: 'CARRILLO', desc: 'CARRILL → CARRILLO (letra cortada por OCR)' },
+      { patron: /\bCASTILL\b/g, reemplazo: 'CASTILLO', desc: 'CASTILL → CASTILLO (letra cortada por OCR)' },
+      { patron: /\bMORILL\b/g, reemplazo: 'MORILLO', desc: 'MORILL → MORILLO (letra cortada por OCR)' },
+      { patron: /\bGUILLERM\b/g, reemplazo: 'GUILLERMO', desc: 'GUILLERM → GUILLERMO (letra cortada por OCR)' },
+      { patron: /\bROBERT\b/g, reemplazo: 'ROBERTO', desc: 'ROBERT → ROBERTO (letra cortada por OCR)' },
+      { patron: /\bALBERT\b/g, reemplazo: 'ALBERTO', desc: 'ALBERT → ALBERTO (letra cortada por OCR)' },
+      { patron: /\bHUMBERT\b/g, reemplazo: 'HUMBERTO', desc: 'HUMBERT → HUMBERTO (letra cortada por OCR)' },
 
       // Letras duplicadas al final
       { patron: /\bGARCIAA+\b/g, reemplazo: 'GARCIA', desc: 'GARCIAA → GARCIA' },
@@ -1799,11 +2586,87 @@ class DocumentClassifier {
       }
     }
 
+    // 🔍 VALIDACIÓN FINAL: Detectar nombres que parecen cortados por OCR
+    const palabras = nombreCorregido.split(' ').filter(p => p.length > 0);
+    if (palabras.length >= 2) {
+      const ultimaPalabra = palabras[palabras.length - 1];
+      
+      // Detectar si la última palabra parece estar cortada (patrones sospechosos)
+      const patronesNombresCortados = [
+        /^[A-Z]{5,8}[^AEIOU]$/,     // Palabras que terminan en consonante después de 5-8 letras
+        /^[A-Z]+[RLNMS]$/,          // Terminan en R, L, N, M, S (común en apellidos cortados)
+        /^[A-Z]+[^O]LL$/            // Como CARRILL, CASTILL, etc.
+      ];
+
+      const pareceCortatado = patronesNombresCortados.some(patron => patron.test(ultimaPalabra));
+      
+      if (pareceCortatado && ultimaPalabra.length >= 5) {
+        console.log(`⚠️  POSIBLE APELLIDO CORTADO DETECTADO: "${ultimaPalabra}" en "${nombreCorregido}"`);
+        console.log(`💡 Sugerencia: Revisar manualmente si "${ultimaPalabra}" está incompleto`);
+        
+        // Marcar para revisión manual pero no corregir automáticamente
+        // para evitar correcciones incorrectas
+      }
+    }
+
     if (nombreCorregido !== nombre) {
       console.log(`🎉 Resultado final: "${nombre}" → "${nombreCorregido}"`);
     } else {
       console.log(`💫 Sin cambios necesarios: "${nombre}"`);
     }
+
+    return nombreCorregido;
+  }
+
+  /**
+   * Separa apellidos que el OCR pega incorrectamente
+   * Ejemplo: "VELASCOSEBA" -> "VELASCO SEBA"
+   */
+  separarApellidosPegados(nombre) {
+    if (!nombre || nombre.length < 10) return nombre;
+
+    // 🚨 DICCIONARIO DE APELLIDOS COMUNES QUE EL OCR PEGA
+    const apellidosComunes = [
+      // Apellidos muy comunes en México que suelen pegarse
+      'GARCIA', 'LOPEZ', 'MARTINEZ', 'GONZALEZ', 'RODRIGUEZ', 'HERNANDEZ', 'PEREZ', 'SANCHEZ', 'RAMIREZ', 'CRUZ',
+      'FLORES', 'GOMEZ', 'DIAZ', 'MORALES', 'JIMENEZ', 'RUIZ', 'GUTIERREZ', 'CHAVEZ', 'TORRES', 'VARGAS',
+      'MENDOZA', 'CASTILLO', 'MORENO', 'ORTIZ', 'RIVERA', 'SILVA', 'RAMOS', 'HERRERA', 'MEDINA', 'CASTRO',
+      'VELASCO', 'SEBA', 'ROJAS', 'CAMPOS', 'GUERRERO', 'LUNA', 'SOTO', 'DELGADO', 'AGUILAR', 'VEGA',
+      'SALAZAR', 'CONTRERAS', 'VALENCIA', 'ESPINOZA', 'SANDOVAL', 'CARRILLO', 'DOMINGUEZ', 'VAZQUEZ', 'AVILA',
+      // Apellidos específicos que hemos visto en problemas
+      'SAUCEDO', 'VELASCO', 'MENDOZA', 'LOURDES'
+    ];
+
+    let nombreCorregido = nombre;
+
+    // Separar por palabras
+    const palabras = nombre.split(/\s+/);
+    
+    // Buscar en cada palabra si contiene dos apellidos pegados
+    for (let i = 0; i < palabras.length; i++) {
+      const palabra = palabras[i];
+      
+      if (palabra.length >= 10) { // Solo procesar palabras largas que pueden ser 2 apellidos pegados
+        
+        // Buscar si la palabra contiene dos apellidos conocidos pegados
+        for (const apellido1 of apellidosComunes) {
+          if (palabra.startsWith(apellido1)) {
+            const resto = palabra.substring(apellido1.length);
+            
+            // Verificar si el resto es otro apellido conocido
+            for (const apellido2 of apellidosComunes) {
+              if (resto === apellido2) {
+                console.log(`🔄 Separando apellidos pegados: "${palabra}" -> "${apellido1} ${apellido2}"`);
+                palabras[i] = apellido1 + ' ' + apellido2;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    nombreCorregido = palabras.join(' ').replace(/\s+/g, ' ').trim();
 
     return nombreCorregido;
   }

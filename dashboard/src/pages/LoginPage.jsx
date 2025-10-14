@@ -13,6 +13,13 @@ export default function LoginPage() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    
+    // Validación extra antes de enviar
+    if (!password.trim()) {
+      setError('Por favor ingresa una contraseña');
+      return;
+    }
+    
     setLoading(true);
     setError('');
 
@@ -29,9 +36,20 @@ export default function LoginPage() {
     setLoading(false);
   };
 
+  const handlePasswordChange = (e) => {
+    setPassword(e.target.value);
+    // Limpiar error cuando el usuario empiece a escribir
+    if (error) {
+      setError('');
+    }
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
-      handleSubmit(e);
+      e.preventDefault();
+      if (password && password.trim().length > 0 && !loading) {
+        handleSubmit(e);
+      }
     }
   };
 
@@ -50,8 +68,13 @@ export default function LoginPage() {
         {/* Formulario */}
         <form onSubmit={handleSubmit} className="bg-gray-800 p-8 rounded-lg shadow-xl border border-gray-700">
           <div className="mb-6">
-            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
+            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2 flex items-center justify-between">
               Contraseña de Acceso
+              {password && password.trim().length > 0 && (
+                <span className="text-xs text-green-400 flex items-center">
+                  ✅ Listo para ingresar
+                </span>
+              )}
             </label>
             <div className="relative">
               <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -61,11 +84,12 @@ export default function LoginPage() {
                 type={showPassword ? 'text' : 'password'}
                 id="password"
                 value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                onKeyPress={handleKeyPress}
+                onChange={handlePasswordChange}
+                onKeyDown={handleKeyPress}
                 className="w-full pl-10 pr-12 py-3 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-white placeholder-gray-400 transition-colors"
                 placeholder="Ingresa tu contraseña"
                 autoFocus
+                autoComplete="current-password"
                 disabled={loading}
               />
               <button
@@ -93,8 +117,12 @@ export default function LoginPage() {
           {/* Submit Button */}
           <button
             type="submit"
-            disabled={!password.trim() || loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed text-white font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center"
+            disabled={!password || password.trim().length === 0 || loading}
+            className={`w-full font-semibold py-3 px-4 rounded-lg transition-colors duration-200 flex items-center justify-center ${
+              password && password.trim().length > 0 && !loading
+                ? 'bg-blue-600 hover:bg-blue-700 text-white cursor-pointer'
+                : 'bg-gray-600 text-gray-400 cursor-not-allowed'
+            }`}
           >
             {loading ? (
               <>

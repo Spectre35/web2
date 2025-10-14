@@ -238,6 +238,7 @@ class OCRService {
 
       // 🎯 ANÁLISIS GEOMÉTRICO PARA MEJORAR SEPARACIÓN DE PALABRAS
       let geometricAnalysis = null;
+      let truncationAnalysis = null;
       let finalText = ocrResult.data.text;
 
       if (options.useGeometricSeparation !== false) { // Por defecto habilitado
@@ -262,6 +263,34 @@ class OCRService {
         }
       }
 
+      // 🔍 ANÁLISIS DE PALABRAS CORTADAS (NUEVO)
+      if (options.detectTruncatedWords !== false) { // Por defecto habilitado
+        try {
+          console.log(`🔍 Iniciando detección de palabras cortadas...`);
+
+          const wordsWithCoords = this.extractWordsWithCoordinates(ocrResult.data);
+          truncationAnalysis = this.geometricSeparator.detectTruncatedWords(
+            wordsWithCoords,
+            { width: ocrResult.data.width, height: ocrResult.data.height }
+          );
+
+          if (truncationAnalysis.truncatedWords.length > 0) {
+            console.log(`⚠️ Detectadas ${truncationAnalysis.truncatedWords.length} palabras potencialmente cortadas`);
+            
+            // Si hay palabras de alta prioridad, registrar para posible reprocesamiento
+            const highPriorityWords = truncationAnalysis.truncatedWords.filter(w => w.priority === 'HIGH');
+            if (highPriorityWords.length > 0) {
+              console.log(`🚨 ${highPriorityWords.length} palabras requieren atención: ${highPriorityWords.map(w => w.word).join(', ')}`);
+            }
+          } else {
+            console.log(`✅ No se detectaron palabras cortadas`);
+          }
+
+        } catch (truncError) {
+          console.warn(`⚠️ Error en detección de palabras cortadas:`, truncError.message);
+        }
+      }
+
       const result = {
         text: finalText, // Usar texto corregido geométricamente si está disponible
         originalText: ocrResult.data.text, // Mantener texto original para referencia
@@ -271,11 +300,13 @@ class OCRService {
         paragraphs: ocrResult.data.paragraphs,
         boundingBoxes: this.extractBoundingBoxes(ocrResult.data),
         geometricAnalysis: geometricAnalysis, // Incluir análisis geométrico
+        truncationAnalysis: truncationAnalysis, // 🆕 Incluir análisis de palabras cortadas
         processingTime,
         preprocessedPath,
         bestConfiguration: bestConfigName,
         qualityScore: bestConfidence,
-        documentType: docType.type
+        documentType: docType.type,
+        needsManualReview: truncationAnalysis?.needsReprocessing || false // 🆕 Indicador de revisión manual
       };
 
       // 4. Clasificar el documento automáticamente usando texto corregido
@@ -506,10 +537,23 @@ class OCRService {
       enableOrientation: true,     // Detección de orientación (recomendado)
       enableNoiseReduction: false, // Deshabilitado por defecto para velocidad
       keepIntermediateFiles: false, // Mantener archivos intermedios (solo para debug)
-      fastMode: true               // ⚡ FAST MODE ACTIVADO POR DEFECTO
+      fastMode: true,              // ⚡ FAST MODE ACTIVADO POR DEFECTO
+      // 🆕 CONFIGURACIÓN DE DETECCIÓN DE PALABRAS CORTADAS
+      detectTruncatedWords: true,  // Detectar palabras cortadas (nuevo)
+      edgeThreshold: 50,           // Píxeles del borde para considerar cortado
+      confidenceThreshold: 60      // Confianza mínima para evitar false positives
     };
 
     this.enhancementConfig = { ...defaultConfig, ...config };
+
+    // Configurar el detector de palabras cortadas
+    if (this.geometricSeparator) {
+      this.geometricSeparator.configureEdgeDetection({
+        enabled: this.enhancementConfig.detectTruncatedWords,
+        edgeThreshold: this.enhancementConfig.edgeThreshold,
+        confidenceThreshold: this.enhancementConfig.confidenceThreshold
+      });
+    }
 
     // Ajustar configuración para modo rápido
     if (this.enhancementConfig.fastMode) {
@@ -533,14 +577,55 @@ class OCRService {
         contrastNormalization: '✅ Normalización de contraste rápida (< 100ms)',
         orientationDetection: '✅ Detección de orientación automática',
         noiseReduction: '✅ Limpieza de ruido básica',
-        batchProcessing: '✅ Procesamiento por lotes optimizado'
+        batchProcessing: '✅ Procesamiento por lotes optimizado',
+        truncatedWordDetection: '🆕 Detección de palabras cortadas (~50ms adicional)', // Nueva funcionalidad
+        geometricAnalysis: '✅ Análisis geométrico de espacios'
       },
       recommendations: {
         fastProcessing: 'Usar fastMode=true para lotes grandes',
         highAccuracy: 'Habilitar todas las mejoras para documentos críticos',
-        debugging: 'keepIntermediateFiles=true para análisis detallado'
+        debugging: 'keepIntermediateFiles=true para análisis detallado',
+        truncationDetection: 'detectTruncatedWords=true para mejorar precisión en nombres (costo ~50ms)' // Nueva recomendación
+      },
+      performance: {
+        truncationAnalysis: 'Análisis rápido post-OCR sin re-procesamiento completo',
+        estimatedOverhead: '50-100ms por documento con detección de palabras cortadas'
       }
     };
+  }
+
+  /**
+   * 📐 EXTRAER PALABRAS CON COORDENADAS PARA ANÁLISIS
+   * Función auxiliar para el análisis de palabras cortadas
+   * @param {Object} tesseractData - Datos de Tesseract con palabras y coordenadas
+   * @returns {Array} Array de palabras con coordenadas normalizadas
+   */
+  extractWordsWithCoordinates(tesseractData) {
+    const wordsWithCoords = [];
+    
+    if (tesseractData.words) {
+      tesseractData.words.forEach((word, index) => {
+        if (word.text && word.text.trim().length > 0) {
+          wordsWithCoords.push({
+            index: index,
+            text: word.text.trim(),
+            confidence: word.confidence || 0,
+            bbox: {
+              x0: word.bbox?.x0 || 0,
+              y0: word.bbox?.y0 || 0, 
+              x1: word.bbox?.x1 || 0,
+              y1: word.bbox?.y1 || 0,
+              width: (word.bbox?.x1 || 0) - (word.bbox?.x0 || 0),
+              height: (word.bbox?.y1 || 0) - (word.bbox?.y0 || 0)
+            },
+            line: word.line_num || 0,
+            block: word.block_num || 0
+          });
+        }
+      });
+    }
+
+    return wordsWithCoords;
   }
 
   /**

@@ -1502,7 +1502,87 @@ app.get('/api/ocr/processing-progress', (req, res) => {
   }
 });
 
-// 🔄 Rutas para actualizaciones masivas
+// � Sistema de logs en memoria para debugging OCR
+let recentOCRLogs = [];
+const MAX_OCR_LOGS = 200;
+
+// Interceptar console.log para capturar logs relacionados con OCR
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+    // Convertir argumentos a string
+    const message = args.map(arg => 
+        typeof arg === 'object' ? JSON.stringify(arg, null, 2) : String(arg)
+    ).join(' ');
+    
+    // Solo capturar logs relacionados con OCR o que contengan emojis de debug
+    if (message.includes('OCR') || 
+        message.includes('📝') || 
+        message.includes('📄') || 
+        message.includes('🔍') || 
+        message.includes('✅') || 
+        message.includes('❌') || 
+        message.includes('⚠️') || 
+        message.includes('📊') || 
+        message.includes('🎯') ||
+        message.includes('📋') ||
+        message.includes('🧹') ||
+        message.includes('🔧')) {
+        
+        const logEntry = {
+            timestamp: new Date().toISOString(),
+            message: message,
+            type: 'info'
+        };
+        
+        recentOCRLogs.unshift(logEntry);
+        
+        // Mantener solo los últimos MAX_OCR_LOGS
+        if (recentOCRLogs.length > MAX_OCR_LOGS) {
+            recentOCRLogs = recentOCRLogs.slice(0, MAX_OCR_LOGS);
+        }
+    }
+    
+    // Llamar al console.log original
+    originalConsoleLog.apply(console, args);
+};
+
+// 📜 Endpoint para obtener logs recientes de OCR
+app.get('/api/ocr/debug/logs', (req, res) => {
+    try {
+        const limit = parseInt(req.query.limit) || 50;
+        const logsToReturn = recentOCRLogs.slice(0, limit);
+        
+        res.json({
+            success: true,
+            logs: logsToReturn,
+            totalLogs: recentOCRLogs.length,
+            maxLogs: MAX_OCR_LOGS
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 📜 Endpoint para limpiar logs de OCR
+app.post('/api/ocr/debug/logs/clear', (req, res) => {
+    try {
+        recentOCRLogs = [];
+        res.json({
+            success: true,
+            message: 'Logs de OCR limpiados exitosamente'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// �🔄 Rutas para actualizaciones masivas
 app.use('/api/actualizaciones', actualizacionesRoutes);
 
 // 💬 Rutas para análisis de comentarios
@@ -9617,7 +9697,18 @@ app.post('/api/ocr/upload', ocrUpload.single('file'), async (req, res) => {
     // Reenviar batchId si el frontend lo envió (para tracking de progreso)
     if (req.body && req.body.batchId) {
       try {
-        formData.append('batchId', req.body.batchId);
+        const batchId = req.body.batchId;
+        formData.append('batchId', batchId);
+        
+        // 📊 Inicializar progreso de procesamiento
+        ocrProcessingStore.set(batchId, {
+          batchId,
+          processed: 0,
+          total: 1,
+          filename: req.file.originalname,
+          updatedAt: Date.now()
+        });
+        console.log(`📊 Progreso inicializado para batch ${batchId}: ${req.file.originalname}`);
       } catch (e) {
         // ignore
       }
@@ -9736,11 +9827,75 @@ app.post('/api/ocr/upload', ocrUpload.single('file'), async (req, res) => {
 
       // Si no hay resultados, intentar devolver el objeto original
       const finalResults = (mapped.length > 0) ? mapped : (response.data && typeof response.data === 'object' ? [response.data] : []);
+      
+      // 🔍 AGREGAR INFORMACIÓN DE DEBUG DESDE EL MICROSERVICIO OCR
+      let debugInfo = null;
+      if (response.data && response.data.debugInfo) {
+        debugInfo = response.data.debugInfo;
+      } else if (finalResults.length > 0 && finalResults[0].text) {
+        // Crear información de debug básica si no viene del microservicio
+        debugInfo = {
+          originalText: finalResults[0].text,
+          ocrConfidence: finalResults[0].confidence || 0,
+          textLength: finalResults[0].text ? finalResults[0].text.length : 0,
+          documentType: finalResults[0].classification?.type || 'desconocido',
+          classificationConfidence: finalResults[0].classification?.confidence || 0,
+          extractedFields: finalResults[0].__raw || finalResults[0],
+          processingSteps: [
+            `📄 Archivo procesado: ${req.file.originalname}`,
+            `🔍 Texto extraído: ${finalResults[0].text ? finalResults[0].text.length : 0} caracteres`,
+            `📊 Confianza OCR: ${finalResults[0].confidence || 'N/A'}`,
+            `📋 Tipo detectado: ${finalResults[0].classification?.type || 'desconocido'}`,
+            `✅ Campos extraídos: ${Object.keys(finalResults[0]).filter(k => !k.startsWith('__')).join(', ')}`
+          ]
+        };
+      }
+      
+      // 📊 Actualizar progreso como completado si hay batchId
+      if (req.body && req.body.batchId) {
+        try {
+          const batchId = req.body.batchId;
+          ocrProcessingStore.set(batchId, {
+            batchId,
+            processed: 1,
+            total: 1,
+            filename: req.file.originalname,
+            updatedAt: Date.now()
+          });
+          console.log(`📊 Progreso completado para batch ${batchId}: ${req.file.originalname}`);
+        } catch (e) {
+          // ignore
+        }
+      }
+      
       return res.status(response.status).json({
         success: true,
-        results: finalResults
+        results: finalResults,
+        // 🔍 AGREGAR INFORMACIÓN DE DEBUG
+        debugInfo: debugInfo,
+        processingTime: response.data?.processingTime || null,
+        needsValidation: response.data?.needsValidation || false,
+        validationData: response.data?.validationData || finalResults
       });
     } catch (ocrError) {
+      // 📊 Marcar progreso como error si hay batchId
+      if (req.body && req.body.batchId) {
+        try {
+          const batchId = req.body.batchId;
+          ocrProcessingStore.set(batchId, {
+            batchId,
+            processed: 1,
+            total: 1,
+            filename: req.file.originalname,
+            error: ocrError.message,
+            updatedAt: Date.now()
+          });
+          console.log(`📊 Progreso con error para batch ${batchId}: ${ocrError.message}`);
+        } catch (e) {
+          // ignore
+        }
+      }
+      
       // Eliminar archivo temporal local
       try { await fs.unlink(req.file.path); } catch (e) {}
       console.error('❌ Error reenviando a microservicio OCR:', ocrError.message);

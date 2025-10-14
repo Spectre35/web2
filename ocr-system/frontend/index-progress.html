@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema OCR Inteligente - Progreso Avanzado</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/react-dropzone@14.2.3/dist/index.umd.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .main-content {
+            padding: 40px;
+        }
+        
+        /* 🎯 ESTILOS PARA PROGRESO AVANZADO */
+        .progress-container {
+            background: #f8f9ff;
+            border-radius: 15px;
+            padding: 30px;
+            margin: 20px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        
+        .progress-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 25px;
+        }
+        
+        .progress-title {
+            font-size: 1.5rem;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .progress-status {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+        }
+        
+        .status-badge {
+            background: #667eea;
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 500;
+        }
+        
+        .status-badge.processing {
+            background: #f39c12;
+        }
+        
+        .status-badge.completed {
+            background: #27ae60;
+        }
+        
+        .status-badge.error {
+            background: #e74c3c;
+        }
+        
+        /* Barra de progreso principal */
+        .main-progress {
+            margin-bottom: 25px;
+        }
+        
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+        
+        .progress-percentage {
+            font-size: 1.2rem;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        .progress-files {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 12px;
+            background: #e9ecef;
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 6px;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+        
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shimmer 2s infinite;
+        }
+        
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+        
+        /* Progreso detallado por etapas */
+        .stages-progress {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .stage-item {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            border-left: 4px solid #e9ecef;
+            transition: all 0.3s ease;
+        }
+        
+        .stage-item.completed {
+            border-left-color: #27ae60;
+            background: #f8fff8;
+        }
+        
+        .stage-item.processing {
+            border-left-color: #f39c12;
+            background: #fffef8;
+            animation: pulse 2s infinite;
+        }
+        
+        .stage-item.pending {
+            border-left-color: #e9ecef;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.02); }
+        }
+        
+        .stage-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            letter-spacing: 0.5px;
+        }
+        
+        .stage-progress {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .stage-percentage {
+            font-size: 1.1rem;
+            font-weight: 600;
+        }
+        
+        .stage-count {
+            font-size: 0.8rem;
+            color: #666;
+        }
+        
+        .stage-bar {
+            width: 100%;
+            height: 6px;
+            background: #e9ecef;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }
+        
+        .stage-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        
+        .stage-time {
+            font-size: 0.7rem;
+            color: #666;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        /* Información de tiempo */
+        .time-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+        
+        .time-card {
+            background: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .time-label {
+            font-size: 0.8rem;
+            color: #666;
+            margin-bottom: 5px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .time-value {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #667eea;
+        }
+        
+        /* Estado de archivo actual */
+        .current-file {
+            background: #fff7e6;
+            border: 2px solid #ffd93d;
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .current-file-label {
+            font-size: 0.8rem;
+            color: #e67e22;
+            margin-bottom: 5px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .current-file-name {
+            font-size: 1.1rem;
+            color: #333;
+            word-break: break-all;
+        }
+        
+        /* Lista de errores */
+        .errors-list {
+            background: #ffeaea;
+            border: 1px solid #ffc4c4;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        
+        .errors-title {
+            font-weight: 600;
+            color: #c0392b;
+            margin-bottom: 10px;
+        }
+        
+        .error-item {
+            background: white;
+            padding: 10px;
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        /* Botones de acción */
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-primary {
+            background: #667eea;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #5a6fd8;
+            transform: translateY(-2px);
+        }
+        
+        .btn-secondary {
+            background: #f8f9fa;
+            color: #333;
+            border: 1px solid #dee2e6;
+        }
+        
+        .btn-secondary:hover {
+            background: #e9ecef;
+        }
+        
+        /* Spinner para carga */
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* Responsivo */
+        @media (max-width: 768px) {
+            .stages-progress {
+                grid-template-columns: 1fr;
+            }
+            
+            .time-info {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .progress-status {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // 🎯 Componente de Progreso Avanzado
+        function AdvancedProgressTracker({ sessionId, onComplete }) {
+            const [progress, setProgress] = useState(null);
+            const [isConnected, setIsConnected] = useState(false);
+            const socketRef = useRef(null);
+            
+            useEffect(() => {
+                if (!sessionId) return;
+                
+                // Conectar a WebSocket
+                socketRef.current = io();
+                
+                socketRef.current.on('connect', () => {
+                    setIsConnected(true);
+                    socketRef.current.emit('join-session', sessionId);
+                    console.log(`🔌 Conectado a sesión: ${sessionId}`);
+                });
+                
+                socketRef.current.on('progress-update', (stats) => {
+                    console.log('📊 Actualización de progreso:', stats);
+                    setProgress(stats);
+                    
+                    // Si está completo, notificar al componente padre
+                    if (stats.isComplete && onComplete) {
+                        setTimeout(() => onComplete(stats), 2000);
+                    }
+                });
+                
+                socketRef.current.on('disconnect', () => {
+                    setIsConnected(false);
+                    console.log('🔌 Desconectado del WebSocket');
+                });
+                
+                return () => {
+                    if (socketRef.current) {
+                        socketRef.current.disconnect();
+                    }
+                };
+            }, [sessionId]);
+            
+            if (!progress) {
+                return (
+                    <div className="progress-container">
+                        <div className="spinner"></div>
+                        <p style={{textAlign: 'center', marginTop: '10px'}}>
+                            Iniciando procesamiento...
+                        </p>
+                    </div>
+                );
+            }
+            
+            const formatTime = (ms) => {
+                if (!ms || ms < 1000) return '0s';
+                const seconds = Math.floor(ms / 1000);
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+                
+                if (hours > 0) {
+                    return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+                } else if (minutes > 0) {
+                    return `${minutes}m ${seconds % 60}s`;
+                } else {
+                    return `${seconds}s`;
+                }
+            };
+            
+            const getStageColor = (stage) => {
+                if (stage.progress >= 100) return '#27ae60';
+                if (stage.progress > 0) return '#f39c12';
+                return '#e9ecef';
+            };
+            
+            const getStageStatus = (stage) => {
+                if (stage.progress >= 100) return 'completed';
+                if (stage.progress > 0) return 'processing';
+                return 'pending';
+            };
+            
+            return (
+                <div className="progress-container">
+                    <div className="progress-header">
+                        <div className="progress-title">
+                            📊 Procesamiento OCR en Curso
+                        </div>
+                        <div className="progress-status">
+                            <div className={`status-badge ${progress.isComplete ? 'completed' : 'processing'}`}>
+                                {isConnected ? '🔗 Conectado' : '🔴 Desconectado'}
+                            </div>
+                            <div className={`status-badge ${progress.isComplete ? 'completed' : 'processing'}`}>
+                                {progress.isComplete ? '✅ Completado' : '⚡ Procesando'}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Progreso General */}
+                    <div className="main-progress">
+                        <div className="progress-info">
+                            <div className="progress-percentage">
+                                {progress.overallProgress}%
+                            </div>
+                            <div className="progress-files">
+                                {progress.filesProcessed} / {progress.totalFiles} archivos
+                            </div>
+                        </div>
+                        <div className="progress-bar">
+                            <div 
+                                className="progress-fill" 
+                                style={{width: `${progress.overallProgress}%`}}
+                            ></div>
+                        </div>
+                    </div>
+                    
+                    {/* Archivo Actual */}
+                    {!progress.isComplete && progress.currentFileName && (
+                        <div className="current-file">
+                            <div className="current-file-label">
+                                📄 Procesando archivo {progress.currentFile}/{progress.totalFiles}
+                            </div>
+                            <div className="current-file-name">
+                                {progress.currentFileName}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Etapas Detalladas */}
+                    <div className="stages-progress">
+                        {progress.stages.map(stage => (
+                            <div 
+                                key={stage.name} 
+                                className={`stage-item ${getStageStatus(stage)}`}
+                            >
+                                <div className="stage-name">
+                                    {stage.name === 'upload' && '📤 Subida'}
+                                    {stage.name === 'preprocessing' && '🔧 Preproceso'}
+                                    {stage.name === 'ocr' && '🔍 OCR'}
+                                    {stage.name === 'classification' && '📋 Clasificación'}
+                                    {stage.name === 'extraction' && '📊 Extracción'}
+                                    {stage.name === 'validation' && '✅ Validación'}
+                                </div>
+                                <div className="stage-progress">
+                                    <div className="stage-percentage">{stage.progress}%</div>
+                                    <div className="stage-count">{stage.completed}/{stage.total}</div>
+                                </div>
+                                <div className="stage-bar">
+                                    <div 
+                                        className="stage-fill" 
+                                        style={{
+                                            width: `${stage.progress}%`,
+                                            background: getStageColor(stage)
+                                        }}
+                                    ></div>
+                                </div>
+                                <div className="stage-time">
+                                    <span>Promedio: {formatTime(stage.avgTime)}</span>
+                                    {stage.lastRealTime && (
+                                        <span>Último: {formatTime(stage.lastRealTime)}</span>
+                                    )}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    
+                    {/* Información de Tiempo */}
+                    <div className="time-info">
+                        <div className="time-card">
+                            <div className="time-label">Tiempo Transcurrido</div>
+                            <div className="time-value">{formatTime(progress.elapsedTime)}</div>
+                        </div>
+                        <div className="time-card">
+                            <div className="time-label">Tiempo Restante</div>
+                            <div className="time-value">{formatTime(progress.estimatedRemaining)}</div>
+                        </div>
+                        <div className="time-card">
+                            <div className="time-label">Tiempo Total Est.</div>
+                            <div className="time-value">{formatTime(progress.estimatedTotal)}</div>
+                        </div>
+                        <div className="time-card">
+                            <div className="time-label">Velocidad</div>
+                            <div className="time-value">
+                                {progress.processingRate > 0 ? formatTime(progress.processingRate) + '/archivo' : 'Calculando...'}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {/* Errores si los hay */}
+                    {progress.errors && progress.errors.length > 0 && (
+                        <div className="errors-list">
+                            <div className="errors-title">
+                                ⚠️ Errores encontrados ({progress.errors.length})
+                            </div>
+                            {progress.errors.map((error, index) => (
+                                <div key={index} className="error-item">
+                                    <strong>Archivo {error.fileIndex + 1}:</strong> {error.fileName || 'Sin nombre'} - {error.error}
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    {/* Botones de Acción */}
+                    {progress.isComplete && (
+                        <div className="action-buttons">
+                            <button className="btn btn-primary" onClick={() => onComplete && onComplete(progress)}>
+                                📋 Ver Resultados
+                            </button>
+                            <button className="btn btn-secondary" onClick={() => window.location.reload()}>
+                                🔄 Nuevo Procesamiento
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+        
+        // 🎯 Componente Principal con Progreso Integrado
+        function OCRSystemWithProgress() {
+            const [sessionId, setSessionId] = useState(null);
+            const [isProcessing, setIsProcessing] = useState(false);
+            const [results, setResults] = useState(null);
+            const [error, setError] = useState(null);
+            
+            const handleFileProcess = async (files, formData) => {
+                try {
+                    setError(null);
+                    setResults(null);
+                    
+                    // Generar ID de sesión único
+                    const newSessionId = `ocr_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    console.log('🚀 Iniciando procesamiento con sessionId:', newSessionId);
+                    
+                    // IMPORTANT: Set processing state and sessionId BEFORE making the request
+                    setSessionId(newSessionId);
+                    setIsProcessing(true);
+                    
+                    // Agregar sessionId al formData
+                    formData.append('sessionId', newSessionId);
+                    
+                    // Determinar endpoint según número de archivos
+                    const endpoint = files.length > 1 ? '/api/ocr/batch-upload' : '/api/ocr/upload';
+                    
+                    const response = await fetch(endpoint, {
+                        method: 'POST',
+                        body: formData
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        // Don't set results immediately, let the progress tracker handle completion
+                        console.log('✅ Request completado, esperando actualización de progreso...');
+                    } else {
+                        throw new Error(data.error || 'Error desconocido');
+                    }
+                } catch (err) {
+                    console.error('❌ Error en procesamiento:', err);
+                    setError(err.message);
+                    setIsProcessing(false);
+                    setSessionId(null);
+                }
+            };
+            
+            const handleProgressComplete = (stats) => {
+                console.log('🎉 Procesamiento completado:', stats);
+                setIsProcessing(false);
+                setResults({ success: true, message: 'Procesamiento completado exitosamente' });
+            };
+            
+            return (
+                <div className="container">
+                    <div className="header">
+                        <h1>Sistema OCR Inteligente</h1>
+                        <p>Procesamiento avanzado con seguimiento en tiempo real</p>
+                    </div>
+                    
+                    <div className="main-content">
+                        {/* Mostrar progreso si hay una sesión activa */}
+                        {isProcessing && sessionId && (
+                            <AdvancedProgressTracker 
+                                sessionId={sessionId}
+                                onComplete={handleProgressComplete}
+                            />
+                        )}
+                        
+                        {/* UI para subir archivos - solo mostrar si no está procesando */}
+                        {!isProcessing && !results && (
+                            <FileUploadComponent onProcess={handleFileProcess} />
+                        )}
+                        
+                        {/* Mostrar resultados */}
+                        {results && !isProcessing && (
+                            <ResultsComponent 
+                                results={results} 
+                                onReset={() => {
+                                    setResults(null);
+                                    setSessionId(null);
+                                }} 
+                            />
+                        )}
+                        
+                        {/* Mostrar errores */}
+                        {error && (
+                            <div className="error-container">
+                                <h3>❌ Error</h3>
+                                <p>{error}</p>
+                                <button 
+                                    className="btn btn-secondary" 
+                                    onClick={() => {
+                                        setError(null);
+                                        setSessionId(null);
+                                    }}
+                                >
+                                    🔄 Reintentar
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+        
+        // Componente simplificado para subir archivos
+        function FileUploadComponent({ onProcess }) {
+            const [selectedFiles, setSelectedFiles] = useState([]);
+            const [formData, setFormData] = useState({
+                sucursal: '',
+                bloque: '',
+                caja: ''
+            });
+            
+            const handleSubmit = async (e) => {
+                e.preventDefault();
+                if (selectedFiles.length === 0) return;
+                
+                const data = new FormData();
+                selectedFiles.forEach(file => {
+                    data.append('files', file);
+                });
+                data.append('sucursal', formData.sucursal);
+                data.append('bloque', formData.bloque);
+                data.append('caja', formData.caja);
+                
+                onProcess(selectedFiles, data);
+            };
+            
+            return (
+                <form onSubmit={handleSubmit}>
+                    <div style={{marginBottom: '20px'}}>
+                        <h3>📤 Subir Archivos</h3>
+                        <input 
+                            type="file" 
+                            multiple 
+                            accept="image/*,.pdf" 
+                            onChange={(e) => setSelectedFiles(Array.from(e.target.files))}
+                        />
+                    </div>
+                    
+                    <div style={{display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '15px', marginBottom: '20px'}}>
+                        <input 
+                            type="text" 
+                            placeholder="Sucursal" 
+                            required
+                            value={formData.sucursal}
+                            onChange={(e) => setFormData({...formData, sucursal: e.target.value})}
+                        />
+                        <input 
+                            type="text" 
+                            placeholder="Bloque" 
+                            required
+                            value={formData.bloque}
+                            onChange={(e) => setFormData({...formData, bloque: e.target.value})}
+                        />
+                        <input 
+                            type="text" 
+                            placeholder="Caja" 
+                            required
+                            value={formData.caja}
+                            onChange={(e) => setFormData({...formData, caja: e.target.value})}
+                        />
+                    </div>
+                    
+                    <button 
+                        type="submit" 
+                        className="btn btn-primary"
+                        disabled={selectedFiles.length === 0 || !formData.sucursal || !formData.bloque || !formData.caja}
+                    >
+                        🚀 Procesar {selectedFiles.length} archivo{selectedFiles.length !== 1 ? 's' : ''}
+                    </button>
+                </form>
+            );
+        }
+        
+        // Componente para mostrar resultados
+        function ResultsComponent({ results, onReset }) {
+            return (
+                <div>
+                    <h3>✅ Procesamiento Completado</h3>
+                    <p>Se procesaron {results.totalFiles || 1} archivo(s) exitosamente.</p>
+                    <div style={{marginTop: '20px'}}>
+                        <button className="btn btn-primary" onClick={onReset}>
+                            🔄 Procesar Más Archivos
+                        </button>
+                    </div>
+                </div>
+            );
+        }
+        
+        // Renderizar la aplicación
+        ReactDOM.render(<OCRSystemWithProgress />, document.getElementById('root'));
+    </script>
+</body>
+</html>
