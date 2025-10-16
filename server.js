@@ -6958,6 +6958,606 @@ app.get("/aclaraciones/dashboard", async (req, res) => {
   }
 });
 
+// 🔍 ENDPOINT DE BÚSQUEDA DE ACLARACIONES (Individual y Masiva)
+app.get('/api/data/aclaraciones', async (req, res) => {
+  try {
+    console.log('🔍 Búsqueda de aclaraciones - Parámetros:', req.query);
+    
+    const { id, ids, autorizaciones, id_de_transaccion, cliente, comentarios, sucursal, limit = '50000' } = req.query;
+    
+    let whereConditions = [];
+    let values = [];
+    let paramIndex = 1;
+    let queryInfo = {};
+    
+    // 🚀 BÚSQUEDA MASIVA POR MÚLTIPLES AUTORIZACIONES
+    if (autorizaciones) {
+      console.log('🔑 Modo búsqueda masiva por autorizaciones activado');
+      
+      // Parsear autorizaciones de la string separada por comas
+      const autorizacionesArray = autorizaciones.split(',')
+        .map(auth => auth.trim())
+        .filter(auth => auth);
+      
+      if (autorizacionesArray.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron autorizaciones válidas',
+          message: 'Las autorizaciones deben estar separadas por comas'
+        });
+      }
+      
+      console.log(`🔑 Buscando ${autorizacionesArray.length} autorizaciones:`, autorizacionesArray.slice(0, 10), '...');
+      
+      // Buscar por autorizacion como strings
+      const placeholders = autorizacionesArray.map((_, index) => `$${paramIndex + index}`).join(',');
+      whereConditions.push(`autorizacion IN (${placeholders})`);
+      values.push(...autorizacionesArray);
+      paramIndex += autorizacionesArray.length;
+      
+      // Preparar info para respuesta
+      queryInfo = {
+        autorizaciones: autorizacionesArray,
+        totalRequested: autorizacionesArray.length,
+        searchField: 'autorizacion'
+      };
+      
+    } else if (ids) {
+      console.log('📊 Modo búsqueda masiva activado');
+      
+      // Parsear IDs de la string separada por comas
+      const idsArray = ids.split(',')
+        .map(id => id.trim())
+        .filter(id => id && /^\d+$/.test(id));
+      
+      if (idsArray.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron IDs válidos',
+          message: 'Los IDs deben ser números separados por comas'
+        });
+      }
+      
+      console.log(`🔢 Buscando ${idsArray.length} IDs de transacción:`, idsArray.slice(0, 10), '...');
+      
+      // Buscar por id_de_transaccion como strings (el campo es VARCHAR)
+      const placeholders = idsArray.map((_, index) => `$${paramIndex + index}`).join(',');
+      whereConditions.push(`id_de_transaccion IN (${placeholders})`);
+      values.push(...idsArray); // Mantener como strings, no convertir a int
+      paramIndex += idsArray.length;
+      
+      // Preparar info para respuesta
+      queryInfo = {
+        ids: idsArray,
+        totalRequested: idsArray.length,
+        searchField: 'id_de_transaccion'
+      };
+      
+    } else {
+      // 🎯 BÚSQUEDA INDIVIDUAL (mejorada)
+      if (id) {
+        whereConditions.push(`id = $${paramIndex++}`);
+        values.push(parseInt(id));
+      }
+      
+      if (id_de_transaccion) {
+        whereConditions.push(`id_de_transaccion = $${paramIndex++}`);
+        values.push(id_de_transaccion);
+      }
+      
+      if (cliente) {
+        whereConditions.push(`LOWER(cliente) LIKE LOWER($${paramIndex++})`);
+        values.push(`%${cliente}%`);
+      }
+      
+      if (comentarios) {
+        whereConditions.push(`LOWER(comentarios) LIKE LOWER($${paramIndex++})`);
+        values.push(`%${comentarios}%`);
+      }
+      
+      if (sucursal) {
+        whereConditions.push(`LOWER(sucursal) = LOWER($${paramIndex++})`);
+        values.push(sucursal);
+      }
+      
+      queryInfo = {
+        id: id || null,
+        id_de_transaccion: id_de_transaccion || null,
+        cliente: cliente || null,
+        comentarios: comentarios || null,
+        sucursal: sucursal || null
+      };
+    }
+    
+    const whereClause = whereConditions.length > 0 ? 
+      `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    const limitClause = `LIMIT $${paramIndex}`;
+    values.push(parseInt(limit));
+    
+    const query = `
+      SELECT 
+        id,
+        id_de_transaccion,
+        autorizacion,
+        cliente,
+        sucursal,
+        monto,
+        monto_mnx,
+        fecha_de_peticion,
+        fecha_de_respuesta,
+        comentarios,
+        procesador,
+        bloque,
+        captura_cc,
+        vendedora,
+        paquete,
+        fecha_venta,
+        fecha_contrato
+      FROM aclaraciones
+      ${whereClause}
+      ORDER BY 
+        CASE WHEN id IS NOT NULL THEN id ELSE 999999999 END DESC,
+        fecha_de_peticion DESC NULLS LAST
+      ${limitClause}
+    `;
+    
+    console.log('📝 Query construida:', query.substring(0, 200) + '...');
+    console.log('📊 Total values:', values.length);
+    
+    const result = await pool.query(query, values);
+    
+    // Para búsqueda masiva, identificar elementos no encontrados
+    if (ids && queryInfo.ids) {
+      const foundTransactionIds = result.rows.map(row => row.id_de_transaccion);
+      const notFoundIds = queryInfo.ids.filter(id => !foundTransactionIds.includes(id.toString()));
+      
+      if (notFoundIds.length > 0) {
+        console.log(`⚠️ IDs de transacción no encontrados (${notFoundIds.length}):`, notFoundIds.slice(0, 10), '...');
+        queryInfo.notFound = notFoundIds;
+      }
+    }
+    
+    // Para búsqueda masiva por autorizaciones, identificar autorizaciones no encontradas
+    if (autorizaciones && queryInfo.autorizaciones) {
+      const foundAutorizaciones = result.rows.map(row => row.autorizacion).filter(auth => auth);
+      const notFoundAutorizaciones = queryInfo.autorizaciones.filter(auth => !foundAutorizaciones.includes(auth));
+      
+      if (notFoundAutorizaciones.length > 0) {
+        console.log(`⚠️ Autorizaciones no encontradas (${notFoundAutorizaciones.length}):`, notFoundAutorizaciones.slice(0, 10), '...');
+        queryInfo.notFound = notFoundAutorizaciones;
+      }
+    }
+    
+    // Formatear fechas correctamente
+    const formattedResults = result.rows.map(row => ({
+      ...row,
+      fecha_de_peticion: formatearFechaSinZona(row.fecha_de_peticion),
+      fecha_de_respuesta: formatearFechaSinZona(row.fecha_de_respuesta),
+      fecha_venta: formatearFechaSinZona(row.fecha_venta),
+      fecha_contrato: formatearFechaSinZona(row.fecha_contrato)
+    }));
+    
+    console.log(`✅ Búsqueda completada: ${result.rows.length} resultados encontrados`);
+    
+    res.json({
+      success: true,
+      data: formattedResults,
+      count: result.rows.length,
+      query: {
+        ...queryInfo,
+        limit: parseInt(limit)
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en búsqueda de aclaraciones:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al buscar aclaraciones',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// 🎯 FUNCIÓN DE BÚSQUEDA EN CASCADA PARA EXCEL
+async function busquedaCascadaExcel(excelRows, pool) {
+  const encontrados = [];
+  const noEncontrados = [];
+  const stats = {
+    totalRows: excelRows.length,
+    encontradosPorId: 0,
+    encontradosPorFolio: 0,
+    encontradosPorReferencia: 0,
+    encontradosPorAutorizacion: 0,
+    noEncontradosTotal: 0
+  };
+  
+  console.log(`🎯 Iniciando búsqueda en cascada para ${excelRows.length} filas`);
+  
+  // Verificar que no hay límites en las filas
+  console.log(`📊 Total de filas recibidas: ${excelRows.length}`);
+  console.log(`📝 Primeras 5 filas:`, excelRows.slice(0, 5));
+  
+  for (let index = 0; index < excelRows.length; index++) {
+    const row = excelRows[index];
+    
+    // Log cada 100 registros para hacer seguimiento
+    if (index % 100 === 0) {
+      console.log(`📍 Procesando fila ${index + 1}/${excelRows.length}`);
+    }
+    let found = false;
+    let foundBy = null;
+    let foundWith = null;
+    
+    // 🔹 Paso 1: Buscar por ID
+    if (row.id && !found) {
+      try {
+        const result = await pool.query(
+          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
+          [row.id]
+        );
+        
+        if (result.rows.length > 0) {
+          const record = result.rows[0];
+          record.foundBy = 'id';
+          record.foundWith = row.id;
+          record.originalRow = row.originalRow;
+          record.excelData = row;
+          encontrados.push(record);
+          found = true;
+          foundBy = 'id';
+          foundWith = row.id;
+          stats.encontradosPorId++;
+        }
+      } catch (error) {
+        console.error('Error buscando por ID:', error);
+      }
+    }
+    
+    // 🔹 Paso 2: Buscar por FOLIO
+    if (row.folio && !found) {
+      try {
+        const result = await pool.query(
+          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
+          [row.folio]
+        );
+        
+        if (result.rows.length > 0) {
+          const record = result.rows[0];
+          record.foundBy = 'folio';
+          record.foundWith = row.folio;
+          record.originalRow = row.originalRow;
+          record.excelData = row;
+          encontrados.push(record);
+          found = true;
+          foundBy = 'folio';
+          foundWith = row.folio;
+          stats.encontradosPorFolio++;
+        }
+      } catch (error) {
+        console.error('Error buscando por FOLIO:', error);
+      }
+    }
+    
+    // 🔹 Paso 3: Buscar por REFERENCIA
+    if (row.referencia && !found) {
+      try {
+        const result = await pool.query(
+          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
+          [row.referencia]
+        );
+        
+        if (result.rows.length > 0) {
+          const record = result.rows[0];
+          record.foundBy = 'referencia';
+          record.foundWith = row.referencia;
+          record.originalRow = row.originalRow;
+          record.excelData = row;
+          encontrados.push(record);
+          found = true;
+          foundBy = 'referencia';
+          foundWith = row.referencia;
+          stats.encontradosPorReferencia++;
+        }
+      } catch (error) {
+        console.error('Error buscando por REFERENCIA:', error);
+      }
+    }
+    
+    // 🔹 Paso 4: Buscar por AUTORIZACIÓN (en id_de_transaccion)
+    if (row.autorizacion && !found) {
+      try {
+        const result = await pool.query(
+          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
+          [row.autorizacion]
+        );
+        
+        if (result.rows.length > 0) {
+          const record = result.rows[0];
+          record.foundBy = 'autorizacion';
+          record.foundWith = row.autorizacion;
+          record.originalRow = row.originalRow;
+          record.excelData = row;
+          encontrados.push(record);
+          found = true;
+          foundBy = 'autorizacion';
+          foundWith = row.autorizacion;
+          stats.encontradosPorAutorizacion++;
+        }
+      } catch (error) {
+        console.error('Error buscando por AUTORIZACIÓN:', error);
+      }
+    }
+    
+    // Si no se encontró en ningún paso
+    if (!found) {
+      noEncontrados.push({
+        originalRow: row.originalRow,
+        excelData: row,
+        intentos: {
+          id: row.id || 'vacío',
+          folio: row.folio || 'vacío', 
+          referencia: row.referencia || 'vacío',
+          autorizacion: row.autorizacion || 'vacío'
+        }
+      });
+      stats.noEncontradosTotal++;
+    }
+    
+    // Log progreso cada 50 registros
+    if ((encontrados.length + noEncontrados.length) % 50 === 0) {
+      console.log(`📊 Progreso: ${encontrados.length + noEncontrados.length}/${excelRows.length} procesados`);
+    }
+  }
+  
+  console.log(`🔍 Búsqueda completada. Encontrados: ${encontrados.length}, No encontrados: ${noEncontrados.length}`);
+  console.log(`📋 Total procesado: ${encontrados.length + noEncontrados.length} de ${excelRows.length} filas`);
+  
+  if (encontrados.length + noEncontrados.length !== excelRows.length) {
+    console.log(`⚠️ ADVERTENCIA: Discrepancia en números!`);
+  }
+  
+  console.log(`✅ Búsqueda en cascada completada:
+    - Total procesado: ${stats.totalRows}
+    - Encontrados por ID: ${stats.encontradosPorId}
+    - Encontrados por Folio: ${stats.encontradosPorFolio}  
+    - Encontrados por Referencia: ${stats.encontradosPorReferencia}
+    - Encontrados por Autorización: ${stats.encontradosPorAutorizacion}
+    - No encontrados: ${stats.noEncontradosTotal}`);
+  
+  // Formatear fechas en los encontrados
+  const encontradosFormateados = encontrados.map(row => ({
+    ...row,
+    fecha_de_peticion: formatearFechaSinZona(row.fecha_de_peticion),
+    fecha_de_respuesta: formatearFechaSinZona(row.fecha_de_respuesta),
+    fecha_venta: formatearFechaSinZona(row.fecha_venta),
+    fecha_contrato: formatearFechaSinZona(row.fecha_contrato)
+  }));
+  
+  return {
+    encontrados: encontradosFormateados,
+    noEncontrados,
+    stats
+  };
+}
+
+// 🚀 ENDPOINT DE BÚSQUEDA MASIVA DE ACLARACIONES (POST)
+app.post('/api/data/aclaraciones', async (req, res) => {
+  try {
+    console.log('🔍 Búsqueda masiva de aclaraciones - Body:', req.body);
+    
+    const { searchType, ids, autorizaciones, excelRows, limit = 50000 } = req.body;
+    
+    let whereConditions = [];
+    let values = [];
+    let paramIndex = 1;
+    let queryInfo = {};
+    
+    if (searchType === 'bulk_ids' && ids && Array.isArray(ids)) {
+      console.log('📊 Modo búsqueda masiva por IDs activado (POST)');
+      
+      if (ids.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron IDs válidos',
+          message: 'El array de IDs no puede estar vacío'
+        });
+      }
+      
+      // Filtrar y validar IDs
+      const validIds = ids
+        .filter(id => id && /^\d+$/.test(id.toString()));
+      
+      if (validIds.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron IDs válidos',
+          message: 'Los IDs deben ser números'
+        });
+      }
+      
+      console.log(`🔢 Buscando ${validIds.length} IDs de transacción:`, validIds.slice(0, 10), '...');
+      
+      // Buscar por id_de_transaccion como strings
+      const placeholders = validIds.map((_, index) => `$${paramIndex + index}`).join(',');
+      whereConditions.push(`id_de_transaccion IN (${placeholders})`);
+      values.push(...validIds.map(id => id.toString()));
+      paramIndex += validIds.length;
+      
+      queryInfo = {
+        ids: validIds,
+        totalRequested: validIds.length,
+        searchField: 'id_de_transaccion'
+      };
+      
+    } else if (searchType === 'bulk_auth' && autorizaciones && Array.isArray(autorizaciones)) {
+      console.log('🔑 Modo búsqueda masiva por autorizaciones activado (POST)');
+      
+      if (autorizaciones.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron autorizaciones válidas',
+          message: 'El array de autorizaciones no puede estar vacío'
+        });
+      }
+      
+      // Filtrar autorizaciones válidas
+      const validAuths = autorizaciones
+        .filter(auth => auth && auth.toString().trim())
+        .map(auth => auth.toString().trim());
+      
+      if (validAuths.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron autorizaciones válidas',
+          message: 'Las autorizaciones no pueden estar vacías'
+        });
+      }
+      
+      console.log(`🔑 Buscando ${validAuths.length} autorizaciones:`, validAuths.slice(0, 10), '...');
+      
+      // Buscar por autorizacion
+      const placeholders = validAuths.map((_, index) => `$${paramIndex + index}`).join(',');
+      whereConditions.push(`autorizacion IN (${placeholders})`);
+      values.push(...validAuths);
+      paramIndex += validAuths.length;
+      
+      queryInfo = {
+        autorizaciones: validAuths,
+        totalRequested: validAuths.length,
+        searchField: 'autorizacion'
+      };
+      
+    } else if (searchType === 'cascada_excel' && excelRows && Array.isArray(excelRows)) {
+      console.log('🎯 Modo búsqueda en cascada Excel activado (POST)');
+      
+      if (excelRows.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'No se proporcionaron filas de Excel válidas',
+          message: 'El array de filas no puede estar vacío'
+        });
+      }
+      
+      console.log(`📊 Procesando ${excelRows.length} filas de Excel para búsqueda en cascada`);
+      
+      // Realizar búsqueda en cascada
+      const cascadaResult = await busquedaCascadaExcel(excelRows, pool);
+      
+      console.log(`📤 Enviando respuesta: ${cascadaResult.encontrados.length} encontrados, ${cascadaResult.noEncontrados.length} no encontrados`);
+      
+      // Retornar resultado especial para cascada
+      return res.json({
+        success: true,
+        searchType: 'cascada_excel',
+        data: cascadaResult.encontrados,
+        count: cascadaResult.encontrados.length,
+        cascadaStats: cascadaResult.stats,
+        notFound: cascadaResult.noEncontrados,
+        timestamp: new Date().toISOString()
+      });
+      
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: 'Tipo de búsqueda no válido',
+        message: 'searchType debe ser "bulk_ids" o "bulk_auth" con el array correspondiente'
+      });
+    }
+    
+    const whereClause = whereConditions.length > 0 ? 
+      `WHERE ${whereConditions.join(' AND ')}` : '';
+    
+    const limitClause = `LIMIT $${paramIndex}`;
+    values.push(parseInt(limit));
+    
+    const query = `
+      SELECT 
+        id,
+        id_de_transaccion,
+        autorizacion,
+        cliente,
+        sucursal,
+        monto,
+        monto_mnx,
+        fecha_de_peticion,
+        fecha_de_respuesta,
+        comentarios,
+        procesador,
+        bloque,
+        captura_cc,
+        vendedora,
+        paquete,
+        fecha_venta,
+        fecha_contrato
+      FROM aclaraciones
+      ${whereClause}
+      ORDER BY 
+        CASE WHEN id IS NOT NULL THEN id ELSE 999999999 END DESC,
+        fecha_de_peticion DESC NULLS LAST
+      ${limitClause}
+    `;
+    
+    console.log('📝 Query construida:', query.substring(0, 200) + '...');
+    console.log('📊 Total values:', values.length);
+    
+    const result = await pool.query(query, values);
+    
+    // Identificar elementos no encontrados
+    if (searchType === 'bulk_ids' && queryInfo.ids) {
+      const foundTransactionIds = result.rows.map(row => row.id_de_transaccion);
+      const notFoundIds = queryInfo.ids.filter(id => !foundTransactionIds.includes(id.toString()));
+      
+      if (notFoundIds.length > 0) {
+        console.log(`⚠️ IDs de transacción no encontrados (${notFoundIds.length}):`, notFoundIds.slice(0, 10), '...');
+        queryInfo.notFound = notFoundIds;
+      }
+    } else if (searchType === 'bulk_auth' && queryInfo.autorizaciones) {
+      const foundAutorizaciones = result.rows.map(row => row.autorizacion).filter(auth => auth);
+      const notFoundAutorizaciones = queryInfo.autorizaciones.filter(auth => !foundAutorizaciones.includes(auth));
+      
+      if (notFoundAutorizaciones.length > 0) {
+        console.log(`⚠️ Autorizaciones no encontradas (${notFoundAutorizaciones.length}):`, notFoundAutorizaciones.slice(0, 10), '...');
+        queryInfo.notFound = notFoundAutorizaciones;
+      }
+    }
+    
+    // Formatear fechas correctamente
+    const formattedResults = result.rows.map(row => ({
+      ...row,
+      fecha_de_peticion: formatearFechaSinZona(row.fecha_de_peticion),
+      fecha_de_respuesta: formatearFechaSinZona(row.fecha_de_respuesta),
+      fecha_venta: formatearFechaSinZona(row.fecha_venta),
+      fecha_contrato: formatearFechaSinZona(row.fecha_contrato)
+    }));
+    
+    console.log(`✅ Búsqueda masiva completada: ${result.rows.length} resultados encontrados`);
+    
+    res.json({
+      success: true,
+      data: formattedResults,
+      count: result.rows.length,
+      query: {
+        ...queryInfo,
+        limit: parseInt(limit)
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en búsqueda masiva de aclaraciones:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Error al buscar aclaraciones (masiva)',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // ================= 💳 DASHBOARD SUCURSALES TARJETAS DUPLICADAS =================
 app.get("/dashboard-tarjetas-duplicadas", async (req, res) => {
   try {

@@ -179,20 +179,34 @@ class ImageProcessor {
         const baseName = imagePath.replace(/\.[^/.]+$/, "");
         const receiptPaths = [];
 
-        // Extraer cada región detectada
+        // Extraer cada región detectada con márgenes de seguridad
         for (let i = 0; i < receiptRegions.length; i++) {
           const region = receiptRegions[i];
           const receiptPath = `${baseName}_receipt_${i + 1}.png`;
           
           console.log(`📁 Extrayendo recibo ${i + 1}: ${receiptPath}`);
-          console.log(`� Región: x=${region.x}, y=${region.y}, width=${region.width}, height=${region.height}`);
+          console.log(`🔧 Región original: x=${region.x}, y=${region.y}, width=${region.width}, height=${region.height}`);
+          
+          // 🎯 APLICAR MÁRGENES DE SEGURIDAD PARA EVITAR CORTAR TEXTO
+          const marginTop = i === 0 ? 0 : 30;    // Sin margen superior para el primer recibo
+          const marginBottom = 20;                // Margen inferior para todos
+          const marginSides = 10;                 // Márgenes laterales pequeños
+          
+          // Calcular nuevas coordenadas con márgenes seguros
+          const safeLeft = Math.max(0, region.x - marginSides);
+          const safeTop = Math.max(0, region.y - marginTop);
+          const safeWidth = Math.min(metadata.width - safeLeft, region.width + (2 * marginSides));
+          const safeHeight = Math.min(metadata.height - safeTop, region.height + marginTop + marginBottom);
+          
+          console.log(`✅ Región con márgenes: x=${safeLeft}, y=${safeTop}, width=${safeWidth}, height=${safeHeight}`);
+          console.log(`📏 Márgenes aplicados: superior=${marginTop}px, inferior=${marginBottom}px, laterales=${marginSides}px`);
 
           await sharp(imageBuffer)
             .extract({
-              left: region.x,
-              top: region.y,
-              width: region.width,
-              height: region.height
+              left: safeLeft,
+              top: safeTop,
+              width: safeWidth,
+              height: safeHeight
             })
             .png()
             .toFile(receiptPath);
@@ -371,42 +385,52 @@ class ImageProcessor {
       // Limpiar memoria de OpenCV
       mat.delete();
 
-      // 🎯 PREPROCESAMIENTO INTELIGENTE Y ADAPTATIVO PARA OCR
-      console.log('🔧 Aplicando preprocesamiento inteligente adaptado a la imagen...');
+      // 🧹 PREPROCESAMIENTO ADAPTATIVO BASADO EN TAMAÑO DE IMAGEN
+      console.log('🔧 Aplicando preprocesamiento adaptativo para OCR óptimo...');
       
-      // Análizar la imagen actual para determinar el mejor preprocesamiento
+      // Análizar la imagen actual
       const currentMetadata = await sharp(currentBuffer).metadata();
-      console.log(`📐 Analizando imagen: ${currentMetadata.width}x${currentMetadata.height}, densidad: ${currentMetadata.density || 'N/A'}`);
+      console.log(`📐 Imagen: ${currentMetadata.width}x${currentMetadata.height}, canales: ${currentMetadata.channels}`);
       
-      // Calcular el factor de escala óptimo basado en el contenido
-      const targetHeight = this.calculateOptimalHeight(currentMetadata);
-      console.log(`🎯 Altura objetivo calculada: ${targetHeight}px`);
+      // 🎯 DETERMINAR PARÁMETROS ADAPTATIVOS SEGÚN TAMAÑO
+      const imageArea = currentMetadata.width * currentMetadata.height;
+      const isSmallReceipt = imageArea < 2000000; // Menor a ~1400x1400px
       
-      // Aplicar preprocesamiento adaptativo según las características de la imagen
+      console.log(`📊 Área de imagen: ${imageArea} pixels - ${isSmallReceipt ? 'RECIBO PEQUEÑO' : 'RECIBO GRANDE'}`);
+      
+      // Parámetros adaptativos
+      const adaptiveParams = {
+        median: isSmallReceipt ? 1 : 2,           // Menos filtrado para recibos pequeños
+        contrast: isSmallReceipt ? 1.05 : 1.10,   // Contraste más suave para pequeños
+        brightness: isSmallReceipt ? 2 : 3,       // Menos brightness para pequeños
+        targetHeight: isSmallReceipt ? 2500 : 2000 // Mayor resolución para pequeños
+      };
+      
+      console.log(`🎛️ Parámetros adaptativos:`, adaptiveParams);
+      
+      // 🎯 PIPELINE ADAPTATIVO PARA CADA TIPO DE RECIBO
       let sharpInstance = sharp(currentBuffer);
       
-      // 1. Redimensionado inteligente 
-      sharpInstance = sharpInstance.resize(null, targetHeight, {
+      // 1. Redimensionado adaptativo - más resolución para recibos pequeños
+      sharpInstance = sharpInstance.resize(null, adaptiveParams.targetHeight, {
         fit: 'inside',
         withoutEnlargement: false,
-        kernel: sharp.kernel.lanczos3 // Mejor calidad para texto
+        kernel: sharp.kernel.lanczos3  // Kernel de mejor calidad para texto
       });
       
-      // 2. Conversión a escala de grises con ajuste de gamma
+      // 2. Conversión a escala de grises
       sharpInstance = sharpInstance.greyscale();
       
-      // 3. Ajuste de contraste adaptativo basado en la densidad del texto
-      const contrastFactor = this.calculateOptimalContrast(currentMetadata);
-      console.log(`🎛️ Factor de contraste adaptativo: ${contrastFactor}`);
-      sharpInstance = sharpInstance.linear(contrastFactor, 0);
+      // 3. ✨ FILTRADO ADAPTATIVO DE RUIDO ✨
+      sharpInstance = sharpInstance.median(adaptiveParams.median);
       
-      // 4. Normalización inteligente
+      // 4. Contraste adaptativo más suave para recibos pequeños
+      sharpInstance = sharpInstance.linear(adaptiveParams.contrast, adaptiveParams.brightness);
+      
+      // 5. Normalización para optimizar rango dinámico
       sharpInstance = sharpInstance.normalize();
       
-      // 5. Enfoque adaptativo para texto
-      const sharpenSigma = this.calculateOptimalSharpen(currentMetadata);
-      console.log(`🔍 Sigma de enfoque adaptativo: ${sharpenSigma}`);
-      sharpInstance = sharpInstance.sharpen({ sigma: sharpenSigma });
+      console.log(`✅ Preprocesamiento adaptativo completado - optimizado para ${isSmallReceipt ? 'recibo pequeño' : 'recibo grande'}`);
       
       const finalBuffer = await sharpInstance.png().toBuffer();
 
