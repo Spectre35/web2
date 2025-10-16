@@ -578,6 +578,21 @@
                             </div>
                         )}
 
+                        {/* Alerta de revisión manual */}
+                        {results && results.isMultiple && results.receipts.some(receipt => 
+                            receipt.classification?.datosExtraidos?.requiereRevisionManual
+                        ) && (
+                            <div className="error active">
+                                <strong>⚠️ Revisión Manual Requerida:</strong> Uno o más recibos necesitan revisión manual del cliente debido a OCR problemático.
+                            </div>
+                        )}
+
+                        {results && !results.isMultiple && results.classification?.datosExtraidos?.requiereRevisionManual && (
+                            <div className="error active">
+                                <strong>⚠️ Revisión Manual Requerida:</strong> El cliente necesita revisión manual debido a OCR problemático.
+                            </div>
+                        )}
+
                         {results && !results.isMultiple && (
                             <div className="results-section active">
                                 <div className="results-header">

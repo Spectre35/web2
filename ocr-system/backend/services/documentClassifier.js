@@ -866,11 +866,14 @@ class DocumentClassifier {
             console.log(`⚠️ Nombre de cliente rechazado: "${clienteLimpio}" - Palabras: ${palabras.length}, Longitud: ${clienteLimpio.length}, EsPartícula: ${esParticulaNobiliaria}`);
 
             // 🚨 FALLBACK INTELIGENTE: Si no encontramos nombre válido, marcar para revisión manual
-            fields.cliente = 'REVISIÓN MANUAL REQUERIDA';
+            fields.cliente = ''; // Dejar campo vacío
+            fields.requiereRevisionManual = true; // Bandera para la interfaz
             console.log(`🚨 Cliente marcado para revisión manual debido a OCR problemático`);
           }
         } else {
           console.log(`⚠️ No se encontró cliente válido en el recibo`);
+          fields.cliente = ''; // Dejar campo vacío
+          fields.requiereRevisionManual = true; // Bandera para la interfaz
         }
 
         // Extraer y convertir fecha de DD/MM/AAAA a AAAA-MM-DD (robust)

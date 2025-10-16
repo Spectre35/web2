@@ -660,6 +660,64 @@
             return rows; // Sin límite de filas
         }
 
+        // Determinar estilo del comentario según contenido
+        function getComentarioStyle(comentario) {
+            if (!comentario || comentario === 'Sin comentarios') {
+                return '';
+            }
+            
+            const texto = comentario.toLowerCase();
+            
+            // Comentarios que requieren atención inmediata (ROJO)
+            const alertas = [
+                'revision manual requerida',
+                'revision manual',
+                'error',
+                'problema',
+                'fallido',
+                'rechazado',
+                'cancelado',
+                'pendiente revision',
+                'requiere atencion'
+            ];
+            
+            // Comentarios de advertencia (NARANJA)
+            const advertencias = [
+                'pendiente',
+                'en revision',
+                'esperando',
+                'validacion',
+                'verificacion'
+            ];
+            
+            // Comentarios positivos (VERDE)
+            const positivos = [
+                'procesado',
+                'completado',
+                'exitoso',
+                'aprobado',
+                'finalizado'
+            ];
+            
+            // Verificar alertas (rojo)
+            if (alertas.some(alerta => texto.includes(alerta))) {
+                return 'color: #fff; font-weight: bold; background: #e74c3c; padding: 4px 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(231,76,60,0.3);';
+            }
+            
+            // Verificar advertencias (naranja)
+            if (advertencias.some(advertencia => texto.includes(advertencia))) {
+                return 'color: #fff; font-weight: bold; background: #f39c12; padding: 4px 8px; border-radius: 4px;';
+            }
+            
+            // Verificar positivos (verde)
+            if (positivos.some(positivo => texto.includes(positivo))) {
+                return 'color: #fff; font-weight: bold; background: #27ae60; padding: 4px 8px; border-radius: 4px;';
+            }
+            
+            // Por defecto, sin estilo especial
+            return '';
+        }
+
         // Mostrar resultados en la tabla
         function mostrarResultados(resultados, queryInfo = {}, responseData = {}) {
             resultsBody.innerHTML = '';
