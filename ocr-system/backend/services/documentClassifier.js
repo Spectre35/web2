@@ -453,8 +453,14 @@ class DocumentClassifier {
         
         for (let i = 0; i < lines.length; i++) {
             const line = lines[i].trim();
-            // 🆕 PATRÓN MEJORADO: Detectar variaciones OCR de "Recibí de"
-            if (/recib[íi]\s+de|recibo\s+de|recibio\s+de|recibí\s+de|recibi\s+de/gi.test(line)) {
+            
+            // 🆕 PATRÓN MEJORADO: Detectar SOLO "Recibí de" (sin "recibo de")
+            const tieneReciboDe = /recib[íi]\s+de|recibio\s+de|recibí\s+de|recibi\s+de/gi.test(line);
+            const esReciboDePago = /recibo\s+de\s+pago/gi.test(line);
+            const esTituloRecibo = /recibo\s+de\s+(pago|factura|compra)/gi.test(line);
+            
+            // Solo procesar si tiene "Recibí de" pero NO es "Recibo de Pago" ni otros títulos
+            if (tieneReciboDe && !esReciboDePago && !esTituloRecibo) {
                 console.log(`🔍 Línea ${i+1} con "Recibí de" encontrada: "${line}"`);
                 
                 // 🆕 PATRONES MÚLTIPLES PARA EXTRAER NOMBRES - más robustos
@@ -573,17 +579,36 @@ class DocumentClassifier {
                         }
                     }
                     
+                    // 🔍 VALIDACIÓN MEJORADA DE NOMBRES - Detectar falsos positivos comunes
+                    const esPalabraSistemática = candidato && (
+                        candidato.toLowerCase().includes('pago') ||
+                        candidato.toLowerCase().includes('factura') ||
+                        candidato.toLowerCase().includes('global') ||
+                        candidato.toLowerCase().includes('empresa') ||
+                        candidato.toLowerCase().includes('copia') ||
+                        candidato.toLowerCase().includes('importante') ||
+                        candidato.toLowerCase().includes('contrario') ||
+                        candidato.toLowerCase().includes('center') ||
+                        candidato.toLowerCase().includes('centro') ||
+                        candidato.toLowerCase().includes('laser') ||
+                        candidato.toLowerCase().includes('europiel') ||
+                        candidato.toLowerCase().includes('sinergia') ||
+                        candidato.toLowerCase().includes('folio') ||
+                        candidato.toLowerCase() === 'pago' ||
+                        candidato.toLowerCase() === 'ag o' ||
+                        candidato.toLowerCase().includes('p ag o') ||
+                        /^\s*[A-Z]{1,3}\s*$/.test(candidato) // No solo siglas
+                    );
+                    
                     // Validar que sea un nombre real (no contenga palabras de facturación)
                     const esNombreValido = candidato && 
                         candidato.length > 5 && 
-                        !candidato.toLowerCase().includes('facturacion') &&
-                        !candidato.toLowerCase().includes('global') &&
-                        !candidato.toLowerCase().includes('empresa') &&
-                        !candidato.toLowerCase().includes('copia') &&
-                        !candidato.toLowerCase().includes('importante') &&
-                        !candidato.toLowerCase().includes('contrario') &&
-                        !/^\s*[A-Z]{1,3}\s*$/.test(candidato) && // No solo siglas
-                        candidato.split(/\s+/).length >= 2; // Al menos 2 palabras
+                        !esPalabraSistemática &&
+                        candidato.split(/\s+/).length >= 2 && // Al menos 2 palabras
+                        // Verificar que tenga al menos una palabra de 3+ caracteres
+                        candidato.split(/\s+/).some(palabra => palabra.length >= 3) &&
+                        // Verificar que no sea solo palabras de 1-2 caracteres
+                        candidato.split(/\s+/).filter(palabra => palabra.length >= 3).length >= 2;
                     
                     console.log(`🔍 Validación para "${candidato}": ${esNombreValido ? '✅ VÁLIDO' : '❌ INVÁLIDO'}`);
                     
@@ -829,7 +854,7 @@ class DocumentClassifier {
             .replace(/([A-ZÁÉÍÓÚÑ]{3,})\d+/g, '$1') // Quitar números pegados a palabras (ej: "TINOCO5" -> "TINOCO")
             .replace(/\d+([A-ZÁÉÍÓÚÑ]{3,})/g, '$1') // Quitar números al inicio de palabras (ej: "5GARCIA" -> "GARCIA")
             .replace(/\s*[^\w\sáéíóúñÁÉÍÓÚÑ]+\s*/g, ' ') // Quitar caracteres especiales
-            .replace(/\s+[a-zA-Z]{1,2}\s*$/g, '') // Quitar fragmentos de 1-2 letras al final
+            .replace(/\s+(?![xX]\s*$)[a-zA-Z]{1,2}\s*$/g, '') // Quitar fragmentos de 1-2 letras al final EXCEPTO X
             .replace(/\s+/g, ' ') // Normalizar espacios
             .trim();
 

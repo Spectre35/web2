@@ -298,7 +298,7 @@
                 <div class="form-group" id="multipleAuthGroup" style="display: none;">
                     <label for="searchAuths">🔑 Autorizaciones Múltiples:</label>
                     <textarea id="searchAuths" placeholder="Ejemplo:&#10;AUTH123456&#10;AUTH789012&#10;AUTH345678&#10;...&#10;&#10;Pega aquí tus números de autorización, uno por línea" rows="8"></textarea>
-                    <small style="color: #666; font-size: 12px;">💡 Busca en campo: autorizacion. Sin límite de cantidad.</small>
+                    <small style="color: #666; font-size: 12px;">💡 Busca en campo: id_de_transaccion. Sin límite de cantidad.</small>
                 </div>
                 
                 <div class="form-group" id="cascadaExcelGroup" style="display: none; width: 100%;">
@@ -492,8 +492,8 @@
                 params.append('sucursal', sucursal);
             }
 
-            // Límite de resultados para evitar sobrecarga
-            params.append('limit', '100');
+            // Límite de resultados alto para obtener todos los registros
+            params.append('limit', '50000');
             
             return params.toString();
         }
@@ -543,10 +543,10 @@
                 throw new Error('No se encontraron autorizaciones válidas para buscar.');
             }
 
-            console.log(`🔑 Procesando ${auths.length} números de autorización para búsqueda masiva`);
+            console.log(`🔑 Procesando ${auths.length} números de autorización para búsqueda masiva en id_de_transaccion`);
 
             const params = new URLSearchParams();
-            params.append('autorizacion_multiple', auths.join(','));  // Nuevo parámetro
+            params.append('id_de_transaccion_multiple', auths.join(','));  // Buscar en id_de_transaccion
             params.append('limit', '50000');  // Límite alto para búsqueda masiva
             
             return params.toString();
@@ -595,8 +595,8 @@
                 }
 
                 return {
-                    searchType: 'bulk_auth',
-                    autorizaciones: auths,
+                    searchType: 'bulk_ids',  // Cambiar a bulk_ids ya que buscaremos en id_de_transaccion
+                    ids: auths,              // Renombrar para que sea consistente
                     limit: 50000
                 };
                 
@@ -658,64 +658,6 @@
             }
             
             return rows; // Sin límite de filas
-        }
-
-        // Determinar estilo del comentario según contenido
-        function getComentarioStyle(comentario) {
-            if (!comentario || comentario === 'Sin comentarios') {
-                return '';
-            }
-            
-            const texto = comentario.toLowerCase();
-            
-            // Comentarios que requieren atención inmediata (ROJO)
-            const alertas = [
-                'revision manual requerida',
-                'revision manual',
-                'error',
-                'problema',
-                'fallido',
-                'rechazado',
-                'cancelado',
-                'pendiente revision',
-                'requiere atencion'
-            ];
-            
-            // Comentarios de advertencia (NARANJA)
-            const advertencias = [
-                'pendiente',
-                'en revision',
-                'esperando',
-                'validacion',
-                'verificacion'
-            ];
-            
-            // Comentarios positivos (VERDE)
-            const positivos = [
-                'procesado',
-                'completado',
-                'exitoso',
-                'aprobado',
-                'finalizado'
-            ];
-            
-            // Verificar alertas (rojo)
-            if (alertas.some(alerta => texto.includes(alerta))) {
-                return 'color: #fff; font-weight: bold; background: #e74c3c; padding: 4px 8px; border-radius: 4px; box-shadow: 0 2px 4px rgba(231,76,60,0.3);';
-            }
-            
-            // Verificar advertencias (naranja)
-            if (advertencias.some(advertencia => texto.includes(advertencia))) {
-                return 'color: #fff; font-weight: bold; background: #f39c12; padding: 4px 8px; border-radius: 4px;';
-            }
-            
-            // Verificar positivos (verde)
-            if (positivos.some(positivo => texto.includes(positivo))) {
-                return 'color: #fff; font-weight: bold; background: #27ae60; padding: 4px 8px; border-radius: 4px;';
-            }
-            
-            // Por defecto, sin estilo especial
-            return '';
         }
 
         // Mostrar resultados en la tabla
@@ -1009,14 +951,14 @@
             }
         });
 
-        // Contador de autorizaciones en modo masivo
+        // Contador de autorizaciones en modo masivo (busca en id_de_transaccion)
         document.getElementById('searchAuths').addEventListener('input', (e) => {
             const text = e.target.value.trim();
             const auths = text.split(/[\n,\s]+/).filter(auth => auth.trim());
             const label = document.querySelector('label[for="searchAuths"]');
             
             if (auths.length > 0) {
-                label.textContent = `🔑 Autorizaciones Múltiples (${auths.length} detectadas):`;
+                label.textContent = `🔑 Autorizaciones Múltiples (${auths.length} detectadas - busca en ID Transacción):`;
             } else {
                 label.textContent = '🔑 Autorizaciones Múltiples:';
             }

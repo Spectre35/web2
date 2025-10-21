@@ -6987,11 +6987,11 @@ app.get('/api/data/aclaraciones', async (req, res) => {
         });
       }
       
-      console.log(`🔑 Buscando ${autorizacionesArray.length} autorizaciones:`, autorizacionesArray.slice(0, 10), '...');
+      console.log(`🔑 Buscando ${autorizacionesArray.length} autorizaciones en id_de_transaccion:`, autorizacionesArray.slice(0, 10), '...');
       
-      // Buscar por autorizacion como strings
+      // Buscar por id_de_transaccion (no por autorizacion)
       const placeholders = autorizacionesArray.map((_, index) => `$${paramIndex + index}`).join(',');
-      whereConditions.push(`autorizacion IN (${placeholders})`);
+      whereConditions.push(`id_de_transaccion IN (${placeholders})`);
       values.push(...autorizacionesArray);
       paramIndex += autorizacionesArray.length;
       
@@ -6999,7 +6999,7 @@ app.get('/api/data/aclaraciones', async (req, res) => {
       queryInfo = {
         autorizaciones: autorizacionesArray,
         totalRequested: autorizacionesArray.length,
-        searchField: 'autorizacion'
+        searchField: 'id_de_transaccion'
       };
       
     } else if (ids) {
@@ -7118,13 +7118,13 @@ app.get('/api/data/aclaraciones', async (req, res) => {
       }
     }
     
-    // Para búsqueda masiva por autorizaciones, identificar autorizaciones no encontradas
+    // Para búsqueda masiva por autorizaciones (que ahora busca en id_de_transaccion), identificar autorizaciones no encontradas
     if (autorizaciones && queryInfo.autorizaciones) {
-      const foundAutorizaciones = result.rows.map(row => row.autorizacion).filter(auth => auth);
-      const notFoundAutorizaciones = queryInfo.autorizaciones.filter(auth => !foundAutorizaciones.includes(auth));
+      const foundTransactionIds = result.rows.map(row => row.id_de_transaccion).filter(id => id);
+      const notFoundAutorizaciones = queryInfo.autorizaciones.filter(auth => !foundTransactionIds.includes(auth));
       
       if (notFoundAutorizaciones.length > 0) {
-        console.log(`⚠️ Autorizaciones no encontradas (${notFoundAutorizaciones.length}):`, notFoundAutorizaciones.slice(0, 10), '...');
+        console.log(`⚠️ Autorizaciones no encontradas en id_de_transaccion (${notFoundAutorizaciones.length}):`, notFoundAutorizaciones.slice(0, 10), '...');
         queryInfo.notFound = notFoundAutorizaciones;
       }
     }
@@ -7417,18 +7417,18 @@ app.post('/api/data/aclaraciones', async (req, res) => {
         });
       }
       
-      console.log(`🔑 Buscando ${validAuths.length} autorizaciones:`, validAuths.slice(0, 10), '...');
+      console.log(`🔑 Buscando ${validAuths.length} autorizaciones en id_de_transaccion:`, validAuths.slice(0, 10), '...');
       
-      // Buscar por autorizacion
+      // Buscar por id_de_transaccion (no por autorizacion)
       const placeholders = validAuths.map((_, index) => `$${paramIndex + index}`).join(',');
-      whereConditions.push(`autorizacion IN (${placeholders})`);
+      whereConditions.push(`id_de_transaccion IN (${placeholders})`);
       values.push(...validAuths);
       paramIndex += validAuths.length;
       
       queryInfo = {
         autorizaciones: validAuths,
         totalRequested: validAuths.length,
-        searchField: 'autorizacion'
+        searchField: 'id_de_transaccion'
       };
       
     } else if (searchType === 'cascada_excel' && excelRows && Array.isArray(excelRows)) {
@@ -10644,6 +10644,99 @@ app.get('/api/papeleria-last', async (req, res) => {
   } catch (error) {
     console.error('❌ Error obteniendo último registro:', error);
     res.status(500).json({ error: 'Error obteniendo último registro' });
+  }
+});
+
+// 🔧 ENDPOINT TEMPORAL PARA DEBUG - CONSULTA DIRECTA
+app.post('/api/debug-query', async (req, res) => {
+  try {
+    const { sql, params = [] } = req.body;
+    console.log('🔧 Debug Query:', sql);
+    const result = await pool.query(sql, params);
+    res.json({
+      success: true,
+      rows: result.rows,
+      count: result.rows.length
+    });
+  } catch (error) {
+    console.error('❌ Error en debug query:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 💳 ENDPOINT ESPECÍFICO PARA BÚSQUEDA POR TARJETAS CON FILTRO EFEVOO
+app.post('/api/buscar-tarjetas-efevoo', async (req, res) => {
+  try {
+    const { tarjetas } = req.body;
+    
+    if (!tarjetas || !Array.isArray(tarjetas)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Se requiere un array de tarjetas'
+      });
+    }
+
+    console.log(`🎯 Buscando ${tarjetas.length} tarjetas en aclaraciones con procesador EFEVOO`);
+    
+    // Limpiar y procesar tarjetas (quitar espacios)
+    const tarjetasLimpias = tarjetas.map(t => t.toString().trim()).filter(t => t.length > 0);
+    console.log(`📋 Tarjetas a buscar: ${tarjetasLimpias.length}`);
+    
+    // Buscar tarjetas que SÍ existen con procesador EFEVOO
+    const placeholders = tarjetasLimpias.map((_, index) => `$${index + 2}`).join(',');
+    
+    const queryEncontradas = `
+      SELECT DISTINCT 
+        id_de_transaccion,
+        cliente, 
+        monto,
+        fecha_de_peticion,
+        procesador
+      FROM aclaraciones 
+      WHERE procesador = $1 
+      AND id_de_transaccion IN (${placeholders})
+      ORDER BY id_de_transaccion ASC
+    `;
+    
+    const params = ['EFEVOO', ...tarjetasLimpias];
+    const result = await pool.query(queryEncontradas, params);
+    
+    // Identificar cuáles NO se encontraron
+    const encontradas = result.rows.map(row => row.id_de_transaccion);
+    const noEncontradas = tarjetasLimpias.filter(tarjeta => !encontradas.includes(tarjeta));
+    
+    // Ordenar ambas listas alfabéticamente
+    encontradas.sort();
+    noEncontradas.sort();
+    
+    console.log(`✅ Encontradas: ${encontradas.length}`);
+    console.log(`❌ No encontradas: ${noEncontradas.length}`);
+    
+    res.json({
+      success: true,
+      totalBusquedas: tarjetasLimpias.length,
+      encontradas: {
+        count: encontradas.length,
+        tarjetas: encontradas,
+        detalles: result.rows
+      },
+      noEncontradas: {
+        count: noEncontradas.length,
+        tarjetas: noEncontradas
+      },
+      procesador: 'EFEVOO',
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en búsqueda de tarjetas EFEVOO:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
   }
 });
 
