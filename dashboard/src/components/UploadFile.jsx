@@ -193,8 +193,8 @@ export default function UploadFile({ tabla }) {
         {nombreAmigable}
       </h2>
 
-      {/* Botón para borrar registros del año 2025 (solo para caja y ventas) */}
-      {(tabla === 'caja' || tabla === 'ventas') && (
+      {/* Botón para borrar registros del año 2025 (para caja, ventas y papeleria) */}
+      {(tabla === 'caja' || tabla === 'ventas' || tabla === 'papeleria') && (
         <button
           onClick={borrarRegistros2025}
           disabled={borrando}

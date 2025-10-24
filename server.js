@@ -1595,10 +1595,10 @@ app.use('/api/ventas', ventasRoutes);
 app.delete("/delete-all/:tabla", async (req, res) => {
   const tabla = req.params.tabla;
 
-  // Validar que solo se pueda borrar de caja y ventas
-  if (tabla !== 'caja' && tabla !== 'ventas') {
+  // Validar que solo se pueda borrar de caja, ventas y papeleria
+  if (tabla !== 'caja' && tabla !== 'ventas' && tabla !== 'papeleria') {
     return res.status(400).json({
-      error: "Solo se permite borrar registros de las tablas 'caja' y 'ventas'"
+      error: "Solo se permite borrar registros de las tablas 'caja', 'ventas' y 'papeleria'"
     });
   }
 
@@ -1606,7 +1606,14 @@ app.delete("/delete-all/:tabla", async (req, res) => {
     console.log(`🗑️ [INICIO] Solicitud de borrado para tabla: ${tabla} - ${new Date().toISOString()}`);
 
     // Determinar la columna de fecha según la tabla
-    const columnaFecha = tabla === 'caja' ? 'Fecha' : 'FechaCompra';
+    let columnaFecha;
+    if (tabla === 'caja') {
+      columnaFecha = 'Fecha';
+    } else if (tabla === 'ventas') {
+      columnaFecha = 'FechaCompra';
+    } else if (tabla === 'papeleria') {
+      columnaFecha = 'fecha_contrato';
+    }
     console.log(`📅 Columna de fecha detectada: ${columnaFecha}`);
 
     // PROTECCIÓN 1: Verificar distribución de años ANTES de borrar
@@ -4157,8 +4164,13 @@ app.put("/aclaraciones/actualizar", async (req, res) => {
             let valor = reg.valores[campo];
 
             // ✅ OPTIMIZACIÓN 4: Formateo de datos centralizado
-            valor = formatearValorParaUpdate(campo, valor);
-            valoresPorCampo[campo].push(valor);
+            try {
+              valor = formatearValorParaUpdate(campo, valor);
+              valoresPorCampo[campo].push(valor);
+            } catch (formatError) {
+              console.error(`❌ Error formateando campo ${campo} con valor ${valor}:`, formatError);
+              throw new Error(`Error formateando campo ${campo}: ${formatError.message}`);
+            }
           });
         }
 
@@ -4244,25 +4256,38 @@ app.put("/aclaraciones/actualizar", async (req, res) => {
 
 // ✅ FUNCIÓN AUXILIAR: Formatear valores para UPDATE
 function formatearValorParaUpdate(campo, valor) {
+  console.log(`🔍 Formateando campo: ${campo}, valor: ${valor}, tipo: ${typeof valor}`);
+  
   // Campos de fecha
   const camposFecha = ['fecha_venta', 'fecha_contrato', 'fecha_de_peticion', 'fecha_de_respuesta'];
   if (camposFecha.includes(campo)) {
     if (valor === '' || valor === null || valor === undefined) {
+      console.log(`📅 Fecha vacía para ${campo}, retornando null`);
       return null;
     }
 
     // Manejar formato DD/MM/YYYY
     if (typeof valor === 'string' && valor.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
       const [dia, mes, anio] = valor.split('/');
-      return `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+      const fechaConvertida = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+      console.log(`📅 Convertida de DD/MM/YYYY a ISO: ${valor} → ${fechaConvertida}`);
+      return fechaConvertida;
+    }
+
+    // Manejar formato YYYY-MM-DD
+    if (typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      console.log(`📅 Fecha ya en formato ISO: ${valor}`);
+      return valor;
     }
 
     // Validar formato de fecha
     const fechaValida = new Date(valor);
     if (isNaN(fechaValida.getTime())) {
-      console.warn(`Fecha inválida para campo ${campo}: ${valor}`);
+      console.error(`❌ Fecha inválida para campo ${campo}: ${valor}`);
       return null;
     }
+    
+    console.log(`📅 Fecha válida para ${campo}: ${valor}`);
     return valor;
   }
 

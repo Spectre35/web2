@@ -1,0 +1,21 @@
+# PANEL WEB2 INSTALADO 
+ 
+## COMO USAR: 
+   
+1. PANEL DE CONTROL: 
+   - Doble clic en "Panel WEB2.exe" (escritorio) 
+   - Controla todo el sistema WEB2 desde ahí 
+   - NO necesitas Visual Studio Code 
+ 
+2. FUNCIONES DEL PANEL:  
+   - Iniciar/Detener servidores 
+   - Ver estado del sistema 
+   - Configurar acceso en red 
+   - Abrir interfaz web automáticamente 
+ 
+3. ACCESO EN RED: 
+   - El panel configura automáticamente el acceso 
+   - Otras PCs: http://IP_DE_ESTA_PC:3000 
+   - Funciona en móviles y tablets 
+ 
+## UBICACION PROYECTO: C:\Users\Cargosauto 1\Documents\web2-master 

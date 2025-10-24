@@ -384,6 +384,8 @@ export default function Aclaraciones() {
   };
 
   const actualizarCampo = (filaIndex, campo, valor) => {
+    console.log(`🔍 Frontend: Actualizando campo ${campo} con valor ${valor} (tipo: ${typeof valor})`);
+    
     setDatosEditados(prev => {
       const nuevosEditados = {
         ...prev,
@@ -457,6 +459,7 @@ export default function Aclaraciones() {
         }
       }
 
+      console.log(`✅ Frontend: Campo ${campo} actualizado. Nuevos editados:`, nuevosEditados[filaIndex]);
       return nuevosEditados;
     });
   };
@@ -467,9 +470,15 @@ export default function Aclaraciones() {
       // Preparar los registros para enviar al backend
       const registrosParaActualizar = [];
 
+      console.log('🔍 Frontend: datosEditados completo:', datosEditados);
+
       Object.keys(datosEditados).forEach(filaIndex => {
         const filaOriginal = datos[parseInt(filaIndex)];
         const datosCambiados = datosEditados[filaIndex];
+
+        console.log(`🔍 Frontend: Procesando fila ${filaIndex}:`);
+        console.log('  - Fila original:', filaOriginal);
+        console.log('  - Datos cambiados:', datosCambiados);
 
         // Verificar que la fila original existe
         if (!filaOriginal) {
@@ -484,6 +493,8 @@ export default function Aclaraciones() {
           datosCambiados[campo] !== filaOriginal[campo]
         );
 
+        console.log(`🔍 Frontend: ¿Hay cambios? ${hayCambios}`);
+
         if (hayCambios) {
           // Identificar el registro con debug
           console.log("🔍 Fila original completa:", filaOriginal);
@@ -496,25 +507,26 @@ export default function Aclaraciones() {
             return;
           }
 
-          registrosParaActualizar.push({
+          const registroParaEnviar = {
             id_original: {
               id_de_transaccion: filaOriginal.id_de_transaccion,
               num_de_tarjeta: filaOriginal.num_de_tarjeta
               // Removemos fecha_venta del identificador
             },
             datos_nuevos: {}
-          });
+          };
 
-          console.log("🔍 ID enviado:", {
-            id_de_transaccion: filaOriginal.id_de_transaccion,
-            num_de_tarjeta: filaOriginal.num_de_tarjeta
-          });
+          console.log("🔍 ID enviado:", registroParaEnviar.id_original);
 
           // Convertir los nombres de campos - ya vienen en minúsculas desde la BD
           Object.keys(datosCambiados).forEach(campoFrontend => {
             // Los campos ya están en minúsculas, solo necesitamos pasarlos directamente
-            registrosParaActualizar[registrosParaActualizar.length - 1].datos_nuevos[campoFrontend] = datosCambiados[campoFrontend];
+            registroParaEnviar.datos_nuevos[campoFrontend] = datosCambiados[campoFrontend];
+            console.log(`  📝 Campo ${campoFrontend}: ${datosCambiados[campoFrontend]} (${typeof datosCambiados[campoFrontend]})`);
           });
+
+          console.log('✅ Frontend: Registro preparado para enviar:', registroParaEnviar);
+          registrosParaActualizar.push(registroParaEnviar);
         }
       });
 
@@ -524,6 +536,10 @@ export default function Aclaraciones() {
         setDatosEditados({});
         return;
       }
+
+      console.log('🚀 Frontend: Enviando al backend:', {
+        registros: registrosParaActualizar
+      });
 
       // Llamada al endpoint de actualización
       const response = await fetch(`${API_BASE_URL}/aclaraciones/actualizar`, {
@@ -536,11 +552,20 @@ export default function Aclaraciones() {
         })
       });
 
+      console.log('📨 Frontend: Respuesta del servidor:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
+      });
+
       if (!response.ok) {
-        throw new Error(`Error HTTP: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ Frontend: Error del servidor:', errorText);
+        throw new Error(`Error HTTP: ${response.status} - ${errorText}`);
       }
 
       const resultado = await response.json();
+      console.log('✅ Frontend: Resultado exitoso:', resultado);
 
       if (resultado.success) {
         // Recargar los datos desde el servidor después de guardar
@@ -549,13 +574,13 @@ export default function Aclaraciones() {
         setModoEdicion(false);
         setDatosEditados({});
 
-        alert(`✅ Cambios guardados exitosamente!\n${resultado.registros_procesados} registros actualizados`);
+        alert(`✅ Cambios guardados exitosamente!\n${resultado.estadisticas?.registros_actualizados || 'Algunos'} registros actualizados`);
       } else {
         throw new Error("La respuesta del servidor indica un error");
       }
 
     } catch (error) {
-      console.error("Error al guardar cambios:", error);
+      console.error("❌ Frontend: Error al guardar cambios:", error);
       alert(`❌ Error al guardar los cambios: ${error.message}`);
     } finally {
       setGuardandoCambios(false);
