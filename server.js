@@ -135,7 +135,12 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 po
 
 // 🔐 CONFIGURACIÓN DE AUTENTICACIÓN
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_para_jwt_2025';
-const AUTH_PASSWORD = 'veda0610##'; // Contraseña general para acceso
+const AUTH_PASSWORD = 'veda0610##'; // Contraseña permanente para acceso
+
+// 🔑 SISTEMA DE CONTRASEÑA TEMPORAL
+let TEMP_PASSWORD = null;           // Contraseña temporal (null = desactivada)
+let TEMP_PASSWORD_ENABLED = false;  // Estado de la contraseña temporal
+let TEMP_PASSWORD_CREATED = null;   // Fecha de creación
 const JWT_EXPIRATION = '12h'; // Duración de sesión: 24 horas (modificado)
 
 // 🔥 CORS DEFINITIVO - NO MÁS PROBLEMAS
@@ -929,11 +934,19 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  if (password === AUTH_PASSWORD) {
+  // Verificar contraseña permanente o temporal
+  const isValidPassword = password === AUTH_PASSWORD || 
+                         (TEMP_PASSWORD_ENABLED && password === TEMP_PASSWORD);
+  
+  if (isValidPassword) {
+    const loginType = password === AUTH_PASSWORD ? 'PERMANENTE' : 'TEMPORAL';
+    console.log(`✅ [LOGIN] Login exitoso con contraseña ${loginType}`);
+    
     const token = jwt.sign(
       {
         authenticated: true,
-        loginTime: new Date().toISOString()
+        loginTime: new Date().toISOString(),
+        loginType: loginType
       },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRATION }
@@ -954,6 +967,70 @@ app.post('/api/auth/login', (req, res) => {
       message: 'Contraseña incorrecta'
     });
   }
+});
+
+// 🔑 ENDPOINTS PARA GESTIÓN DE CONTRASEÑA TEMPORAL
+
+// Activar contraseña temporal
+app.post('/api/auth/temp-password/enable', authenticateToken, (req, res) => {
+  const { tempPassword } = req.body;
+  
+  if (!tempPassword || tempPassword.length < 4) {
+    return res.status(400).json({
+      success: false,
+      message: 'La contraseña temporal debe tener al menos 4 caracteres'
+    });
+  }
+  
+  // No permitir que la temporal sea igual a la permanente
+  if (tempPassword === AUTH_PASSWORD) {
+    return res.status(400).json({
+      success: false,
+      message: 'La contraseña temporal no puede ser igual a la permanente'
+    });
+  }
+  
+  TEMP_PASSWORD = tempPassword;
+  TEMP_PASSWORD_ENABLED = true;
+  TEMP_PASSWORD_CREATED = new Date().toISOString();
+  
+  console.log(`🔑 [TEMP-PASS] Contraseña temporal ACTIVADA: "${tempPassword}"`);
+  
+  res.json({
+    success: true,
+    message: 'Contraseña temporal activada exitosamente',
+    tempPassword: tempPassword,
+    enabled: true,
+    created: TEMP_PASSWORD_CREATED
+  });
+});
+
+// Desactivar contraseña temporal
+app.post('/api/auth/temp-password/disable', authenticateToken, (req, res) => {
+  const previousPassword = TEMP_PASSWORD;
+  
+  TEMP_PASSWORD = null;
+  TEMP_PASSWORD_ENABLED = false;
+  TEMP_PASSWORD_CREATED = null;
+  
+  console.log(`🔑 [TEMP-PASS] Contraseña temporal DESACTIVADA (era: "${previousPassword}")`);
+  
+  res.json({
+    success: true,
+    message: 'Contraseña temporal desactivada exitosamente',
+    enabled: false
+  });
+});
+
+// Ver estado de contraseña temporal
+app.get('/api/auth/temp-password/status', authenticateToken, (req, res) => {
+  res.json({
+    success: true,
+    enabled: TEMP_PASSWORD_ENABLED,
+    tempPassword: TEMP_PASSWORD_ENABLED ? TEMP_PASSWORD : null,
+    created: TEMP_PASSWORD_CREATED,
+    permanentExists: !!AUTH_PASSWORD
+  });
 });
 
 // Verificar token endpoint
