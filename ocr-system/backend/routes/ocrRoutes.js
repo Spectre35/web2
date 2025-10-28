@@ -91,8 +91,8 @@ const tesseractConfig = {
     load_number_dawg: 1,
     load_bigram_dawg: 1,
     
-    // Motor OCR híbrido para mejor precisión
-    tessedit_ocr_engine_mode: 3, // Legacy + LSTM (el más confiable)
+    // Motor OCR LSTM para mejor precisión en formularios
+    tessedit_ocr_engine_mode: 1, // LSTM Neural Network (mejor para texto formateado)
     
     // Configuraciones específicas para mejorar la detección de texto corrupto
     tessedit_adapt_to_char_wh: 1, // Adaptar al ancho/alto de caracteres
@@ -344,8 +344,42 @@ router.post("/upload", upload.single("file"), async (req, res) => {
                     }
 
                     // Pre-procesar imagen para mejor calidad
-                    const processedImageResult = await imageProcessor.autoRotateImage(receipt.path);
-                    const processedImagePath = processedImageResult.processedPath;
+                    let processedImagePath;
+                    
+                    // Aplicar preprocessing específico según tipo de documento
+                    if (documentType === 'contrato') {
+                        console.log('🔥 DEBUG: Detectado contrato, aplicando preprocessing AGRESIVO...');
+                        console.log(`🔥 DEBUG: Ruta de imagen: ${receipt.path}`);
+                        
+                        try {
+                            // Primero aplicar preprocessing agresivo para contratos
+                            const enhancedPath = await imageProcessor.aggressiveContractPreprocessing(receipt.path, {
+                                enhanceContrast: true,
+                                reduceNoise: true, 
+                                sharpenText: true,
+                                adaptiveThreshold: false, // Desactivado por compatibilidad
+                                morphological: false      // Desactivado por compatibilidad
+                            });
+                            
+                            console.log(`✅ DEBUG: Preprocessing agresivo completado, archivo mejorado: ${enhancedPath}`);
+                            
+                            // Luego aplicar rotación automática al resultado mejorado
+                            const processedImageResult = await imageProcessor.autoRotateImage(enhancedPath);
+                            processedImagePath = processedImageResult.processedPath || enhancedPath;
+                            
+                            console.log('✅ Preprocessing agresivo completado para contrato');
+                        } catch (error) {
+                            console.error('❌ ERROR en preprocessing agresivo, usando normal:', error.message);
+                            // Fallback a procesamiento normal si falla
+                            const processedImageResult = await imageProcessor.autoRotateImage(receipt.path);
+                            processedImagePath = processedImageResult.processedPath;
+                        }
+                    } else {
+                        console.log('🔍 DEBUG: Detectado recibo, usando procesamiento normal...');
+                        // Para recibos usar procesamiento normal
+                        const processedImageResult = await imageProcessor.autoRotateImage(receipt.path);
+                        processedImagePath = processedImageResult.processedPath;
+                    }
 
                     // 📊 Actualizar progreso: Preprocesamiento completado, iniciando OCR
                     if (progressTracker) {

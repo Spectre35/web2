@@ -1119,25 +1119,89 @@ class ImageProcessor {
     
     // Para proporción normal, enfoque balanceado
     return 1.0;
+  }
 
-      results.finalPath = currentPath;
-      results.totalTime = Date.now() - startTime;
+  /**
+   * 🎯 Preprocessing agresivo específico para contratos - Mejora dramáticamente la lectura de texto borroso
+   * @param {string} imagePath - Ruta de la imagen original
+   * @param {Object} options - Opciones de procesamiento
+   * @returns {Promise<string>} - Ruta de imagen procesada
+   */
+  async aggressiveContractPreprocessing(imagePath, options = {}) {
+    try {
+      console.log('🔥 INICIANDO preprocessing AGRESIVO para contratos...');
+      
+      const {
+        enhanceContrast = true,
+        reduceNoise = true,
+        sharpenText = true,
+        adaptiveThreshold = false, // Deshabilitado por defecto
+        morphological = false      // Deshabilitado por defecto
+      } = options;
 
-      console.log(`✅ Procesamiento completo terminado en ${results.totalTime}ms`);
-      console.log(`🎯 Mejoras aplicadas: ${results.improvements.join(', ')}`);
+      const outputPath = imagePath.replace(/\.(jpg|jpeg|png)$/i, '_enhanced.$1');
+      console.log(`📁 Archivo de salida: ${outputPath}`);
+      
+      // Paso 1: Análisis básico de imagen
+      console.log('📊 Analizando imagen original...');
+      const metadata = await sharp(imagePath).metadata();
+      console.log(`📊 Dimensiones: ${metadata.width}x${metadata.height}, formato: ${metadata.format}`);
+      
+      // Paso 2: Procesamiento básico mejorado
+      console.log('� Aplicando mejoras básicas...');
+      let processedImage = sharp(imagePath);
 
-      return results;
+      // Aumentar resolución moderadamente
+      processedImage = processedImage.resize({ 
+        width: Math.floor(metadata.width * 1.3),
+        height: Math.floor(metadata.height * 1.3),
+        fit: 'inside',
+        withoutEnlargement: false
+      });
+
+      // Paso 3: Mejora de contraste AGRESIVA
+      if (enhanceContrast) {
+        console.log('⚡ Aplicando mejora de contraste...');
+        processedImage = processedImage
+          .modulate({
+            brightness: 1.15,    // Incrementar brillo 15%
+            saturation: 0.7,     // Reducir saturación para mejor OCR
+          })
+          .linear(1.3, -(128 * 0.3)); // Aumentar contraste
+      }
+
+      // Paso 4: Enfoque específico para texto
+      if (sharpenText) {
+        console.log('🔍 Aplicando enfoque específico para texto...');
+        processedImage = processedImage
+          .sharpen({
+            sigma: 1.8,      // Más agresivo que el normal
+            flat: 1.5,       // Evitar sobre-enfoque en áreas planas
+            jagged: 2.5      // Mejorar bordes de texto
+          });
+      }
+
+      // Paso 5: Conversión a escala de grises optimizada
+      console.log('🎨 Convirtiendo a escala de grises...');
+      processedImage = processedImage.grayscale();
+
+      // Guardar resultado final
+      console.log('💾 Guardando imagen procesada...');
+      await processedImage
+        .png({ quality: 100, compressionLevel: 0 }) // Sin compresión para máxima calidad
+        .toFile(outputPath);
+
+      console.log('✅ Preprocessing agresivo completado exitosamente');
+      console.log(`📁 Archivo mejorado guardado en: ${outputPath}`);
+      
+      return outputPath;
 
     } catch (error) {
-      console.error('❌ Error en procesamiento completo:', error);
-      return {
-        originalPath: imagePath,
-        finalPath: imagePath,
-        error: error.message,
-        totalTime: Date.now() - startTime
-      };
+      console.error('❌ Error en preprocessing agresivo:', error);
+      return imagePath; // Devolver imagen original si falla
     }
   }
+}
 
 // Exportar la clase en lugar de una instancia
 export default ImageProcessor;

@@ -283,24 +283,37 @@ class DocumentClassifier {
           }
         }
 
-        // Patrón principal: "Nombre del Cliente 1:" - tolerante a errores OCR
+        // Patrón 1 PRIORITARIO: "pelar [NÚMERO]:" (OCR corrupto de "Nombre del Cliente")
         if (!nombreCliente1) {
-          nombreCliente1 = this.extractPattern(text, /Nombre\s+d[eo][lt]?\s+Cliente\s+1[:\s]*([^\n\r]+)/i);
+          nombreCliente1 = this.extractPattern(text, /pelar\s+\d+[:\s]*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)(?:\s*\n|\s*$)/i);
         }
 
-        // Patrón alternativo 1: "Nombre Cliente 1:" (sin "del")
+        // Patrón 2: "Nombre del Cliente [NÚMERO]:" - ROBUSTO
         if (!nombreCliente1) {
-          nombreCliente1 = this.extractPattern(text, /Nombre\s+Cliente\s+1[:\s]*([^\n\r]+)/i);
+          nombreCliente1 = this.extractPattern(text, /Nombre\s+del\s+Cliente\s+\d+[:\s]*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)(?:\s*\n|\s*$|Nombre\s+del\s+Cliente)/i);
         }
 
-        // Patrón alternativo 2: Más flexible para OCR corrupto
+        // Patrón 3: "Nombre Cliente [NÚMERO]:" (sin "del")
         if (!nombreCliente1) {
-          nombreCliente1 = this.extractPattern(text, /Nom[bv]r[eo]\s+[dl]?[eo][lt]?\s*Client[eo]\s+1[:\s]*([^\n\r]+)/i);
+          nombreCliente1 = this.extractPattern(text, /Nombre\s+Cliente\s+\d+[:\s]*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)(?:\s*\n|\s*$|Nombre\s+del\s+Cliente)/i);
         }
 
-        // Patrón alternativo 3: Buscar cualquier "Cliente 1:" precedido por texto
+        // Patrón 4: OCR corrupto "Nom..." 
         if (!nombreCliente1) {
-          nombreCliente1 = this.extractPattern(text, /Client[eo]\s+1[:\s]*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+)/i);
+          nombreCliente1 = this.extractPattern(text, /Nom[bv]r[eo]\s+[dl]?[eo][lt]?\s*Client[eo]\s+\d+[:\s]*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+?)(?:\s*\n|\s*$)/i);
+        }
+
+        // Patrón 5: SIMPLE línea por línea - buscar línea que contenga el nombre
+        if (!nombreCliente1) {
+          const lines = text.split(/[\n\r]+/);
+          for (let line of lines) {
+            const match = line.match(/(?:Nombre\s+del\s+Cliente|Nombre\s+Cliente|pelar)\s+\d+[:\s]*([A-ZÁÉÍÓÚÑ][A-Za-záéíóúñ\s]+)/i);
+            if (match && match[1]) {
+              nombreCliente1 = match[1].trim();
+              console.log(`🎯 PATRÓN LÍNEA ENCONTRADO: "${nombreCliente1}" en línea: "${line.trim()}"`);
+              break;
+            }
+          }
         }
 
 
@@ -308,17 +321,19 @@ class DocumentClassifier {
         console.log(`🔍 DEBUG - Texto buscado para cliente (primeros 400 chars): "${text.substring(0, 400)}"`);
         console.log(`🔍 DEBUG - Cliente encontrado: "${nombreCliente1 || 'NO ENCONTRADO'}"`);
 
-        // 🔥 DEBUG ESPECÍFICO - Buscar exactamente lo que Angel ve
-        const debugMatch1 = text.match(/Cliente\s+1[:\-\s]*([^:\n\r]+)/gi);
-        const debugMatch2 = text.match(/ANA\s+MYRYHA\s+OLVERA\s+PINELA/i);
-        console.log(`🔥 DEBUG ESPECÍFICO - TODAS las coincidencias "Cliente 1": ${debugMatch1 ? JSON.stringify(debugMatch1) : 'NO ENCONTRADO'}`);
-        console.log(`🔥 DEBUG ESPECÍFICO - Match "ANA MYRYHA": ${debugMatch2 ? debugMatch2[0] : 'NO ENCONTRADO'}`);
+        // 🔥 DEBUG ESPECÍFICO - Buscar patrones de nombres
+        const debugMatch1 = text.match(/Cliente\s+\d+[:\-\s]*([^:\n\r]+)/gi);
+        const debugMatch2 = text.match(/Nombre\s+d[eo][lt]?\s+Cliente\s+\d+[:\s]*([^\n\r:]+)/gi);
+        const debugMatch3 = text.match(/pelar\s+\d+[:\s]*([^\n\r:]+)/gi);
+        console.log(`🔥 DEBUG - Patrones "Cliente [NUM]": ${debugMatch1 ? JSON.stringify(debugMatch1) : 'NO ENCONTRADO'}`);
+        console.log(`🔥 DEBUG - Patrones "Nombre del Cliente [NUM]": ${debugMatch2 ? JSON.stringify(debugMatch2) : 'NO ENCONTRADO'}`);
+        console.log(`🔥 DEBUG - Patrones "pelar [NUM]": ${debugMatch3 ? JSON.stringify(debugMatch3) : 'NO ENCONTRADO'}`);
         
         // Buscar líneas específicas
         const debugLines = text.split('\n');
-        console.log('🔥 TODAS LAS LÍNEAS CON "Cliente 1":');
+        console.log('🔥 TODAS LAS LÍNEAS CON NOMBRES DE CLIENTE:');
         debugLines.forEach((line, idx) => {
-          if (line.toLowerCase().includes('cliente 1')) {
+          if (line.toLowerCase().includes('cliente') || line.toLowerCase().includes('nombre')) {
             console.log(`  Línea ${idx}: "${line.trim()}"`);
           }
         });
@@ -791,9 +806,9 @@ class DocumentClassifier {
             // 🚫 ELIMINAR PALABRAS BASURA COMUNES AL FINAL
             .replace(/\s+(MONTO|CANTIDAD|TOTAL|PESOS|MN|PAGO|CLIENTE|NOMBRE|RECIBO|CONTRATO|FECHA|FOLIO|ID|NO|EUROPIEL|SINERGIA|CV|RL|SA|DE|LA|DEL|TARJETA|VISA|MASTERCARD|CREDITO|DEBITO)\s*$/gi, '')
 
-            // 🔤 NUEVA VALIDACIÓN: ELIMINAR TERMINACIONES INVÁLIDAS DE NOMBRES (PERO CONSERVAR X)
-            .replace(/\s+[A-WYZ]{1,3}\s*$/g, '') // Eliminar 1-3 letras al final (E, CO, PAR, etc.) EXCEPTO X
-            .replace(/\s+[a-wyz]{1,3}\s*$/g, '') // Eliminar 1-3 letras minúsculas al final EXCEPTO x
+            // 🔤 ELIMINACIÓN ESPECÍFICA DE TERMINACIONES INVÁLIDAS COMUNES (NO APELLIDOS)
+            // Solo eliminar terminaciones muy específicas que sabemos que son basura OCR
+            .replace(/\s+(E|CO|PAR|LA|DE|EL|EN|CON|POR|SIN|MAS|MES|ANO|DIA|HOY|YA|SI|NO|TE|LE|ME|SE|NE|RE|VE|BE|PE|CE|GE|QUE|COD|NUM|REF|DOC|TIP|FOR|CAN|TOT|SUB|IVA|NET|BRU|DESC|REC|PAG|COB|DEV|RET|ADM|GAS|COM|INT|CAR|BON|CUO|CRE|TAR|VEN|CMP)\s*$/gi, '')
 
             .replace(/\s+/g, ' ')   // Normalizar espacios
             // 🚨 LIMPIEZA MEJORADA: Eliminar caracteres extraños al final típicos de OCR (". l", " . l", etc.)
@@ -2366,8 +2381,8 @@ class DocumentClassifier {
     const terminacionesInvalidas = [
       // Números
       /^\d+$/,
-      // 1-3 letras solas (EXCEPTO X que es válida en nombres)
-      /^[A-WYZa-wyzÁÉÍÓÚÑáéíóúñ]{1,3}$/,
+      // Solo 1-2 letras solas (no 3+ que podrían ser apellidos reales)
+      /^[A-WYZa-wyzÁÉÍÓÚÑáéíóúñ]{1,2}$/,
       // Palabras que claramente no son apellidos (sin incluir X)
       /^(E|O|A|I|U|EL|LA|DE|CON|POR|PAR|AC|CO|TO|EN|UN|ES|NO|SI|YA|LO)$/i,
       // Abreviaciones comunes (sin incluir X)
