@@ -587,9 +587,11 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                 ✅ Registros listos para guardar ({recordsReady.length})
               </h3>
               <div className="space-y-4">
-                {recordsReady.map((record, index) => {
+                {recordsReady.map((record, mapIndex) => {
+                  // 🔧 FIX: Usar el índice correcto en editableData, no el índice del mapeo
+                  const realIndex = editableData.indexOf(record);
                   return (
-                    <div key={index} className="border border-green-500 rounded-lg p-4 bg-gray-900">
+                    <div key={realIndex} className="border border-green-500 rounded-lg p-4 bg-gray-900">
                       <div className="flex justify-between items-start mb-3">
                         <h4 className="font-semibold text-white">{record.originalFileName}</h4>
                         <div className="text-sm text-green-400 font-medium">✅ Datos completos</div>
@@ -601,7 +603,7 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                           <input
                             type="text"
                             value={record.cliente || ''}
-                            onChange={(e) => updateField(index, 'cliente', e.target.value)}
+                            onChange={(e) => updateField(realIndex, 'cliente', e.target.value)}
                             className="w-full p-2 border border-gray-600 bg-gray-700 text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Nombre del cliente"
                           />
@@ -614,9 +616,9 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                             onChange={(date) => {
                               if (date instanceof Date && !isNaN(date)) {
                                 const iso = formatLocalISO(date);
-                                updateField(index, 'fecha_contrato', iso);
+                                updateField(realIndex, 'fecha_contrato', iso);
                               } else {
-                                updateField(index, 'fecha_contrato', '');
+                                updateField(realIndex, 'fecha_contrato', '');
                               }
                             }}
                             dateFormat="dd/MM/yyyy"
@@ -636,7 +638,7 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                           <input
                             type="number"
                             value={record.monto || ''}
-                            onChange={(e) => updateField(index, 'monto', parseFloat(e.target.value) || 0)}
+                            onChange={(e) => updateField(realIndex, 'monto', parseFloat(e.target.value) || 0)}
                             className="w-full p-2 border border-gray-600 bg-gray-700 text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="0.00"
                             step="0.01"
@@ -648,7 +650,7 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                           <input
                             type="text"
                             value={record.folio || ''}
-                            onChange={(e) => updateField(index, 'folio', e.target.value)}
+                            onChange={(e) => updateField(realIndex, 'folio', e.target.value)}
                             className="w-full p-2 border border-gray-600 bg-gray-700 text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Número de folio"
                           />
@@ -661,7 +663,7 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                           <input
                             type="text"
                             value={record.t_pago || ''}
-                            onChange={(e) => updateField(index, 't_pago', e.target.value)}
+                            onChange={(e) => updateField(realIndex, 't_pago', e.target.value)}
                             className="w-full p-2 border border-gray-600 bg-gray-700 text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Tipo de pago"
                           />
@@ -673,7 +675,7 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                           </label>
                           <select
                             value={record.tipo || ''}
-                            onChange={(e) => updateField(index, 'tipo', e.target.value)}
+                            onChange={(e) => updateField(realIndex, 'tipo', e.target.value)}
                             className="w-full p-2 border border-gray-600 bg-gray-700 text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                           >
                             <option value="">Seleccionar tipo</option>
@@ -689,7 +691,7 @@ const ValidationModal = ({ isOpen, onClose, validationData, onConfirmed, userCon
                           <input
                             type="text"
                             value={record.sucursal || ''}
-                            onChange={(e) => updateField(index, 'sucursal', e.target.value)}
+                            onChange={(e) => updateField(realIndex, 'sucursal', e.target.value)}
                             className="w-full p-2 border border-gray-600 bg-gray-700 text-white rounded focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                             placeholder="Sucursal"
                             readOnly
