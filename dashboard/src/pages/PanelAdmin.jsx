@@ -1,7 +1,6 @@
 import { useState } from "react";
 import UploadFile from "../components/UploadFile";
 import UploadRechazadas from "../components/UploadRechazadas";
-import TempPasswordManager from "../components/TempPasswordManager";
 import { Link } from "react-router-dom";
 
 const PASSWORD = "1202"; // Cambia esto
@@ -59,18 +58,6 @@ export default function PanelAdmin() {
         <UploadFile tabla="ventas" />
         <UploadFile tabla="aclaraciones" />
         <UploadFile tabla="papeleria" />
-      </div>
-
-      {/* Sección de Gestión de Contraseñas */}
-      <div className="mt-8">
-        <h2 className="text-xl font-bold text-center mb-4 text-gray-100 drop-shadow">
-          🔐 Gestión de Seguridad
-        </h2>
-        <div className="flex justify-center">
-          <div className="w-full max-w-2xl">
-            <TempPasswordManager />
-          </div>
-        </div>
       </div>
 
       {/* Sección separada para CSV de Rechazadas */}

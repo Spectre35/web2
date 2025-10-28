@@ -135,12 +135,7 @@ const PORT = process.env.PORT || 3001; // Lee el puerto desde .env o usa 3001 po
 
 // 🔐 CONFIGURACIÓN DE AUTENTICACIÓN
 const JWT_SECRET = process.env.JWT_SECRET || 'tu_secreto_super_seguro_para_jwt_2025';
-const AUTH_PASSWORD = 'veda0610##'; // Contraseña permanente para acceso
-
-// 🔑 SISTEMA DE CONTRASEÑA TEMPORAL
-let TEMP_PASSWORD = null;           // Contraseña temporal (null = desactivada)
-let TEMP_PASSWORD_ENABLED = false;  // Estado de la contraseña temporal
-let TEMP_PASSWORD_CREATED = null;   // Fecha de creación
+const AUTH_PASSWORD = 'veda0610##'; // Contraseña general para acceso
 const JWT_EXPIRATION = '12h'; // Duración de sesión: 24 horas (modificado)
 
 // 🔥 CORS DEFINITIVO - NO MÁS PROBLEMAS
@@ -934,19 +929,11 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
-  // Verificar contraseña permanente o temporal
-  const isValidPassword = password === AUTH_PASSWORD || 
-                         (TEMP_PASSWORD_ENABLED && password === TEMP_PASSWORD);
-  
-  if (isValidPassword) {
-    const loginType = password === AUTH_PASSWORD ? 'PERMANENTE' : 'TEMPORAL';
-    console.log(`✅ [LOGIN] Login exitoso con contraseña ${loginType}`);
-    
+  if (password === AUTH_PASSWORD) {
     const token = jwt.sign(
       {
         authenticated: true,
-        loginTime: new Date().toISOString(),
-        loginType: loginType
+        loginTime: new Date().toISOString()
       },
       JWT_SECRET,
       { expiresIn: JWT_EXPIRATION }
@@ -967,70 +954,6 @@ app.post('/api/auth/login', (req, res) => {
       message: 'Contraseña incorrecta'
     });
   }
-});
-
-// 🔑 ENDPOINTS PARA GESTIÓN DE CONTRASEÑA TEMPORAL
-
-// Activar contraseña temporal
-app.post('/api/auth/temp-password/enable', authenticateToken, (req, res) => {
-  const { tempPassword } = req.body;
-  
-  if (!tempPassword || tempPassword.length < 4) {
-    return res.status(400).json({
-      success: false,
-      message: 'La contraseña temporal debe tener al menos 4 caracteres'
-    });
-  }
-  
-  // No permitir que la temporal sea igual a la permanente
-  if (tempPassword === AUTH_PASSWORD) {
-    return res.status(400).json({
-      success: false,
-      message: 'La contraseña temporal no puede ser igual a la permanente'
-    });
-  }
-  
-  TEMP_PASSWORD = tempPassword;
-  TEMP_PASSWORD_ENABLED = true;
-  TEMP_PASSWORD_CREATED = new Date().toISOString();
-  
-  console.log(`🔑 [TEMP-PASS] Contraseña temporal ACTIVADA: "${tempPassword}"`);
-  
-  res.json({
-    success: true,
-    message: 'Contraseña temporal activada exitosamente',
-    tempPassword: tempPassword,
-    enabled: true,
-    created: TEMP_PASSWORD_CREATED
-  });
-});
-
-// Desactivar contraseña temporal
-app.post('/api/auth/temp-password/disable', authenticateToken, (req, res) => {
-  const previousPassword = TEMP_PASSWORD;
-  
-  TEMP_PASSWORD = null;
-  TEMP_PASSWORD_ENABLED = false;
-  TEMP_PASSWORD_CREATED = null;
-  
-  console.log(`🔑 [TEMP-PASS] Contraseña temporal DESACTIVADA (era: "${previousPassword}")`);
-  
-  res.json({
-    success: true,
-    message: 'Contraseña temporal desactivada exitosamente',
-    enabled: false
-  });
-});
-
-// Ver estado de contraseña temporal
-app.get('/api/auth/temp-password/status', authenticateToken, (req, res) => {
-  res.json({
-    success: true,
-    enabled: TEMP_PASSWORD_ENABLED,
-    tempPassword: TEMP_PASSWORD_ENABLED ? TEMP_PASSWORD : null,
-    created: TEMP_PASSWORD_CREATED,
-    permanentExists: !!AUTH_PASSWORD
-  });
 });
 
 // Verificar token endpoint
@@ -1672,10 +1595,10 @@ app.use('/api/ventas', ventasRoutes);
 app.delete("/delete-all/:tabla", async (req, res) => {
   const tabla = req.params.tabla;
 
-  // Validar que solo se pueda borrar de caja, ventas y papeleria
-  if (tabla !== 'caja' && tabla !== 'ventas' && tabla !== 'papeleria') {
+  // Validar que solo se pueda borrar de caja y ventas
+  if (tabla !== 'caja' && tabla !== 'ventas') {
     return res.status(400).json({
-      error: "Solo se permite borrar registros de las tablas 'caja', 'ventas' y 'papeleria'"
+      error: "Solo se permite borrar registros de las tablas 'caja' y 'ventas'"
     });
   }
 
@@ -1683,14 +1606,7 @@ app.delete("/delete-all/:tabla", async (req, res) => {
     console.log(`🗑️ [INICIO] Solicitud de borrado para tabla: ${tabla} - ${new Date().toISOString()}`);
 
     // Determinar la columna de fecha según la tabla
-    let columnaFecha;
-    if (tabla === 'caja') {
-      columnaFecha = 'Fecha';
-    } else if (tabla === 'ventas') {
-      columnaFecha = 'FechaCompra';
-    } else if (tabla === 'papeleria') {
-      columnaFecha = 'fecha_contrato';
-    }
+    const columnaFecha = tabla === 'caja' ? 'Fecha' : 'FechaCompra';
     console.log(`📅 Columna de fecha detectada: ${columnaFecha}`);
 
     // PROTECCIÓN 1: Verificar distribución de años ANTES de borrar
@@ -4241,13 +4157,8 @@ app.put("/aclaraciones/actualizar", async (req, res) => {
             let valor = reg.valores[campo];
 
             // ✅ OPTIMIZACIÓN 4: Formateo de datos centralizado
-            try {
-              valor = formatearValorParaUpdate(campo, valor);
-              valoresPorCampo[campo].push(valor);
-            } catch (formatError) {
-              console.error(`❌ Error formateando campo ${campo} con valor ${valor}:`, formatError);
-              throw new Error(`Error formateando campo ${campo}: ${formatError.message}`);
-            }
+            valor = formatearValorParaUpdate(campo, valor);
+            valoresPorCampo[campo].push(valor);
           });
         }
 
@@ -4333,38 +4244,25 @@ app.put("/aclaraciones/actualizar", async (req, res) => {
 
 // ✅ FUNCIÓN AUXILIAR: Formatear valores para UPDATE
 function formatearValorParaUpdate(campo, valor) {
-  console.log(`🔍 Formateando campo: ${campo}, valor: ${valor}, tipo: ${typeof valor}`);
-  
   // Campos de fecha
   const camposFecha = ['fecha_venta', 'fecha_contrato', 'fecha_de_peticion', 'fecha_de_respuesta'];
   if (camposFecha.includes(campo)) {
     if (valor === '' || valor === null || valor === undefined) {
-      console.log(`📅 Fecha vacía para ${campo}, retornando null`);
       return null;
     }
 
     // Manejar formato DD/MM/YYYY
     if (typeof valor === 'string' && valor.match(/^\d{2}\/\d{2}\/\d{4}$/)) {
       const [dia, mes, anio] = valor.split('/');
-      const fechaConvertida = `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
-      console.log(`📅 Convertida de DD/MM/YYYY a ISO: ${valor} → ${fechaConvertida}`);
-      return fechaConvertida;
-    }
-
-    // Manejar formato YYYY-MM-DD
-    if (typeof valor === 'string' && valor.match(/^\d{4}-\d{2}-\d{2}$/)) {
-      console.log(`📅 Fecha ya en formato ISO: ${valor}`);
-      return valor;
+      return `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
     }
 
     // Validar formato de fecha
     const fechaValida = new Date(valor);
     if (isNaN(fechaValida.getTime())) {
-      console.error(`❌ Fecha inválida para campo ${campo}: ${valor}`);
+      console.warn(`Fecha inválida para campo ${campo}: ${valor}`);
       return null;
     }
-    
-    console.log(`📅 Fecha válida para ${campo}: ${valor}`);
     return valor;
   }
 
@@ -5484,9 +5382,9 @@ app.post("/aclaraciones/debug-busqueda", async (req, res) => {
 
 app.post("/aclaraciones/validador-stripe", async (req, res) => {
   try {
-    console.log('🔍 Iniciando validación de estatus Stripe...');
+    console.log('🔍 Iniciando validación de estatus Stripe (ESTRICTO)...');
 
-    const { idsTransaccion, tipoValidacion } = req.body;
+    const { idsTransaccion, tipoValidacion, campoBusqueda, procesador } = req.body;
 
     if (!idsTransaccion || !Array.isArray(idsTransaccion) || idsTransaccion.length === 0) {
       return res.status(400).json({ error: "Se requiere un array de IDs de transacción" });
@@ -5496,10 +5394,24 @@ app.post("/aclaraciones/validador-stripe", async (req, res) => {
       return res.status(400).json({ error: "Tipo de validación debe ser 'perdidas' o 'ganadas'" });
     }
 
+    if (!campoBusqueda || !['id_transaccion', 'autorizacion'].includes(campoBusqueda)) {
+      return res.status(400).json({ error: "Campo de búsqueda debe ser 'id_transaccion' o 'autorizacion'" });
+    }
+
+    // Validar procesador si se especifica
+    const procesadoresValidos = ['STRIPE', 'PAYPAL', 'SQUARE', 'CLOVER', 'OTRO'];
+    if (procesador && !procesadoresValidos.includes(procesador.toUpperCase())) {
+      return res.status(400).json({ 
+        error: `Procesador debe ser uno de: ${procesadoresValidos.join(', ')}` 
+      });
+    }
+
     const client = await pool.connect();
 
     try {
       console.log(`📊 Procesando ${idsTransaccion.length} IDs para marcar como ${tipoValidacion}`);
+      console.log(`🎯 Campo de búsqueda: ${campoBusqueda}`);
+      console.log(`🏷️ Procesador especificado: ${procesador || 'TODOS'}`);
 
       // Determinar el nuevo estatus
       const nuevoEstatus = tipoValidacion === 'ganadas' ? 'GANADA' : 'PERDIDA';
@@ -5512,53 +5424,45 @@ app.post("/aclaraciones/validador-stripe", async (req, res) => {
       for (const idTransaccion of idsTransaccion) {
         try {
           const idLimpio = idTransaccion.toString().trim();
-          console.log(`🔍 Buscando ID: "${idLimpio}"`);
+          console.log(`🔍 Buscando ID: "${idLimpio}" en campo: ${campoBusqueda}`);
 
           let resultado = null;
-          let tipoCoincidencia = '';
+          let campo = '';
+          let buscarQuery = '';
 
-          // 1️⃣ PRIMERA BÚSQUEDA: ID de transacción y autorización
-          console.log(`🔍 Paso 1: Buscando en id_de_transaccion y autorizacion...`);
-          const buscarQuery1 = `
-            SELECT "id", "id_de_transaccion", "autorizacion", "captura_cc", "cliente", "monto"
-            FROM "aclaraciones"
-            WHERE UPPER(TRIM("id_de_transaccion")) = UPPER(TRIM($1))
-            OR UPPER(TRIM("autorizacion")) = UPPER(TRIM($1))
-            OR "id_de_transaccion" ILIKE '%' || $1 || '%'
-            OR "autorizacion" ILIKE '%' || $1 || '%'
-            LIMIT 5
-          `;
-
-          resultado = await client.query(buscarQuery1, [idLimpio]);
-
-          if (resultado.rows.length > 0) {
-            tipoCoincidencia = 'transaccion/autorizacion';
-            console.log(`✅ Encontrado en transacción/autorización: ${resultado.rows.length} coincidencias`);
-          } else {
-            // 2️⃣ SEGUNDA BÚSQUEDA: ID del comercio si no encontró nada
-            console.log(`🔍 Paso 2: No encontrado. Buscando en id_del_comercio_afiliacion...`);
-            const buscarQuery2 = `
-              SELECT "id", "id_de_transaccion", "autorizacion", "captura_cc", "cliente", "monto", "id_del_comercio_afiliacion"
-              FROM "aclaraciones"
-              WHERE UPPER(TRIM("id_del_comercio_afiliacion")) = UPPER(TRIM($1))
-              OR "id_del_comercio_afiliacion" ILIKE '%' || $1 || '%'
-              LIMIT 5
-            `;
-
-            resultado = await client.query(buscarQuery2, [idLimpio]);
-
-            if (resultado.rows.length > 0) {
-              tipoCoincidencia = 'comercio';
-              console.log(`✅ Encontrado en ID comercio: ${resultado.rows.length} coincidencias`);
-            }
+          // 🎯 BÚSQUEDA EXACTA ESTRICTA - Solo en el campo específico
+          let filtroProcesor = '';
+          if (procesador) {
+            filtroProcesor = ` AND UPPER("procesador") = UPPER('${procesador}')`;
           }
 
-          console.log(`📊 Total encontradas: ${resultado.rows.length} coincidencias para "${idLimpio}" (tipo: ${tipoCoincidencia})`);
+          if (campoBusqueda === 'id_transaccion') {
+            campo = 'id_de_transaccion';
+            buscarQuery = `
+              SELECT "id", "id_de_transaccion", "autorizacion", "captura_cc", "cliente", "monto", "procesador"
+              FROM "aclaraciones"
+              WHERE UPPER(TRIM("id_de_transaccion")) = UPPER(TRIM($1))${filtroProcesor}
+              LIMIT 1
+            `;
+          } else if (campoBusqueda === 'autorizacion') {
+            campo = 'autorizacion';
+            buscarQuery = `
+              SELECT "id", "id_de_transaccion", "autorizacion", "captura_cc", "cliente", "monto", "procesador"
+              FROM "aclaraciones"
+              WHERE UPPER(TRIM("autorizacion")) = UPPER(TRIM($1))${filtroProcesor}
+              LIMIT 1
+            `;
+          }
+
+          console.log(`🎯 Búsqueda EXACTA en "${campo}": "${idLimpio}"${procesador ? ` (Procesador: ${procesador})` : ''}`);
+          resultado = await client.query(buscarQuery, [idLimpio]);
+
+          console.log(`📊 Coincidencias exactas: ${resultado.rows.length} para "${idLimpio}" en ${campo}${procesador ? ` con procesador ${procesador}` : ''}`);
 
           if (resultado.rows.length > 0) {
-            const aclaracion = resultado.rows[0]; // Tomar la primera coincidencia
+            const aclaracion = resultado.rows[0]; // Solo una coincidencia exacta
 
-            console.log(`✅ Encontrado: ID ${aclaracion.id}, Transacción: ${aclaracion.id_de_transaccion}, Auth: ${aclaracion.autorizacion}, Tipo: ${tipoCoincidencia}`);
+            console.log(`✅ COINCIDENCIA EXACTA - ID DB: ${aclaracion.id}, Campo: ${campo}, Valor encontrado: ${aclaracion[campo.replace('id_de_', 'id_')]}, Procesador: ${aclaracion.procesador || 'N/A'}`);
 
             // Actualizar el estatus
             const updateQuery = `
@@ -5571,26 +5475,47 @@ app.post("/aclaraciones/validador-stripe", async (req, res) => {
             actualizados++;
 
             // Agregar detalles para la respuesta
+            const valorEncontrado = campoBusqueda === 'id_transaccion' 
+              ? aclaracion.id_de_transaccion 
+              : aclaracion.autorizacion;
+
             detalles.push({
               id: aclaracion.id,
-              idTransaccion: aclaracion.id_de_transaccion || aclaracion.autorizacion,
+              valorBuscado: idLimpio,
+              valorEncontrado: valorEncontrado,
+              campoBusqueda: campoBusqueda,
+              procesador: aclaracion.procesador || 'N/A',
               cliente: aclaracion.cliente || 'N/A',
               monto: aclaracion.monto ? `$${aclaracion.monto}` : 'N/A',
               estatusAnterior: aclaracion.captura_cc,
               estatusNuevo: nuevoEstatus
             });
 
-            console.log(`✅ ${idLimpio} actualizado a ${nuevoEstatus}`);
+            console.log(`✅ ${idLimpio} actualizado a ${nuevoEstatus} (campo: ${campoBusqueda}, procesador: ${aclaracion.procesador || 'N/A'})`);
           } else {
             noEncontrados++;
-            idsNoEncontrados.push(idLimpio);
-            console.log(`⚠️ ${idLimpio} no encontrado en la base de datos`);
+            const razonDetallada = procesador 
+              ? `No encontrado en ${campo} con procesador ${procesador}`
+              : `No encontrado en ${campo}`;
+            
+            idsNoEncontrados.push({
+              valorBuscado: idLimpio,
+              campoBusqueda: campoBusqueda,
+              procesadorFiltrado: procesador || null,
+              razon: razonDetallada
+            });
+            console.log(`❌ ${idLimpio} NO encontrado en campo ${campo}${procesador ? ` con procesador ${procesador}` : ''}`);
           }
 
         } catch (error) {
           console.error(`❌ Error al procesar ${idTransaccion}:`, error.message);
           noEncontrados++;
-          idsNoEncontrados.push(idTransaccion);
+          idsNoEncontrados.push({
+            valorBuscado: idTransaccion,
+            campoBusqueda: campoBusqueda,
+            procesadorFiltrado: procesador || null,
+            razon: `Error: ${error.message}`
+          });
         }
       }
 
@@ -5601,12 +5526,15 @@ app.post("/aclaraciones/validador-stripe", async (req, res) => {
         actualizados,
         noEncontrados,
         tipoValidacion,
+        campoBusqueda,
+        procesadorFiltro: procesador || 'TODOS',
         nuevoEstatus,
+        configuracion: 'BUSQUEDA_EXACTA_ESTRICTA',
         detalles,
         idsNoEncontrados
       };
 
-      console.log('🎉 Validación de estatus Stripe completada exitosamente');
+      console.log('🎉 Validación de estatus Stripe (ESTRICTA) completada exitosamente');
       console.log('📊 Resultados:', respuesta);
 
       res.json(respuesta);
@@ -5620,6 +5548,223 @@ app.post("/aclaraciones/validador-stripe", async (req, res) => {
     console.error('❌ Error en validador Stripe:', error);
     res.status(500).json({
       error: "Error al procesar validación Stripe",
+      detalle: error.message
+    });
+  }
+});
+
+// 🎯 VALIDADOR ESTRICTO GENERAL (sin límite de procesador específico)
+app.post("/aclaraciones/validador-estricto", async (req, res) => {
+  try {
+    console.log('🔍 Iniciando validación estricta general...');
+
+    const { idsTransaccion, tipoValidacion, campoBusqueda, procesador } = req.body;
+
+    if (!idsTransaccion || !Array.isArray(idsTransaccion) || idsTransaccion.length === 0) {
+      return res.status(400).json({ error: "Se requiere un array de IDs de transacción" });
+    }
+
+    if (!tipoValidacion || !['GANADA', 'PERDIDA'].includes(tipoValidacion)) {
+      return res.status(400).json({ error: "Tipo de validación debe ser 'GANADA' o 'PERDIDA'" });
+    }
+
+    if (!campoBusqueda || !['id_transaccion', 'autorizacion'].includes(campoBusqueda)) {
+      return res.status(400).json({ error: "Campo de búsqueda debe ser 'id_transaccion' o 'autorizacion'" });
+    }
+
+    // Validar procesador si se especifica
+    const procesadoresValidos = ['BAC', 'BANWIRE', 'BSD', 'CAIXA', 'CONEKTA', 'CREDIBANCO', 'CREDOMATIC', 'CYCLOPAY', 'EFEVOO', 'EVERTEC', 'FICOHSA', 'FIRSTDATA', 'KUSHKI', 'MERCADO PAGO', 'NETPAY', 'PAYCODE', 'PHAROS', 'PROMERICA', 'PROSA', 'REDEBAN', 'SABADELL', 'SLIMPAY', 'STRIPE', 'TOKU', 'WOMPI'];
+    if (procesador && procesador !== 'TODOS' && !procesadoresValidos.includes(procesador)) {
+      return res.status(400).json({ 
+        error: `Procesador debe ser uno de: TODOS, ${procesadoresValidos.join(', ')}` 
+      });
+    }
+
+    const client = await pool.connect();
+
+    try {
+      console.log(`📊 Procesando ${idsTransaccion.length} IDs para marcar como ${tipoValidacion}`);
+      console.log(`🎯 Campo de búsqueda: ${campoBusqueda}`);
+      console.log(`🏷️ Procesador especificado: ${procesador || 'TODOS'}`);
+
+      let actualizados = 0;
+      let noEncontrados = 0;
+      const detalles = [];
+      const idsNoEncontrados = [];
+
+      for (const idTransaccion of idsTransaccion) {
+        try {
+          const idLimpio = idTransaccion.toString().trim();
+          console.log(`🔍 Buscando ID: "${idLimpio}" en campo: ${campoBusqueda}`);
+
+          let resultado = null;
+          let campo = '';
+          let buscarQuery = '';
+
+          // 🎯 BÚSQUEDA EXACTA ESTRICTA - Solo en el campo específico
+          let filtroProcesor = '';
+          if (procesador && procesador !== 'TODOS') {
+            filtroProcesor = ` AND UPPER("procesador") = UPPER('${procesador}')`;
+          }
+
+          if (campoBusqueda === 'id_transaccion') {
+            campo = 'id_de_transaccion';
+            buscarQuery = `
+              SELECT "id", "id_de_transaccion", "autorizacion", "captura_cc", "cliente", "monto", "procesador"
+              FROM "aclaraciones"
+              WHERE UPPER(TRIM("id_de_transaccion")) = UPPER(TRIM($1))${filtroProcesor}
+              LIMIT 1
+            `;
+          } else if (campoBusqueda === 'autorizacion') {
+            campo = 'autorizacion';
+            buscarQuery = `
+              SELECT "id", "id_de_transaccion", "autorizacion", "captura_cc", "cliente", "monto", "procesador"
+              FROM "aclaraciones"
+              WHERE UPPER(TRIM("autorizacion")) = UPPER(TRIM($1))${filtroProcesor}
+              LIMIT 1
+            `;
+          }
+
+          console.log(`🎯 Búsqueda EXACTA en "${campo}": "${idLimpio}"${procesador && procesador !== 'TODOS' ? ` (Procesador: ${procesador})` : ''}`);
+          resultado = await client.query(buscarQuery, [idLimpio]);
+
+          console.log(`📊 Coincidencias exactas: ${resultado.rows.length} para "${idLimpio}" en ${campo}${procesador && procesador !== 'TODOS' ? ` con procesador ${procesador}` : ''}`);
+
+          if (resultado.rows.length > 0) {
+            const aclaracion = resultado.rows[0]; // Solo una coincidencia exacta
+
+            console.log(`✅ COINCIDENCIA EXACTA - ID DB: ${aclaracion.id}, Campo: ${campo}, Valor encontrado: ${aclaracion[campo.replace('id_de_', 'id_')]}, Procesador: ${aclaracion.procesador || 'N/A'}`);
+
+            // Actualizar el estatus
+            const updateQuery = `
+              UPDATE "aclaraciones"
+              SET "captura_cc" = $1
+              WHERE "id" = $2
+            `;
+
+            await client.query(updateQuery, [tipoValidacion, aclaracion.id]);
+            actualizados++;
+
+            // Agregar detalles para la respuesta
+            const valorEncontrado = campoBusqueda === 'id_transaccion' 
+              ? aclaracion.id_de_transaccion 
+              : aclaracion.autorizacion;
+
+            detalles.push({
+              id: aclaracion.id,
+              valorBuscado: idLimpio,
+              valorEncontrado: valorEncontrado,
+              campoBusqueda: campoBusqueda,
+              procesador: aclaracion.procesador || 'N/A',
+              cliente: aclaracion.cliente || 'N/A',
+              monto: aclaracion.monto ? `$${aclaracion.monto}` : 'N/A',
+              estatusAnterior: aclaracion.captura_cc,
+              estatusNuevo: tipoValidacion,
+              mensaje: `Actualizado correctamente`
+            });
+
+            console.log(`✅ ${idLimpio} actualizado a ${tipoValidacion} (campo: ${campoBusqueda}, procesador: ${aclaracion.procesador || 'N/A'})`);
+          } else {
+            noEncontrados++;
+            const razonDetallada = procesador && procesador !== 'TODOS'
+              ? `No encontrado en ${campo} con procesador ${procesador}`
+              : `No encontrado en ${campo}`;
+            
+            idsNoEncontrados.push({
+              valorBuscado: idLimpio,
+              campoBusqueda: campoBusqueda,
+              procesadorFiltrado: procesador || null,
+              razon: razonDetallada
+            });
+            console.log(`❌ ${idLimpio} NO encontrado en campo ${campo}${procesador && procesador !== 'TODOS' ? ` con procesador ${procesador}` : ''}`);
+          }
+
+        } catch (error) {
+          console.error(`❌ Error al procesar ${idTransaccion}:`, error.message);
+          noEncontrados++;
+          idsNoEncontrados.push({
+            valorBuscado: idTransaccion,
+            campoBusqueda: campoBusqueda,
+            procesadorFiltrado: procesador || null,
+            razon: `Error: ${error.message}`
+          });
+        }
+      }
+
+      await client.release();
+
+      const respuesta = {
+        total: idsTransaccion.length,
+        actualizados,
+        noEncontrados,
+        tipoValidacion,
+        campoBusqueda,
+        procesadorFiltro: procesador || 'TODOS',
+        nuevoEstatus: tipoValidacion,
+        configuracion: 'VALIDADOR_ESTRICTO_GENERAL',
+        detalles,
+        idsNoEncontrados
+      };
+
+      console.log('🎉 Validación estricta general completada exitosamente');
+      console.log('📊 Resultados:', respuesta);
+
+      res.json(respuesta);
+
+    } catch (error) {
+      await client.release();
+      throw error;
+    }
+
+  } catch (error) {
+    console.error('❌ Error en validador estricto general:', error);
+    res.status(500).json({
+      error: "Error al procesar validación estricta",
+      detalle: error.message
+    });
+  }
+});
+
+// 🏷️ Endpoint para obtener procesadores únicos
+app.get("/aclaraciones/procesadores", async (req, res) => {
+  try {
+    console.log('🔍 [PROCESADORES] Consultando procesadores únicos...');
+    const client = await pool.connect();
+    
+    const query = `
+      SELECT DISTINCT "procesador", COUNT(*) as cantidad
+      FROM "aclaraciones"
+      WHERE "procesador" IS NOT NULL AND "procesador" != ''
+      GROUP BY "procesador"
+      ORDER BY cantidad DESC
+      LIMIT 20
+    `;
+    
+    console.log('🔍 [PROCESADORES] Ejecutando query...');
+    const result = await client.query(query);
+    console.log('📊 [PROCESADORES] Filas obtenidas:', result.rows.length);
+    
+    await client.release();
+    
+    const procesadores = ['TODOS', ...result.rows.map(row => row.procesador)];
+    
+    console.log('📊 [PROCESADORES] Procesadores encontrados:', procesadores);
+    console.log('📋 [PROCESADORES] Detalles completos:');
+    result.rows.forEach((row, index) => {
+      console.log(`   ${index + 1}. ${row.procesador} (${row.cantidad} registros)`);
+    });
+    
+    res.json({
+      success: true,
+      procesadores,
+      detalles: result.rows,
+      total: result.rows.length
+    });
+    
+  } catch (error) {
+    console.error('❌ [PROCESADORES] Error obteniendo procesadores:', error);
+    res.status(500).json({
+      error: "Error al obtener procesadores",
       detalle: error.message
     });
   }
@@ -7065,7 +7210,7 @@ app.get('/api/data/aclaraciones', async (req, res) => {
   try {
     console.log('🔍 Búsqueda de aclaraciones - Parámetros:', req.query);
     
-    const { id, ids, autorizaciones, id_de_transaccion, cliente, comentarios, sucursal, limit = '50000' } = req.query;
+    const { id, ids, autorizaciones, id_de_transaccion, cliente, comentarios, sucursal, limit = '100' } = req.query;
     
     let whereConditions = [];
     let values = [];
@@ -7089,11 +7234,11 @@ app.get('/api/data/aclaraciones', async (req, res) => {
         });
       }
       
-      console.log(`🔑 Buscando ${autorizacionesArray.length} autorizaciones en id_de_transaccion:`, autorizacionesArray.slice(0, 10), '...');
+      console.log(`🔑 Buscando ${autorizacionesArray.length} autorizaciones:`, autorizacionesArray.slice(0, 10), '...');
       
-      // Buscar por id_de_transaccion (no por autorizacion)
+      // Buscar por autorizacion como strings
       const placeholders = autorizacionesArray.map((_, index) => `$${paramIndex + index}`).join(',');
-      whereConditions.push(`id_de_transaccion IN (${placeholders})`);
+      whereConditions.push(`autorizacion IN (${placeholders})`);
       values.push(...autorizacionesArray);
       paramIndex += autorizacionesArray.length;
       
@@ -7101,7 +7246,7 @@ app.get('/api/data/aclaraciones', async (req, res) => {
       queryInfo = {
         autorizaciones: autorizacionesArray,
         totalRequested: autorizacionesArray.length,
-        searchField: 'id_de_transaccion'
+        searchField: 'autorizacion'
       };
       
     } else if (ids) {
@@ -7220,13 +7365,13 @@ app.get('/api/data/aclaraciones', async (req, res) => {
       }
     }
     
-    // Para búsqueda masiva por autorizaciones (que ahora busca en id_de_transaccion), identificar autorizaciones no encontradas
+    // Para búsqueda masiva por autorizaciones, identificar autorizaciones no encontradas
     if (autorizaciones && queryInfo.autorizaciones) {
-      const foundTransactionIds = result.rows.map(row => row.id_de_transaccion).filter(id => id);
-      const notFoundAutorizaciones = queryInfo.autorizaciones.filter(auth => !foundTransactionIds.includes(auth));
+      const foundAutorizaciones = result.rows.map(row => row.autorizacion).filter(auth => auth);
+      const notFoundAutorizaciones = queryInfo.autorizaciones.filter(auth => !foundAutorizaciones.includes(auth));
       
       if (notFoundAutorizaciones.length > 0) {
-        console.log(`⚠️ Autorizaciones no encontradas en id_de_transaccion (${notFoundAutorizaciones.length}):`, notFoundAutorizaciones.slice(0, 10), '...');
+        console.log(`⚠️ Autorizaciones no encontradas (${notFoundAutorizaciones.length}):`, notFoundAutorizaciones.slice(0, 10), '...');
         queryInfo.notFound = notFoundAutorizaciones;
       }
     }
@@ -7264,194 +7409,12 @@ app.get('/api/data/aclaraciones', async (req, res) => {
   }
 });
 
-// 🎯 FUNCIÓN DE BÚSQUEDA EN CASCADA PARA EXCEL
-async function busquedaCascadaExcel(excelRows, pool) {
-  const encontrados = [];
-  const noEncontrados = [];
-  const stats = {
-    totalRows: excelRows.length,
-    encontradosPorId: 0,
-    encontradosPorFolio: 0,
-    encontradosPorReferencia: 0,
-    encontradosPorAutorizacion: 0,
-    noEncontradosTotal: 0
-  };
-  
-  console.log(`🎯 Iniciando búsqueda en cascada para ${excelRows.length} filas`);
-  
-  // Verificar que no hay límites en las filas
-  console.log(`📊 Total de filas recibidas: ${excelRows.length}`);
-  console.log(`📝 Primeras 5 filas:`, excelRows.slice(0, 5));
-  
-  for (let index = 0; index < excelRows.length; index++) {
-    const row = excelRows[index];
-    
-    // Log cada 100 registros para hacer seguimiento
-    if (index % 100 === 0) {
-      console.log(`📍 Procesando fila ${index + 1}/${excelRows.length}`);
-    }
-    let found = false;
-    let foundBy = null;
-    let foundWith = null;
-    
-    // 🔹 Paso 1: Buscar por ID
-    if (row.id && !found) {
-      try {
-        const result = await pool.query(
-          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
-          [row.id]
-        );
-        
-        if (result.rows.length > 0) {
-          const record = result.rows[0];
-          record.foundBy = 'id';
-          record.foundWith = row.id;
-          record.originalRow = row.originalRow;
-          record.excelData = row;
-          encontrados.push(record);
-          found = true;
-          foundBy = 'id';
-          foundWith = row.id;
-          stats.encontradosPorId++;
-        }
-      } catch (error) {
-        console.error('Error buscando por ID:', error);
-      }
-    }
-    
-    // 🔹 Paso 2: Buscar por FOLIO
-    if (row.folio && !found) {
-      try {
-        const result = await pool.query(
-          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
-          [row.folio]
-        );
-        
-        if (result.rows.length > 0) {
-          const record = result.rows[0];
-          record.foundBy = 'folio';
-          record.foundWith = row.folio;
-          record.originalRow = row.originalRow;
-          record.excelData = row;
-          encontrados.push(record);
-          found = true;
-          foundBy = 'folio';
-          foundWith = row.folio;
-          stats.encontradosPorFolio++;
-        }
-      } catch (error) {
-        console.error('Error buscando por FOLIO:', error);
-      }
-    }
-    
-    // 🔹 Paso 3: Buscar por REFERENCIA
-    if (row.referencia && !found) {
-      try {
-        const result = await pool.query(
-          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
-          [row.referencia]
-        );
-        
-        if (result.rows.length > 0) {
-          const record = result.rows[0];
-          record.foundBy = 'referencia';
-          record.foundWith = row.referencia;
-          record.originalRow = row.originalRow;
-          record.excelData = row;
-          encontrados.push(record);
-          found = true;
-          foundBy = 'referencia';
-          foundWith = row.referencia;
-          stats.encontradosPorReferencia++;
-        }
-      } catch (error) {
-        console.error('Error buscando por REFERENCIA:', error);
-      }
-    }
-    
-    // 🔹 Paso 4: Buscar por AUTORIZACIÓN (en id_de_transaccion)
-    if (row.autorizacion && !found) {
-      try {
-        const result = await pool.query(
-          'SELECT * FROM aclaraciones WHERE id_de_transaccion = $1 LIMIT 1',
-          [row.autorizacion]
-        );
-        
-        if (result.rows.length > 0) {
-          const record = result.rows[0];
-          record.foundBy = 'autorizacion';
-          record.foundWith = row.autorizacion;
-          record.originalRow = row.originalRow;
-          record.excelData = row;
-          encontrados.push(record);
-          found = true;
-          foundBy = 'autorizacion';
-          foundWith = row.autorizacion;
-          stats.encontradosPorAutorizacion++;
-        }
-      } catch (error) {
-        console.error('Error buscando por AUTORIZACIÓN:', error);
-      }
-    }
-    
-    // Si no se encontró en ningún paso
-    if (!found) {
-      noEncontrados.push({
-        originalRow: row.originalRow,
-        excelData: row,
-        intentos: {
-          id: row.id || 'vacío',
-          folio: row.folio || 'vacío', 
-          referencia: row.referencia || 'vacío',
-          autorizacion: row.autorizacion || 'vacío'
-        }
-      });
-      stats.noEncontradosTotal++;
-    }
-    
-    // Log progreso cada 50 registros
-    if ((encontrados.length + noEncontrados.length) % 50 === 0) {
-      console.log(`📊 Progreso: ${encontrados.length + noEncontrados.length}/${excelRows.length} procesados`);
-    }
-  }
-  
-  console.log(`🔍 Búsqueda completada. Encontrados: ${encontrados.length}, No encontrados: ${noEncontrados.length}`);
-  console.log(`📋 Total procesado: ${encontrados.length + noEncontrados.length} de ${excelRows.length} filas`);
-  
-  if (encontrados.length + noEncontrados.length !== excelRows.length) {
-    console.log(`⚠️ ADVERTENCIA: Discrepancia en números!`);
-  }
-  
-  console.log(`✅ Búsqueda en cascada completada:
-    - Total procesado: ${stats.totalRows}
-    - Encontrados por ID: ${stats.encontradosPorId}
-    - Encontrados por Folio: ${stats.encontradosPorFolio}  
-    - Encontrados por Referencia: ${stats.encontradosPorReferencia}
-    - Encontrados por Autorización: ${stats.encontradosPorAutorizacion}
-    - No encontrados: ${stats.noEncontradosTotal}`);
-  
-  // Formatear fechas en los encontrados
-  const encontradosFormateados = encontrados.map(row => ({
-    ...row,
-    fecha_de_peticion: formatearFechaSinZona(row.fecha_de_peticion),
-    fecha_de_respuesta: formatearFechaSinZona(row.fecha_de_respuesta),
-    fecha_venta: formatearFechaSinZona(row.fecha_venta),
-    fecha_contrato: formatearFechaSinZona(row.fecha_contrato)
-  }));
-  
-  return {
-    encontrados: encontradosFormateados,
-    noEncontrados,
-    stats
-  };
-}
-
 // 🚀 ENDPOINT DE BÚSQUEDA MASIVA DE ACLARACIONES (POST)
 app.post('/api/data/aclaraciones', async (req, res) => {
   try {
     console.log('🔍 Búsqueda masiva de aclaraciones - Body:', req.body);
     
-    const { searchType, ids, autorizaciones, excelRows, limit = 50000 } = req.body;
+    const { searchType, ids, autorizaciones, limit = 1000 } = req.body;
     
     let whereConditions = [];
     let values = [];
@@ -7471,7 +7434,8 @@ app.post('/api/data/aclaraciones', async (req, res) => {
       
       // Filtrar y validar IDs
       const validIds = ids
-        .filter(id => id && /^\d+$/.test(id.toString()));
+        .filter(id => id && /^\d+$/.test(id.toString()))
+        .slice(0, 1000);
       
       if (validIds.length === 0) {
         return res.status(400).json({
@@ -7509,7 +7473,8 @@ app.post('/api/data/aclaraciones', async (req, res) => {
       // Filtrar autorizaciones válidas
       const validAuths = autorizaciones
         .filter(auth => auth && auth.toString().trim())
-        .map(auth => auth.toString().trim());
+        .map(auth => auth.toString().trim())
+        .slice(0, 1000);
       
       if (validAuths.length === 0) {
         return res.status(400).json({
@@ -7519,18 +7484,18 @@ app.post('/api/data/aclaraciones', async (req, res) => {
         });
       }
       
-      console.log(`🔑 Buscando ${validAuths.length} autorizaciones en id_de_transaccion:`, validAuths.slice(0, 10), '...');
+      console.log(`🔑 Buscando ${validAuths.length} autorizaciones:`, validAuths.slice(0, 10), '...');
       
-      // Buscar por id_de_transaccion (no por autorizacion)
+      // Buscar por autorizacion
       const placeholders = validAuths.map((_, index) => `$${paramIndex + index}`).join(',');
-      whereConditions.push(`id_de_transaccion IN (${placeholders})`);
+      whereConditions.push(`autorizacion IN (${placeholders})`);
       values.push(...validAuths);
       paramIndex += validAuths.length;
       
       queryInfo = {
         autorizaciones: validAuths,
         totalRequested: validAuths.length,
-        searchField: 'id_de_transaccion'
+        searchField: 'autorizacion'
       };
       
     } else if (searchType === 'cascada_excel' && excelRows && Array.isArray(excelRows)) {
@@ -7548,8 +7513,6 @@ app.post('/api/data/aclaraciones', async (req, res) => {
       
       // Realizar búsqueda en cascada
       const cascadaResult = await busquedaCascadaExcel(excelRows, pool);
-      
-      console.log(`📤 Enviando respuesta: ${cascadaResult.encontrados.length} encontrados, ${cascadaResult.noEncontrados.length} no encontrados`);
       
       // Retornar resultado especial para cascada
       return res.json({
@@ -10746,99 +10709,6 @@ app.get('/api/papeleria-last', async (req, res) => {
   } catch (error) {
     console.error('❌ Error obteniendo último registro:', error);
     res.status(500).json({ error: 'Error obteniendo último registro' });
-  }
-});
-
-// 🔧 ENDPOINT TEMPORAL PARA DEBUG - CONSULTA DIRECTA
-app.post('/api/debug-query', async (req, res) => {
-  try {
-    const { sql, params = [] } = req.body;
-    console.log('🔧 Debug Query:', sql);
-    const result = await pool.query(sql, params);
-    res.json({
-      success: true,
-      rows: result.rows,
-      count: result.rows.length
-    });
-  } catch (error) {
-    console.error('❌ Error en debug query:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
-
-// 💳 ENDPOINT ESPECÍFICO PARA BÚSQUEDA POR TARJETAS CON FILTRO EFEVOO
-app.post('/api/buscar-tarjetas-efevoo', async (req, res) => {
-  try {
-    const { tarjetas } = req.body;
-    
-    if (!tarjetas || !Array.isArray(tarjetas)) {
-      return res.status(400).json({
-        success: false,
-        error: 'Se requiere un array de tarjetas'
-      });
-    }
-
-    console.log(`🎯 Buscando ${tarjetas.length} tarjetas en aclaraciones con procesador EFEVOO`);
-    
-    // Limpiar y procesar tarjetas (quitar espacios)
-    const tarjetasLimpias = tarjetas.map(t => t.toString().trim()).filter(t => t.length > 0);
-    console.log(`📋 Tarjetas a buscar: ${tarjetasLimpias.length}`);
-    
-    // Buscar tarjetas que SÍ existen con procesador EFEVOO
-    const placeholders = tarjetasLimpias.map((_, index) => `$${index + 2}`).join(',');
-    
-    const queryEncontradas = `
-      SELECT DISTINCT 
-        id_de_transaccion,
-        cliente, 
-        monto,
-        fecha_de_peticion,
-        procesador
-      FROM aclaraciones 
-      WHERE procesador = $1 
-      AND id_de_transaccion IN (${placeholders})
-      ORDER BY id_de_transaccion ASC
-    `;
-    
-    const params = ['EFEVOO', ...tarjetasLimpias];
-    const result = await pool.query(queryEncontradas, params);
-    
-    // Identificar cuáles NO se encontraron
-    const encontradas = result.rows.map(row => row.id_de_transaccion);
-    const noEncontradas = tarjetasLimpias.filter(tarjeta => !encontradas.includes(tarjeta));
-    
-    // Ordenar ambas listas alfabéticamente
-    encontradas.sort();
-    noEncontradas.sort();
-    
-    console.log(`✅ Encontradas: ${encontradas.length}`);
-    console.log(`❌ No encontradas: ${noEncontradas.length}`);
-    
-    res.json({
-      success: true,
-      totalBusquedas: tarjetasLimpias.length,
-      encontradas: {
-        count: encontradas.length,
-        tarjetas: encontradas,
-        detalles: result.rows
-      },
-      noEncontradas: {
-        count: noEncontradas.length,
-        tarjetas: noEncontradas
-      },
-      procesador: 'EFEVOO',
-      timestamp: new Date().toISOString()
-    });
-    
-  } catch (error) {
-    console.error('❌ Error en búsqueda de tarjetas EFEVOO:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
   }
 });
 

@@ -1,413 +1,282 @@
 import React, { useState } from 'react';
+import { API_BASE_URL } from '../config.js';
 
 const ActualizacionMasiva = () => {
-  const [archivo, setArchivo] = useState(null);
   const [datosTabla, setDatosTabla] = useState('');
-  const [verificaciones, setVerificaciones] = useState(null);
-  const [resultadoActualizacion, setResultadoActualizacion] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [paso, setPaso] = useState(1);
+  
+  // 🎯 CONTROLES PARA VALIDADOR ESTRICTO
+  const [campoBusqueda, setCampoBusqueda] = useState('id_transaccion');
+  const [procesador, setProcesador] = useState('');
+  const [resultadosValidador, setResultadosValidador] = useState(null);
+  
+  const procesadores = ['TODOS', 'BAC', 'BANWIRE', 'BSD', 'CAIXA', 'CONEKTA', 'CREDIBANCO', 'CREDOMATIC', 'CYCLOPAY', 'EFEVOO', 'EVERTEC', 'FICOHSA', 'FIRSTDATA', 'KUSHKI', 'MERCADO PAGO', 'NETPAY', 'PAYCODE', 'PHAROS', 'PROMERICA', 'PROSA', 'REDEBAN', 'SABADELL', 'SLIMPAY', 'STRIPE', 'TOKU', 'WOMPI'];
 
-  const procesarDatos = (texto) => {
-    const lineas = texto.trim().split('\n');
-    const transacciones = [];
-
-    for (const linea of lineas) {
-      const partes = linea.trim().split('\t');
-      if (partes.length >= 2) {
-        const id_transaccion = partes[0].trim();
-        const estatus = partes[1].trim();
-
-        if (id_transaccion && estatus) {
-          transacciones.push({ id_transaccion, estatus });
-        }
-      }
-    }
-
-    return transacciones;
-  };
-
-  const verificarTransacciones = async () => {
-    console.log('🔍 [ACTUALIZACIÓN] === INICIO verificarTransacciones ===');
+  // 🎯 VALIDADOR ESTRICTO GENERAL
+  const ejecutarValidadorEstricto = async (tipoValidacion) => {
+    console.log('🎯 [VALIDADOR ESTRICTO] Iniciando...', { campoBusqueda, procesador, tipoValidacion });
     setIsLoading(true);
+    setResultadosValidador(null);
 
     try {
-      const transacciones = procesarDatos(datosTabla);
-      console.log('📊 [ACTUALIZACIÓN] Transacciones procesadas:', transacciones.length);
-      console.log('🔍 [ACTUALIZACIÓN] Datos procesados:', transacciones.slice(0, 3));
+      // Procesar IDs del textarea
+      const idsArray = datosTabla
+        .split(/[,\n\r\s]+/)
+        .map(id => id.trim())
+        .filter(id => id.length > 0);
 
-      if (transacciones.length === 0) {
-        console.error('❌ [ACTUALIZACIÓN] Sin transacciones válidas');
-        alert('No se pudieron procesar los datos. Asegúrate de usar el formato correcto.');
+      if (idsArray.length === 0) {
+        alert('❌ Ingresa al menos un ID');
         setIsLoading(false);
         return;
       }
 
-      console.log('📤 [ACTUALIZACIÓN] Enviando petición a verificar-transacciones');
-      const response = await fetch('/api/actualizaciones/verificar-transacciones', {
+      if (!procesador) {
+        alert('❌ Selecciona un procesador');
+        setIsLoading(false);
+        return;
+      }
+
+      const payload = {
+        idsTransaccion: idsArray,
+        tipoValidacion,
+        campoBusqueda,
+        procesador: procesador === 'TODOS' ? null : procesador
+      };
+
+      console.log('📤 [VALIDADOR ESTRICTO] Enviando:', payload);
+
+      const response = await fetch(`${API_BASE_URL}/aclaraciones/validador-estricto`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
         },
-        body: JSON.stringify({ transacciones })
+        body: JSON.stringify(payload)
       });
 
-      console.log('📥 [ACTUALIZACIÓN] Status respuesta:', response.status);
-      console.log('📥 [ACTUALIZACIÓN] Headers respuesta:', Object.fromEntries(response.headers.entries()));
-      
-      // SIEMPRE obtener el texto primero para debug
-      const responseText = await response.text();
-      console.log('📋 [ACTUALIZACIÓN] Respuesta RAW (primeros 500 chars):', responseText.substring(0, 500));
-      console.log('📋 [ACTUALIZACIÓN] Longitud respuesta:', responseText.length);
-      
+      const resultado = await response.json();
+      console.log('📥 [VALIDADOR ESTRICTO] Respuesta:', resultado);
+
       if (!response.ok) {
-        console.error('❌ [ACTUALIZACIÓN] Response no OK:', response.status);
-        console.error('❌ [ACTUALIZACIÓN] Error text completo:', responseText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${responseText}`);
+        throw new Error(resultado.error || 'Error en validador');
       }
 
-      // Intentar parsear el JSON
-      let resultado;
-      try {
-        resultado = JSON.parse(responseText);
-        console.log('📋 [ACTUALIZACIÓN] JSON parseado exitosamente:', resultado);
-      } catch (jsonError) {
-        console.error('💥 [ACTUALIZACIÓN] ERROR PARSING JSON:');
-        console.error('   - Error:', jsonError.message);
-        console.error('   - Respuesta completa:', responseText);
-        throw new Error(`Error parsing JSON: ${jsonError.message}. Respuesta: ${responseText.substring(0, 200)}`);
-      }
+      setResultadosValidador(resultado);
+      alert(`✅ Validador completado: ${resultado.actualizados} actualizados, ${resultado.noEncontrados} no encontrados`);
 
-      if (resultado.success) {
-        console.log('✅ [ACTUALIZACIÓN] Verificación exitosa');
-        setVerificaciones(resultado.data);
-        setPaso(2);
-      } else {
-        console.error('❌ [ACTUALIZACIÓN] Error en resultado:', resultado.message);
-        alert('Error verificando transacciones: ' + resultado.message);
+      // Limpiar input solo si hubo actualizaciones
+      if (resultado.actualizados > 0) {
+        setDatosTabla('');
       }
 
     } catch (error) {
-      console.error('💥 [ACTUALIZACIÓN] ERROR CRÍTICO verificarTransacciones:');
-      console.error('   - Mensaje:', error.message);
-      console.error('   - Stack:', error.stack);
-      alert('Error verificando transacciones: ' + error.message);
+      console.error('❌ [VALIDADOR ESTRICTO] Error:', error);
+      alert('❌ Error en validador: ' + error.message);
     } finally {
-      console.log('🏁 [ACTUALIZACIÓN] Finalizando verificarTransacciones');
       setIsLoading(false);
     }
   };
 
-  const ejecutarActualizacion = async () => {
-    console.log('🚀 [ACTUALIZACIÓN] === INICIO ejecutarActualizacion ===');
-    setIsLoading(true);
 
-    try {
-      const transacciones = procesarDatos(datosTabla);
-      console.log('📊 [ACTUALIZACIÓN] Transacciones para actualizar:', transacciones.length);
-      console.log('🔍 [ACTUALIZACIÓN] Transacciones:', transacciones);
-
-      console.log('📤 [ACTUALIZACIÓN] Enviando petición a actualizar-captura-cc');
-      console.log('⏰ [ACTUALIZACIÓN] Timestamp inicio:', new Date().toISOString());
-
-      const response = await fetch('/api/actualizaciones/actualizar-captura-cc', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ transacciones })
-      });
-
-      console.log('📥 [ACTUALIZACIÓN] Respuesta - Status:', response.status);
-      console.log('⏰ [ACTUALIZACIÓN] Timestamp respuesta:', new Date().toISOString());
-
-      // SIEMPRE obtener el texto primero para debug
-      const responseText = await response.text();
-      console.log('📋 [ACTUALIZACIÓN] Respuesta RAW (primeros 500 chars):', responseText.substring(0, 500));
-      console.log('📋 [ACTUALIZACIÓN] Longitud respuesta:', responseText.length);
-
-      if (!response.ok) {
-        console.error('❌ [ACTUALIZACIÓN] Response no OK:', response.status);
-        console.error('❌ [ACTUALIZACIÓN] Error text completo:', responseText);
-        throw new Error(`HTTP ${response.status}: ${response.statusText} - ${responseText}`);
-      }
-
-      // Intentar parsear el JSON
-      let resultado;
-      try {
-        resultado = JSON.parse(responseText);
-        console.log('📋 [ACTUALIZACIÓN] JSON parseado exitosamente:', resultado);
-      } catch (jsonError) {
-        console.error('💥 [ACTUALIZACIÓN] ERROR PARSING JSON:');
-        console.error('   - Error:', jsonError.message);
-        console.error('   - Respuesta completa:', responseText);
-        throw new Error(`Error parsing JSON: ${jsonError.message}. Respuesta: ${responseText.substring(0, 200)}`);
-      }
-
-      if (resultado.success) {
-        console.log('✅ [ACTUALIZACIÓN] Actualización exitosa');
-        setResultadoActualizacion(resultado.data);
-        setPaso(3);
-      } else {
-        console.error('❌ [ACTUALIZACIÓN] Error en actualización:', resultado.message);
-        alert('Error en la actualización: ' + resultado.message);
-      }
-
-    } catch (error) {
-      console.error('💥 [ACTUALIZACIÓN] ERROR CRÍTICO ejecutarActualizacion:');
-      console.error('   - Mensaje:', error.message);
-      console.error('   - Stack:', error.stack);
-      console.error('   - Timestamp error:', new Date().toISOString());
-      alert('Error ejecutando actualización: ' + error.message);
-    } finally {
-      console.log('🏁 [ACTUALIZACIÓN] Finalizando ejecutarActualizacion');
-      setIsLoading(false);
-    }
-  };
-
-  const reiniciar = () => {
-    setArchivo(null);
-    setDatosTabla('');
-    setVerificaciones(null);
-    setResultadoActualizacion(null);
-    setPaso(1);
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900 p-6">
-      <div className="max-w-6xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="bg-gray-800 rounded-lg p-6">
           <div className="mb-6">
             <h1 className="text-3xl font-bold text-white mb-2">
-              🔄 Actualización Masiva de CAPTURA_CC
+              🎯 Validador Estricto de Transacciones
             </h1>
             <p className="text-gray-400">
-              Actualiza masivamente el campo CAPTURA_CC en la tabla de aclaraciones basado en ID de transacción y estatus.
+              Busca y actualiza transacciones con coincidencias exactas basado en ID o autorización.
             </p>
           </div>
 
-          {/* Paso 1: Entrada de datos */}
-          {paso === 1 && (
-            <div className="space-y-6">
-              <div className="bg-blue-900 p-4 rounded-lg">
-                <h3 className="text-white font-semibold mb-2">📋 Formato de datos</h3>
-                <p className="text-blue-200 text-sm">
-                  Ingresa los datos con el formato: <code className="bg-blue-800 px-2 py-1 rounded">id_transaccion[TAB]ESTATUS</code>
-                </p>
-                <p className="text-blue-200 text-sm mt-1">
-                  Ejemplo: <code className="bg-blue-800 px-2 py-1 rounded">174206787168	PERDIDA</code>
-                </p>
-                <div className="mt-3 text-blue-200 text-sm">
-                  <strong>Valores válidos para ESTATUS:</strong> PERDIDA, GANADA
-                </div>
-              </div>
+          <div className="space-y-6">
+            {/* Información sobre el formato */}
+            <div className="bg-purple-900 bg-opacity-30 border border-purple-600 p-4 rounded-lg">
+              <h3 className="text-purple-200 font-semibold mb-2">📋 Formato de entrada</h3>
+              <p className="text-purple-300 text-sm">
+                Solo ingresa los IDs separados por comas o en líneas diferentes:
+              </p>
+              <p className="text-purple-300 text-sm mt-1">
+                <code className="bg-purple-800 px-2 py-1 rounded">174206787168, 174206059662, 174050636334</code>
+              </p>
+              <p className="text-purple-300 text-sm mt-1">
+                <strong>El estatus se define con los botones GANADA/PERDIDA</strong>
+              </p>
+            </div>
 
-              <div>
-                <label className="block text-white text-sm font-medium mb-2">
-                  Datos de transacciones
+            {/* Área de entrada de datos */}
+            <div>
+              <label className="block text-white text-sm font-medium mb-2">
+                IDs de transacciones
+              </label>
+              <textarea
+                value={datosTabla}
+                onChange={(e) => setDatosTabla(e.target.value)}
+                placeholder="174206787168, 174206059662&#10;174050636334&#10;175123456789"
+                className="w-full h-32 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:border-purple-500 focus:ring-purple-500 font-mono text-sm"
+                rows={8}
+              />
+              <div className="mt-2 text-gray-400 text-sm">
+                {datosTabla.trim() ? 
+                  `${datosTabla.split(/[,\n\r\s]+/).filter(id => id.trim().length > 0).length} IDs detectados` : 
+                  'Ingresa los IDs aquí...'
+                }
+              </div>
+            </div>
+
+            {/* Controles del validador */}
+            <div className="bg-gray-700 p-4 rounded-lg">
+              <h3 className="text-white font-semibold mb-4">🔧 Configuración de búsqueda</h3>
+              
+              {/* Selección de Campo */}
+              <div className="mb-4">
+                <label className="block text-gray-300 text-sm font-medium mb-2">
+                  Campo de búsqueda:
                 </label>
-                <textarea
-                  value={datosTabla}
-                  onChange={(e) => setDatosTabla(e.target.value)}
-                  placeholder="174206787168&#9;PERDIDA&#10;174206059662&#9;PERDIDA&#10;174050636334&#9;GANADA"
-                  className="w-full h-48 bg-gray-700 border border-gray-600 rounded-lg px-3 py-2 text-white placeholder-gray-400 focus:border-blue-500 focus:ring-blue-500 font-mono text-sm"
-                  rows={12}
-                />
-                <div className="mt-2 text-gray-400 text-sm">
-                  {datosTabla.trim() ? `${datosTabla.trim().split('\n').length} líneas ingresadas` : 'Ingresa los datos aquí...'}
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() => setCampoBusqueda('id_transaccion')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      campoBusqueda === 'id_transaccion'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                    }`}
+                  >
+                    ID Transacción
+                  </button>
+                  <button
+                    onClick={() => setCampoBusqueda('autorizacion')}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                      campoBusqueda === 'autorizacion'
+                        ? 'bg-purple-600 text-white'
+                        : 'bg-gray-600 text-gray-300 hover:bg-gray-500'
+                    }`}
+                  >
+                    Autorización
+                  </button>
                 </div>
               </div>
 
-              <div className="flex space-x-3">
-                <button
-                  onClick={verificarTransacciones}
-                  disabled={!datosTabla.trim() || isLoading}
-                  className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
+              {/* Selección de Procesador */}
+              <div className="mb-4">
+                <label className="block text-gray-300 text-sm font-medium mb-2">
+                  Procesador:
+                </label>
+                <select
+                  value={procesador}
+                  onChange={(e) => setProcesador(e.target.value)}
+                  className="w-full bg-gray-600 border border-gray-500 rounded-lg px-3 py-2 text-white focus:border-purple-500 focus:ring-purple-500"
                 >
-                  {isLoading ? '🔄 Verificando...' : '🔍 Verificar Transacciones'}
+                  <option value="">Seleccionar procesador...</option>
+                  {procesadores.map(proc => (
+                    <option key={proc} value={proc}>{proc}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Botones de Acción */}
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => ejecutarValidadorEstricto('GANADA')}
+                  disabled={!datosTabla.trim() || !procesador || isLoading}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium transition-colors"
+                >
+                  {isLoading ? '⏳ Procesando...' : '✅ Marcar GANADA'}
+                </button>
+                <button
+                  onClick={() => ejecutarValidadorEstricto('PERDIDA')}
+                  disabled={!datosTabla.trim() || !procesador || isLoading}
+                  className="bg-red-600 hover:bg-red-700 disabled:bg-gray-600 text-white px-4 py-3 rounded-lg font-medium transition-colors"
+                >
+                  {isLoading ? '⏳ Procesando...' : '❌ Marcar PERDIDA'}
                 </button>
               </div>
             </div>
-          )}
 
-          {/* Paso 2: Verificación */}
-          {paso === 2 && verificaciones && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-green-900 p-6 rounded-lg text-center">
-                  <div className="text-3xl font-bold text-green-200">
-                    {verificaciones.encontrados}
+            {/* Resultados del Validador */}
+            {resultadosValidador && (
+              <div className="bg-gray-700 p-4 rounded-lg">
+                <h4 className="text-white font-semibold mb-3">📊 Resultados del validador</h4>
+                
+                {/* Estadísticas */}
+                <div className="grid grid-cols-3 gap-4 mb-4">
+                  <div className="bg-green-800 p-3 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-green-200">
+                      {resultadosValidador.actualizados}
+                    </div>
+                    <div className="text-green-300 text-sm">Actualizados</div>
                   </div>
-                  <div className="text-green-300 text-sm">Encontrados</div>
-                </div>
-                <div className="bg-yellow-900 p-6 rounded-lg text-center">
-                  <div className="text-3xl font-bold text-yellow-200">
-                    {verificaciones.no_encontrados}
+                  <div className="bg-yellow-800 p-3 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-yellow-200">
+                      {resultadosValidador.noEncontrados}
+                    </div>
+                    <div className="text-yellow-300 text-sm">No encontrados</div>
                   </div>
-                  <div className="text-yellow-300 text-sm">No encontrados</div>
-                </div>
-                <div className="bg-blue-900 p-6 rounded-lg text-center">
-                  <div className="text-3xl font-bold text-blue-200">
-                    {verificaciones.total_verificados}
+                  <div className="bg-blue-800 p-3 rounded-lg text-center">
+                    <div className="text-2xl font-bold text-blue-200">
+                      {resultadosValidador.total}
+                    </div>
+                    <div className="text-blue-300 text-sm">Total procesados</div>
                   </div>
-                  <div className="text-blue-300 text-sm">Total</div>
                 </div>
-              </div>
 
-              {verificaciones.encontrados > 0 && (
-                <div>
-                  <h3 className="text-white font-semibold mb-3 text-lg">
-                    ✅ Transacciones que se actualizarán ({verificaciones.encontrados})
-                  </h3>
-                  <div className="bg-gray-700 rounded-lg max-h-64 overflow-y-auto">
-                    <table className="w-full text-sm">
-                      <thead className="sticky top-0 bg-gray-800">
-                        <tr className="border-b border-gray-600">
-                          <th className="text-left p-3 text-gray-300">ID Transacción</th>
-                          <th className="text-left p-3 text-gray-300">Estatus Actual</th>
-                          <th className="text-left p-3 text-gray-300">Nuevo Estatus</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {verificaciones.verificaciones
-                          .filter(v => v.existe)
-                          .map((v, index) => (
-                          <tr key={index} className="border-b border-gray-700 hover:bg-gray-600">
-                            <td className="p-3 text-white font-mono">{v.id_transaccion}</td>
-                            <td className="p-3 text-gray-300">{v.captura_cc_actual || 'Sin valor'}</td>
-                            <td className="p-3">
-                              <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                v.estatus_nuevo === 'GANADA' ? 'bg-green-800 text-green-200' : 'bg-red-800 text-red-200'
-                              }`}>
-                                {v.estatus_nuevo}
-                              </span>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                {/* Detalles */}
+                {resultadosValidador.detalles && resultadosValidador.detalles.length > 0 && (
+                  <div className="bg-gray-800 p-3 rounded-lg max-h-40 overflow-y-auto">
+                    <h5 className="text-gray-300 text-sm font-medium mb-2">Detalles:</h5>
+                    {resultadosValidador.detalles.slice(0, 10).map((detalle, index) => (
+                      <div key={index} className="text-xs text-gray-300 mb-1">
+                        • {detalle.valorBuscado} → {detalle.estatusNuevo} (Procesador: {detalle.procesador})
+                      </div>
+                    ))}
+                    {resultadosValidador.detalles.length > 10 && (
+                      <div className="text-xs text-gray-400 mt-2">
+                        ... y {resultadosValidador.detalles.length - 10} más actualizaciones
+                      </div>
+                    )}
                   </div>
-                </div>
-              )}
+                )}
 
-              {verificaciones.no_encontrados > 0 && (
-                <div>
-                  <h3 className="text-yellow-300 font-semibold mb-3 text-lg">
-                    ⚠️ Transacciones no encontradas ({verificaciones.no_encontrados})
-                  </h3>
-                  <div className="bg-yellow-900 bg-opacity-30 rounded-lg p-4 max-h-40 overflow-y-auto">
-                    <div className="grid grid-cols-2 gap-4">
-                      {verificaciones.verificaciones
-                        .filter(v => !v.existe)
-                        .map((v, index) => (
-                        <div key={index} className="text-yellow-200 text-sm font-mono bg-yellow-800 bg-opacity-30 p-2 rounded">
-                          {v.id_transaccion} → {v.estatus_nuevo}
+                {/* IDs no encontrados */}
+                {resultadosValidador.idsNoEncontrados && resultadosValidador.idsNoEncontrados.length > 0 && (
+                  <div className="bg-yellow-900 bg-opacity-30 p-3 rounded-lg mt-3">
+                    <h5 className="text-yellow-300 text-sm font-medium mb-2">
+                      No encontrados ({resultadosValidador.idsNoEncontrados.length}):
+                    </h5>
+                    <div className="grid grid-cols-2 gap-2 max-h-24 overflow-y-auto">
+                      {resultadosValidador.idsNoEncontrados.slice(0, 10).map((item, index) => (
+                        <div key={index} className="text-xs text-yellow-200 bg-yellow-800 bg-opacity-30 p-1 rounded">
+                          {item.valorBuscado}
                         </div>
                       ))}
                     </div>
-                  </div>
-                </div>
-              )}
-
-              <div className="flex space-x-3">
-                <button
-                  onClick={() => setPaso(1)}
-                  className="bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors"
-                >
-                  ⬅️ Volver
-                </button>
-                <button
-                  onClick={() => {
-                    console.log('🖱️ Click en botón actualizar');
-                    console.log('📊 verificaciones.encontrados:', verificaciones.encontrados);
-                    console.log('⏳ isLoading:', isLoading);
-                    ejecutarActualizacion();
-                  }}
-                  disabled={verificaciones.encontrados === 0 || isLoading}
-                  className="flex-1 bg-green-600 hover:bg-green-700 disabled:bg-gray-600 text-white px-6 py-3 rounded-lg font-medium transition-colors"
-                >
-                  {isLoading ? '🔄 Actualizando...' : `✅ Actualizar ${verificaciones.encontrados} registros`}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Paso 3: Resultado */}
-          {paso === 3 && resultadoActualizacion && (
-            <div className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-green-900 p-6 rounded-lg text-center">
-                  <div className="text-3xl font-bold text-green-200">
-                    {resultadoActualizacion.actualizaciones_exitosas}
-                  </div>
-                  <div className="text-green-300 text-sm">Actualizaciones exitosas</div>
-                </div>
-                <div className="bg-red-900 p-6 rounded-lg text-center">
-                  <div className="text-3xl font-bold text-red-200">
-                    {resultadoActualizacion.errores + resultadoActualizacion.no_encontrados}
-                  </div>
-                  <div className="text-red-300 text-sm">No procesados</div>
-                </div>
-              </div>
-
-              <div className="bg-green-900 bg-opacity-30 p-6 rounded-lg">
-                <h3 className="text-green-300 font-semibold text-lg">✅ Actualización completada</h3>
-                <p className="text-green-200 mt-2">
-                  {resultadoActualizacion.message}
-                </p>
-                <div className="mt-4 text-green-200 text-sm">
-                  <strong>Resumen:</strong>
-                  <ul className="list-disc list-inside mt-2 space-y-1">
-                    <li>Total procesados: {resultadoActualizacion.total_procesados}</li>
-                    <li>Exitosos: {resultadoActualizacion.actualizaciones_exitosas}</li>
-                    <li>No encontrados: {resultadoActualizacion.no_encontrados}</li>
-                    <li>Errores: {resultadoActualizacion.errores}</li>
-                  </ul>
-                </div>
-              </div>
-
-              {resultadoActualizacion.detalles.errores.length > 0 && (
-                <div className="bg-red-900 bg-opacity-30 p-4 rounded-lg">
-                  <h3 className="text-red-300 font-semibold mb-3">❌ Errores ({resultadoActualizacion.detalles.errores.length})</h3>
-                  <div className="max-h-40 overflow-y-auto space-y-2">
-                    {resultadoActualizacion.detalles.errores.map((error, index) => (
-                      <div key={index} className="text-red-200 text-sm bg-red-800 bg-opacity-30 p-2 rounded font-mono">
-                        <strong>{error.id_transaccion}:</strong> {error.error}
+                    {resultadosValidador.idsNoEncontrados.length > 10 && (
+                      <div className="text-xs text-yellow-400 mt-1">
+                        ... y {resultadosValidador.idsNoEncontrados.length - 10} más
                       </div>
-                    ))}
+                    )}
                   </div>
-                </div>
-              )}
-
-              {resultadoActualizacion.detalles.no_encontrados.length > 0 && (
-                <div className="bg-yellow-900 bg-opacity-30 p-4 rounded-lg">
-                  <h3 className="text-yellow-300 font-semibold mb-3">⚠️ No encontrados ({resultadoActualizacion.detalles.no_encontrados.length})</h3>
-                  <div className="max-h-40 overflow-y-auto grid grid-cols-2 gap-2">
-                    {resultadoActualizacion.detalles.no_encontrados.map((item, index) => (
-                      <div key={index} className="text-yellow-200 text-sm bg-yellow-800 bg-opacity-30 p-2 rounded font-mono">
-                        {item.id_transaccion} → {item.estatus}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex space-x-3">
-                <button
-                  onClick={reiniciar}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition-colors"
-                >
-                  🔄 Nueva Actualización
-                </button>
-                <button
-                  onClick={() => window.location.reload()}
-                  className="flex-1 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg transition-colors"
-                >
-                  🏠 Volver al Dashboard
-                </button>
+                )}
               </div>
+            )}
+
+            {/* Botón para limpiar */}
+            <div className="flex justify-center">
+              <button
+                onClick={() => {
+                  setDatosTabla('');
+                  setResultadosValidador(null);
+                }}
+                className="bg-gray-600 hover:bg-gray-500 text-white px-6 py-2 rounded-lg transition-colors"
+              >
+                🔄 Limpiar formulario
+              </button>
             </div>
-          )}
+          </div>
         </div>
       </div>
     </div>
