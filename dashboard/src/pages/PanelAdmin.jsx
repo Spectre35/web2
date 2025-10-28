@@ -1,6 +1,8 @@
 import { useState } from "react";
 import UploadFile from "../components/UploadFile";
 import UploadRechazadas from "../components/UploadRechazadas";
+import TempPasswordManager from "../components/TempPasswordManager";
+import UploadCleanupManager from "../components/UploadCleanupManager";
 import { Link } from "react-router-dom";
 
 const PASSWORD = "1202"; // Cambia esto
@@ -68,6 +70,18 @@ export default function PanelAdmin() {
         <div className="flex justify-center">
           <div className="w-full max-w-md">
             <UploadRechazadas />
+          </div>
+        </div>
+      </div>
+
+      {/* Sección de Limpieza de Uploads */}
+      <div className="mt-8">
+        <h2 className="text-xl font-bold text-center mb-4 text-gray-100 drop-shadow">
+          🧹 Gestión de Archivos Temporales
+        </h2>
+        <div className="flex justify-center">
+          <div className="w-full max-w-4xl">
+            <UploadCleanupManager />
           </div>
         </div>
       </div>

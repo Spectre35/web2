@@ -11,6 +11,7 @@ import { getWorkerPool } from '../services/workerPool.js';
 import DatabaseService from '../services/databaseService.js';
 import BatchProcessor from '../services/batchProcessor.js';
 import ProcessingProgressTracker from '../services/processingProgressTracker.js';
+import autoCleanupService from '../services/autoCleanupService.js';
 
 const databaseService = new DatabaseService();
 const batchProcessor = new BatchProcessor();
@@ -1134,7 +1135,7 @@ router.post('/confirm-batch', async (req, res) => {
             }
         }
 
-        // 🧹 Limpiar archivos después de guardado exitoso
+        // 🧹 Limpiar archivos automáticamente después del guardado exitoso
         let cleanupResults = { cleaned: [], errors: [] };
         if (savedRecords.length > 0) {
             try {
@@ -1145,8 +1146,8 @@ router.post('/confirm-batch', async (req, res) => {
                     .filter(filePath => fs.existsSync(filePath));
                 
                 if (filesToClean.length > 0) {
-                    cleanupResults = await cleanupFiles(filesToClean, 'CONFIRM-BATCH');
-                    console.log(`🧹 [CONFIRM-BATCH] Limpieza completada: ${cleanupResults.cleaned.length}/${filesToClean.length} archivos eliminados`);
+                    cleanupResults = await autoCleanupService.cleanupImmediately(filesToClean, 'CONFIRM-BATCH');
+                    console.log(`🧹 [CONFIRM-BATCH] Limpieza automática completada: ${cleanupResults.cleaned.length}/${filesToClean.length} archivos eliminados`);
                 }
             } catch (cleanupError) {
                 console.error('❌ [CONFIRM-BATCH] Error en limpieza automática:', cleanupError.message);
@@ -1209,30 +1210,38 @@ router.get('/documents', async (req, res) => {
   }
 });
 
-// 🧹 Endpoint para limpieza manual de uploads
+// 🧹 Endpoint para limpieza manual completa
 router.delete('/cleanup/uploads', async (req, res) => {
     try {
-        const uploadsDir = path.join(__dirname, '../../uploads');
+        const { forceAll = false, maxAgeHours = 2 } = req.body;
         
-        if (!fs.existsSync(uploadsDir)) {
-            return res.json({
-                success: true,
-                message: 'Directorio uploads no encontrado',
-                filesDeleted: 0
-            });
-        }
-
-        const files = fs.readdirSync(uploadsDir);
-        const filePaths = files.map(file => path.join(uploadsDir, file));
+        console.log(`🧹 Iniciando limpieza manual${forceAll ? ' completa' : ` de archivos > ${maxAgeHours}h`}...`);
         
-        const cleanupResults = await cleanupFiles(filePaths, 'MANUAL-CLEANUP');
+        const results = await autoCleanupService.manualCleanup({
+            forceAll,
+            maxAge: maxAgeHours * 60 * 60 * 1000 // Convertir horas a milisegundos
+        });
+        
+        const totalDeleted = results.oldFiles.deletedCount + results.orphans.deletedCount + results.storage.deletedCount;
         
         res.json({
             success: true,
-            message: `Limpieza manual completada: ${cleanupResults.cleaned.length}/${files.length} archivos eliminados`,
-            filesDeleted: cleanupResults.cleaned.length,
-            totalFiles: files.length,
-            errors: cleanupResults.errors
+            message: `Limpieza manual completada: ${totalDeleted} archivos eliminados`,
+            results: {
+                oldFiles: {
+                    deleted: results.oldFiles.deletedCount,
+                    errors: results.oldFiles.errors.length
+                },
+                orphans: {
+                    deleted: results.orphans.deletedCount,
+                    errors: results.orphans.errors.length
+                },
+                storage: {
+                    deleted: results.storage.deletedCount,
+                    currentSizeMB: results.storage.currentSizeMB
+                }
+            },
+            totalDeleted
         });
         
     } catch (error) {
@@ -1244,53 +1253,21 @@ router.delete('/cleanup/uploads', async (req, res) => {
     }
 });
 
-// 📊 Endpoint para estadísticas de uploads
+// 📊 Endpoint para estadísticas de uploads y configuración de limpieza
 router.get('/uploads/stats', async (req, res) => {
     try {
-        const uploadsDir = path.join(__dirname, '../../uploads');
+        const stats = await autoCleanupService.getStats();
+        const config = autoCleanupService.getConfig();
         
-        if (!fs.existsSync(uploadsDir)) {
-            return res.json({
-                success: true,
-                totalFiles: 0,
-                totalSize: 0,
-                totalSizeMB: 0,
-                files: []
-            });
-        }
-
-        const files = fs.readdirSync(uploadsDir);
-        let totalSize = 0;
-        const fileStats = [];
-
-        for (const file of files) {
-            const filePath = path.join(uploadsDir, file);
-            try {
-                const stats = fs.statSync(filePath);
-                const sizeBytes = stats.size;
-                totalSize += sizeBytes;
-                
-                fileStats.push({
-                    name: file,
-                    size: sizeBytes,
-                    sizeMB: (sizeBytes / (1024 * 1024)).toFixed(2),
-                    created: stats.birthtime,
-                    modified: stats.mtime
-                });
-            } catch (error) {
-                console.error(`Error obteniendo stats de ${file}:`, error.message);
-            }
-        }
-
-        // Ordenar por tamaño descendente
-        fileStats.sort((a, b) => b.size - a.size);
-
         res.json({
             success: true,
-            totalFiles: files.length,
-            totalSize: totalSize,
-            totalSizeMB: (totalSize / (1024 * 1024)).toFixed(2),
-            files: fileStats
+            stats,
+            config: {
+                maxFileAgeHours: Math.round(config.maxFileAge / (60 * 60 * 1000)),
+                maxStorageSizeMB: config.maxStorageSize,
+                cleanupEnabled: config.immediateCleanup,
+                periodicCleanupMinutes: Math.round(config.periodicCleanupInterval / (60 * 1000))
+            }
         });
         
     } catch (error) {
@@ -1302,7 +1279,91 @@ router.get('/uploads/stats', async (req, res) => {
     }
 });
 
-// 📜 Sistema de logs en memoria para debugging
+// �️ Endpoint para configurar la limpieza automática
+router.put('/cleanup/config', async (req, res) => {
+    try {
+        const {
+            maxFileAgeHours,
+            maxStorageSizeMB,
+            cleanupEnabled,
+            periodicCleanupMinutes
+        } = req.body;
+        
+        const newConfig = {};
+        
+        if (typeof maxFileAgeHours === 'number') {
+            newConfig.maxFileAge = maxFileAgeHours * 60 * 60 * 1000; // Convertir a milisegundos
+        }
+        
+        if (typeof maxStorageSizeMB === 'number') {
+            newConfig.maxStorageSize = maxStorageSizeMB;
+        }
+        
+        if (typeof cleanupEnabled === 'boolean') {
+            newConfig.immediateCleanup = cleanupEnabled;
+        }
+        
+        if (typeof periodicCleanupMinutes === 'number') {
+            newConfig.periodicCleanupInterval = periodicCleanupMinutes * 60 * 1000; // Convertir a milisegundos
+        }
+        
+        autoCleanupService.updateConfig(newConfig);
+        const updatedConfig = autoCleanupService.getConfig();
+        
+        res.json({
+            success: true,
+            message: 'Configuración de limpieza actualizada',
+            config: {
+                maxFileAgeHours: Math.round(updatedConfig.maxFileAge / (60 * 60 * 1000)),
+                maxStorageSizeMB: updatedConfig.maxStorageSize,
+                cleanupEnabled: updatedConfig.immediateCleanup,
+                periodicCleanupMinutes: Math.round(updatedConfig.periodicCleanupInterval / (60 * 1000))
+            }
+        });
+        
+    } catch (error) {
+        console.error('❌ Error actualizando configuración de limpieza:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 🧹 Endpoint para limpieza forzada completa (¡CUIDADO!)
+router.delete('/cleanup/force-all', async (req, res) => {
+    try {
+        const { confirm } = req.body;
+        
+        if (confirm !== 'DELETE_ALL_FILES') {
+            return res.status(400).json({
+                success: false,
+                error: 'Para confirmar la eliminación de TODOS los archivos, envía "confirm": "DELETE_ALL_FILES"'
+            });
+        }
+        
+        console.log('🚨 INICIANDO LIMPIEZA FORZADA COMPLETA - ELIMINANDO TODOS LOS ARCHIVOS');
+        
+        const results = await autoCleanupService.manualCleanup({ forceAll: true });
+        const totalDeleted = results.oldFiles.deletedCount + results.orphans.deletedCount + results.storage.deletedCount;
+        
+        res.json({
+            success: true,
+            message: `¡LIMPIEZA COMPLETA EXITOSA! ${totalDeleted} archivos eliminados`,
+            warning: 'Todos los archivos de uploads han sido eliminados',
+            results
+        });
+        
+    } catch (error) {
+        console.error('❌ Error en limpieza forzada completa:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// �📜 Sistema de logs en memoria para debugging
 let recentLogs = [];
 const MAX_LOGS = 100;
 

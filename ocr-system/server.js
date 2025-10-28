@@ -13,6 +13,7 @@ import { setProgressTracker } from './backend/routes/ocrRoutes.js';
 import { initializeDatabase } from './backend/models/ocrDatabase.js';
 import { getWorkerPool } from './backend/services/workerPool.js';
 import ProcessingProgressTracker from './backend/services/processingProgressTracker.js';
+import autoCleanupService from './backend/services/autoCleanupService.js';
 
 // Configuración del entorno
 dotenv.config();
@@ -196,6 +197,11 @@ async function startServer() {
     await workerPool.initialize();
     console.log('✅ Worker pool de Tesseract inicializado correctamente');
 
+    // 🧹 Inicializar servicio de limpieza automática
+    console.log('🔄 Inicializando servicio de limpieza automática...');
+    await autoCleanupService.start();
+    console.log('✅ Servicio de limpieza automática iniciado correctamente');
+
     // Iniciar servidor con WebSocket
     server.listen(PORT, () => {
       console.log(`\n🚀 Servidor OCR corriendo en puerto ${PORT}`);
@@ -221,12 +227,14 @@ import { shutdownWorkerPool } from './backend/services/workerPool.js';
 // Manejo de señales de terminación
 process.on('SIGTERM', async () => {
   console.log('🔄 Recibida señal SIGTERM, cerrando servidor...');
+  autoCleanupService.stop();
   await shutdownWorkerPool();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
   console.log('🔄 Recibida señal SIGINT, cerrando servidor...');
+  autoCleanupService.stop();
   await shutdownWorkerPool();
   process.exit(0);
 });

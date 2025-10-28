@@ -21,6 +21,9 @@ import { pool } from './config/database.js'; // 🆕 Importar pool de Supabase
 // Importar rutas de ventas
 import ventasRoutes from './backend/routes/ventas.js';
 
+// Importar servicio de limpieza
+import simpleCleanupService from './backend/services/simpleCleanupService.js';
+
 dotenv.config();
 
 
@@ -10712,6 +10715,214 @@ app.get('/api/papeleria-last', async (req, res) => {
   }
 });
 
+// ==================== 🧹 ENDPOINTS DE LIMPIEZA DE UPLOADS ====================
+
+// 📊 Endpoint para obtener estadísticas de uploads
+app.get('/api/cleanup/stats', async (req, res) => {
+  try {
+    console.log('📊 Solicitando estadísticas de uploads...');
+    
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const ocrUploadsDir = path.join(process.cwd(), 'ocr-system', 'uploads');
+    
+    const stats = {
+      directories: [],
+      totalFiles: 0,
+      totalSizeMB: 0
+    };
+    
+    const dirs = [
+      { name: 'Backend Uploads', path: uploadsDir },
+      { name: 'OCR Uploads', path: ocrUploadsDir }
+    ];
+    
+    for (const dir of dirs) {
+      let dirStats = {
+        name: dir.name,
+        path: dir.path,
+        fileCount: 0,
+        sizeMB: 0,
+        exists: false
+      };
+      
+      try {
+        if (fs.existsSync(dir.path)) {
+          dirStats.exists = true;
+          const files = fs.readdirSync(dir.path);
+          let dirSize = 0;
+          
+          for (const file of files) {
+            const filePath = path.join(dir.path, file);
+            try {
+              const fileStats = fs.statSync(filePath);
+              if (fileStats.isFile()) {
+                dirStats.fileCount++;
+                dirSize += fileStats.size;
+              }
+            } catch (error) {
+              // Archivo no accesible, ignorar
+            }
+          }
+          
+          dirStats.sizeMB = (dirSize / 1024 / 1024).toFixed(2);
+          stats.totalFiles += dirStats.fileCount;
+          stats.totalSizeMB += parseFloat(dirStats.sizeMB);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error accediendo a directorio ${dir.path}:`, error.message);
+      }
+      
+      stats.directories.push(dirStats);
+    }
+    
+    stats.totalSizeMB = stats.totalSizeMB.toFixed(2);
+    
+    res.json({
+      success: true,
+      stats,
+      message: `${stats.totalFiles} archivos encontrados (${stats.totalSizeMB} MB total)`
+    });
+    
+  } catch (error) {
+    console.error('❌ Error obteniendo estadísticas de uploads:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🧹 Endpoint para limpiar uploads antiguos
+app.delete('/api/cleanup/old-files', async (req, res) => {
+  try {
+    const { daysOld = 1 } = req.body; // Por defecto, archivos de más de 1 día
+    console.log(`🧹 Iniciando limpieza de archivos de más de ${daysOld} día(s)...`);
+    
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - daysOld);
+    
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const ocrUploadsDir = path.join(process.cwd(), 'ocr-system', 'uploads');
+    const uploadsDirs = [uploadsDir, ocrUploadsDir];
+    
+    let deletedFiles = 0;
+    let totalSizeDeleted = 0;
+    const errors = [];
+    
+    for (const uploadsDir of uploadsDirs) {
+      if (!fs.existsSync(uploadsDir)) continue;
+      
+      try {
+        const files = fs.readdirSync(uploadsDir);
+        
+        for (const file of files) {
+          const filePath = path.join(uploadsDir, file);
+          
+          try {
+            const stats = fs.statSync(filePath);
+            
+            if (stats.isFile() && stats.mtime < cutoffDate) {
+              totalSizeDeleted += stats.size;
+              fs.unlinkSync(filePath);
+              deletedFiles++;
+              console.log(`🗑️ Archivo antiguo eliminado: ${file} (${(stats.size / 1024 / 1024).toFixed(2)} MB)`);
+            }
+          } catch (err) {
+            errors.push({ file, error: err.message });
+            console.warn(`⚠️ Error procesando archivo ${file}:`, err.message);
+          }
+        }
+      } catch (err) {
+        console.error(`❌ Error accediendo a directorio ${uploadsDir}:`, err.message);
+      }
+    }
+    
+    const sizeMB = (totalSizeDeleted / 1024 / 1024).toFixed(2);
+    
+    res.json({
+      success: true,
+      message: `Limpieza completada: ${deletedFiles} archivos eliminados, ${sizeMB} MB liberados`,
+      deletedFiles,
+      totalSizeMB: sizeMB,
+      errors: errors.length,
+      cutoffDate: cutoffDate.toISOString()
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en limpieza de archivos antiguos:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// 🗑️ Endpoint para limpieza completa (¡CUIDADO!)
+app.delete('/api/cleanup/all-files', async (req, res) => {
+  try {
+    const { confirm } = req.body;
+    
+    if (confirm !== 'DELETE_ALL_UPLOADS') {
+      return res.status(400).json({
+        success: false,
+        error: 'Para confirmar la eliminación de TODOS los uploads, envía "confirm": "DELETE_ALL_UPLOADS"'
+      });
+    }
+    
+    console.log('🚨 INICIANDO LIMPIEZA COMPLETA DE UPLOADS...');
+    
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+    const ocrUploadsDir = path.join(process.cwd(), 'ocr-system', 'uploads');
+    const uploadsDirs = [uploadsDir, ocrUploadsDir];
+    
+    let deletedFiles = 0;
+    let totalSizeDeleted = 0;
+    
+    for (const uploadsDir of uploadsDirs) {
+      if (!fs.existsSync(uploadsDir)) continue;
+      
+      try {
+        const files = fs.readdirSync(uploadsDir);
+        
+        for (const file of files) {
+          const filePath = path.join(uploadsDir, file);
+          
+          try {
+            const stats = fs.statSync(filePath);
+            if (stats.isFile()) {
+              totalSizeDeleted += stats.size;
+              fs.unlinkSync(filePath);
+              deletedFiles++;
+              console.log(`🗑️ Archivo eliminado: ${file}`);
+            }
+          } catch (err) {
+            console.warn(`⚠️ Error eliminando ${file}:`, err.message);
+          }
+        }
+      } catch (err) {
+        console.error(`❌ Error en limpieza completa de ${uploadsDir}:`, err.message);
+      }
+    }
+    
+    const sizeMB = (totalSizeDeleted / 1024 / 1024).toFixed(2);
+    
+    res.json({
+      success: true,
+      message: `¡LIMPIEZA COMPLETA EXITOSA! ${deletedFiles} archivos eliminados, ${sizeMB} MB liberados`,
+      warning: 'Todos los archivos de uploads han sido eliminados',
+      deletedFiles,
+      totalSizeMB: sizeMB
+    });
+    
+  } catch (error) {
+    console.error('❌ Error en limpieza completa:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ==================== INICIO DEL SERVIDOR ====================
 
 app.listen(PORT, '0.0.0.0', () => {
@@ -10736,4 +10947,22 @@ app.listen(PORT, '0.0.0.0', () => {
   ⏰ Iniciado: ${new Date().toLocaleString()}
   ===========================================
   `);
+
+  // 🧹 Inicializar servicio de limpieza automática
+  console.log('\n🧹 Iniciando servicio de limpieza automática...');
+  simpleCleanupService.start();
+  console.log('✅ Servicio de limpieza iniciado correctamente\n');
+});
+
+// 🛑 Manejo de señales para cerrar limpiamente
+process.on('SIGTERM', () => {
+  console.log('🔄 Recibida señal SIGTERM, cerrando servidor...');
+  simpleCleanupService.stop();
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('🔄 Recibida señal SIGINT, cerrando servidor...');
+  simpleCleanupService.stop();
+  process.exit(0);
 });

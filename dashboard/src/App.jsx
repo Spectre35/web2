@@ -24,7 +24,6 @@ const IngresarAclaraciones = lazy(() => import("./pages/IngresarAclaraciones"));
 const DashboardAclaraciones = lazy(() => import("./pages/DashboardAclaraciones"));
 const ValidadorEstatusStripe = lazy(() => import("./pages/ValidadorEstatusStripe"));
 const DashboardCargosAuto = lazy(() => import("./pages/DashboardCargosAuto"));
-// const DashboardCargosAutoTest = lazy(() => import("./pages/DashboardCargosAutoTest"));
 const BuscadorBin = lazy(() => import("./pages/BuscadorBin"));
 const ProcesadorBinsMasivo = lazy(() => import("./pages/ProcesadorBinsMasivo"));
 const ProcesadorDistribuido = lazy(() => import("./pages/ProcesadorDistribuido"));
